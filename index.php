@@ -2977,7 +2977,7 @@ const WHT_RATES=[
 function payWhtToggle(key){
   PAY.whtSel[key]=!PAY.whtSel[key];
   const el=document.getElementById('payWht');
-  if(el) el.innerHTML=payWhtHtml(parseFloat(PAY.gross)||0);
+  if(el) el.innerHTML=payWhtHtml(parseFloat(PAY.gross)||paySelTotal());
 }
 function payApplyWht(net){ PAY.amount=String(net); const el=document.getElementById('payAmount'); if(el) el.value=net; }
 function payGrossChange(v){
@@ -3034,6 +3034,40 @@ async function paySubmit(){
   render();
 }
 
+function payUnpaidTableHtml(){
+  const list=(PAY.clients||[]).filter(c=>c.unpaid).sort((a,b)=>(b.unpaidTotal||0)-(a.unpaidTotal||0));
+  if(!list.length) return PAY.loaded?`<div class="muted" style="padding:8px 4px">No clients with unpaid invoices.</div>`:'';
+  let tot=0, cnt=0;
+  const rows=list.map(c=>{
+    tot+=(c.unpaidTotal||0); cnt+=(c.unpaidCount||0);
+    const active=PAY.clientId===c.id;
+    const usd=!!c.hasUsd;
+    const usdBadge=usd?`<span style="background:#EEF2FE;color:var(--blue);border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700;margin-right:5px">${c.usdCur||'USD'}</span>`:'';
+    return `<tr style="${active?'background:#FFF4EB;box-shadow:inset 3px 0 0 var(--orange)':''}" onclick="payPickClient('${c.id}')" style="cursor:pointer">
+      <td class="l cl" style="padding:5px 8px;cursor:pointer">${usdBadge}${c.name||''}</td>
+      <td style="padding:5px 8px;text-align:right">${c.unpaidCount||0}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--bad);font-weight:700;white-space:nowrap">KES ${Math.round(c.unpaidTotal||0).toLocaleString('en-KE')}</td>
+      <td style="padding:5px 8px;text-align:right"><button class="btn sec" onclick="event.stopPropagation();payPickClient('${c.id}')" style="white-space:nowrap">Pay →</button></td>
+    </tr>`;}).join('');
+  return `<div class="rptwrap" style="margin-bottom:10px;max-height:220px;overflow-y:auto">
+    <table class="rpt" style="font-size:11px">
+      <thead><tr>
+        <th class="l" style="padding:5px 8px">Client</th>
+        <th style="padding:5px 8px;text-align:right">Invoices</th>
+        <th style="padding:5px 8px;text-align:right">Amount due</th>
+        <th style="padding:5px 8px"></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr class="tot">
+        <td style="padding:5px 8px">Total · ${list.length} clients</td>
+        <td style="padding:5px 8px;text-align:right">${cnt}</td>
+        <td style="padding:5px 8px;text-align:right;color:var(--bad)">KES ${Math.round(tot).toLocaleString('en-KE')}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+  </div>`;
+}
+
 function vPayments(){
   const today=new Date().toISOString().slice(0,10);
   const selTotal=paySelTotal();
@@ -3041,9 +3075,9 @@ function vPayments(){
 
   let invoiceBlock='';
   if(PAY.invLoading){
-    invoiceBlock=`<div class="card muted" style="padding:10px 13px">Loading invoices…</div>`;
+    invoiceBlock=`<div class="card muted" style="padding:10px 13px">Loading invoices for ${PAY.clientName}…</div>`;
   } else if(PAY.clientId && PAY.invoices.length===0 && !PAY.invLoading){
-    invoiceBlock=`<div class="card muted" style="padding:10px 13px">No unpaid invoices for this client.</div>`;
+    invoiceBlock=`<div class="card muted" style="padding:10px 13px">No unpaid invoices for ${PAY.clientName}.</div>`;
   } else if(PAY.invoices.length){
     const invRows=PAY.invoices.map(iv=>{
       const key=iv.id||iv.number;
@@ -3079,10 +3113,14 @@ function vPayments(){
   <h2>💳 Record a Payment</h2>
   ${PAY.done?`<div class="ok" style="padding:10px 13px;margin-bottom:10px;border-radius:9px">
     ✓ Payment <b>#${PAY.done.payment_number}</b> recorded in Zoho Books — KES ${Math.round(PAY.done.amount||0).toLocaleString('en-KE')} on ${PAY.done.date||''}
-    <span style="display:block;font-size:10.5px;margin-top:3px;color:var(--good)">The invoice balances have been updated in Zoho.</span>
+    <span style="display:block;font-size:10.5px;margin-top:3px;color:var(--good)">Invoice balances updated in Zoho. Select another client below to record a new payment.</span>
   </div>`:''}
-  <label>Client</label>
-  <input id="paySearch" type="text" autocomplete="off" placeholder="🔍 Search client name…" value="${(PAY.q||'').replace(/"/g,'&quot;')}" oninput="paySearch(this.value)" onblur="setTimeout(()=>{const el=document.getElementById('payCList');if(el&&!PAY.picked){}},200)">
+  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">
+    ${PAY.loading?'Loading clients…':'All clients with unpaid invoices — click a row to record payment'}
+  </div>
+  ${payUnpaidTableHtml()}
+  <label style="margin-top:4px">Or search by name</label>
+  <input id="paySearch" type="text" autocomplete="off" placeholder="🔍 Search client name…" value="${(PAY.q||'').replace(/"/g,'&quot;')}" oninput="paySearch(this.value)">
   <div id="payCList">${payCListHtml()}</div>
 
   ${invoiceBlock}
