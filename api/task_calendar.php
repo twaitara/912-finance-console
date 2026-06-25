@@ -102,7 +102,7 @@ try {
               . '<p style="margin:14px 0 6px"><b>Add it to your calendar:</b></p>'
               . '<p style="margin:0 0 8px"><a href="' . $esc($icsUrl) . '" style="display:inline-block;background:#2350C5;color:#fff;text-decoration:none;padding:9px 16px;border-radius:8px;font-weight:600">Add to my calendar (.ics)</a>'
               . ' &nbsp; <a href="' . $esc($gcal) . '" style="display:inline-block;background:#F56F00;color:#fff;text-decoration:none;padding:9px 16px;border-radius:8px;font-weight:600">Add to Google Calendar</a></p>'
-              . '<p style="color:#94A3B8;font-size:12px;margin-top:16px">Sent from 912 Finance Console.</p>'
+              . '<p style="color:#94A3B8;font-size:12px;margin-top:16px">Sent from Waitara Holdings Group of Companies Console.</p>'
               . '</div>';
 
         $payload = [

@@ -18,7 +18,7 @@ function app_settings_schema() {
         'sent_hide_days'    => ['num', 30],
         'business_name'     => ['str', 'Nine One Two Holdings'],
         'statement_subject' => ['str', 'Pending invoices and Statement'],
-        'statement_footer'  => ['str', "Prepared and reconciled by the 912 Finance Console — Nine One Two Holdings' intelligent finance engine, delivering precise, automated account statements in real time."],
+        'statement_footer'  => ['str', "Prepared and reconciled by the Waitara Holdings Group of Companies Console — delivering precise, automated account statements in real time."],
     ];
 }
 

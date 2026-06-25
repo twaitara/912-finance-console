@@ -43,7 +43,7 @@ if (isset($_GET['logout'])) { session_destroy(); header('Location: index.php'); 
 if (empty($_SESSION['auth'])):
 ?><!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>912 FINANCE CONSOLE</title>
+<title>WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -80,19 +80,19 @@ if (empty($_SESSION['auth'])):
 </style></head>
 <body><form class="card" method="post" autocomplete="off">
   <div class="b">912</div>
-  <div class="ttl">912 FINANCE CONSOLE</div>
+  <div class="ttl">WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</div>
   <div class="sub">Live from Zoho Books</div>
   <?php if(!empty($loginError)) echo '<div class="err">'.$loginError.'</div>'; ?>
   <div class="fld"><input type="text" name="app_user" placeholder="Username or email"></div>
   <div class="fld"><input type="password" name="app_password" placeholder="Password" autofocus></div>
   <button type="submit">Open console →</button>
-  <div class="foot">Secure access · 912 Finance</div>
+  <div class="foot">Secure access · Waitara Holdings</div>
 </form></body></html>
 <?php exit; endif; ?>
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>912 FINANCE CONSOLE</title>
+<title>WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -483,7 +483,7 @@ if (empty($_SESSION['auth'])):
   <header>
     <div style="display:flex;align-items:center;gap:10px">
       <div class="b">912</div>
-      <div><div style="color:#fff;font-weight:600;font-size:15px;letter-spacing:.2px">912 FINANCE CONSOLE</div>
+      <div><div style="color:#fff;font-weight:600;font-size:11.5px;letter-spacing:.2px">WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</div>
       <div class="livepill"><span class="livedot"></span>LIVE FROM ZOHO BOOKS</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
@@ -2669,7 +2669,7 @@ function emStatementHtmlFrom(picked, intro, clientName){
           <td style="padding:11px 12px;text-align:right;font-weight:700;color:#F8B26A">${fmtn(due)} ${esc(CFG.cur)}</td></tr></tfoot>
       </table>
       <p style="margin:0;color:#64748B;font-size:12px;line-height:1.5">For any queries on this statement, please reply to this email.</p>
-      <p style="margin:14px 0 0;padding-top:12px;border-top:1px solid #EEF1F5;color:#AEB9C7;font-size:10px;line-height:1.5;font-style:italic">${esc(CFG.stmtFooter||"Prepared and reconciled by the 912 Finance Console — Nine One Two Holdings' intelligent finance engine, delivering precise, automated account statements in real time.")}</p>
+      <p style="margin:14px 0 0;padding-top:12px;border-top:1px solid #EEF1F5;color:#AEB9C7;font-size:10px;line-height:1.5;font-style:italic">${esc(CFG.stmtFooter||"Prepared and reconciled by the Waitara Holdings Group of Companies Console — Nine One Two Holdings' intelligent finance engine, delivering precise, automated account statements in real time.")}</p>
     </div>
   </div>`;
 }

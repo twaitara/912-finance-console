@@ -41,7 +41,7 @@ header('Content-Type: text/html; charset=utf-8');
   <div class="bar"><span>Technician Manual</span><button onclick="window.print()">Save as PDF / Print</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
     <div class="head"><?php echo $logoUrl !== '' ? '<img class="logo-img" src="'.$logoUrl.'" alt="'.$co.'">' : '<div class="logo">912</div>'; ?>
-      <div><h1>Technician Manual</h1><div class="sub"><?php echo $co; ?> · 912 Finance Console</div></div></div>
+      <div><h1>Technician Manual</h1><div class="sub"><?php echo $co; ?> · Waitara Holdings Group of Companies Console</div></div></div>
 
     <div class="note" style="border-left-color:#F56F00;background:#FFF6EE">
       <b>Open the system here:</b> <a href="<?php echo $appUrl; ?>" style="color:#A24E00;font-weight:700"><?php echo $appUrl; ?></a><br>
