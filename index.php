@@ -677,19 +677,21 @@ if (empty($_SESSION['auth'])):
 
   /* ---- Global refresh button ---- */
   #globalRefreshBtn{
-    position:fixed;bottom:20px;right:20px;z-index:999;
-    width:42px;height:42px;border-radius:50%;
-    background:var(--orange);color:#fff;border:none;
-    font-size:20px;line-height:1;cursor:pointer;
-    box-shadow:0 3px 12px rgba(0,0,0,.22);
-    display:flex;align-items:center;justify-content:center;
-    transition:transform .15s,box-shadow .15s;
-    font-family:inherit;
+    margin-left:auto;flex:0 0 auto;align-self:center;
+    background:transparent;
+    color:var(--orange);
+    border:1.5px solid var(--orange);
+    border-radius:9px;padding:6px 13px;
+    font-size:11.5px;font-weight:700;letter-spacing:.2px;
+    cursor:pointer;font-family:inherit;white-space:nowrap;
+    display:inline-flex;align-items:center;gap:5px;
+    transition:background .14s,box-shadow .14s,transform .12s;
+    text-transform:none;box-shadow:none;
   }
-  #globalRefreshBtn:hover{transform:scale(1.1);box-shadow:0 5px 18px rgba(0,0,0,.28)}
-  #globalRefreshBtn:active{transform:scale(.95)}
+  #globalRefreshBtn:hover{background:#FFF4EB;box-shadow:0 4px 12px rgba(245,111,0,.18);transform:translateY(-1px)}
+  #globalRefreshBtn:active{transform:scale(.96);box-shadow:none}
   @keyframes spin{to{transform:rotate(360deg)}}
-  #globalRefreshBtn.spinning{animation:spin .6s linear}
+  #globalRefreshBtn.spinning .ricon{display:inline-block;animation:spin .6s linear}
   @media print{#globalRefreshBtn{display:none}}
 </style></head>
 <body>
@@ -782,11 +784,12 @@ if (empty($_SESSION['auth'])):
         <button data-ext="api/manual.php">📖 Technician Manual</button>
       </div>
     </div>
+
+    <button id="globalRefreshBtn" onclick="tabRefresh()" title="Refresh current page"><span class="ricon">↻</span> Refresh</button>
   </div>
 
   <div class="pane" id="pane"></div>
 </div>
-<button id="globalRefreshBtn" onclick="tabRefresh()" title="Refresh this page" aria-label="Refresh">↻</button>
 
 <div id="qbModal" class="qbmodal" onclick="if(event.target===this)qbClose()">
   <div class="qbm-card">
