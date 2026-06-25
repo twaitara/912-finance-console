@@ -1353,6 +1353,37 @@ function vDash(){
     <div class="kpi" style="--accent:var(--good)"><div class="l">Restored</div><div class="n">${s.restored.length}</div><div class="h">Bridges repaid</div></div>
   </div>
 
+  ${(()=>{
+    const thisMonth=new Date().toISOString().slice(0,7);
+    const all=(MQ.quotes||[]).filter(q=>String(q.created_at||q.quote_date||'').slice(0,7)===thisMonth);
+    const inv=all.filter(q=>q.status==='invoiced'||q.zoho_invoice_number);
+    const totalVal=all.reduce((s,q)=>s+(+q.total||0),0);
+    const invVal=inv.reduce((s,q)=>s+(+q.total||0),0);
+    const pct=totalVal>0?Math.round(invVal/totalVal*100):0;
+    const barColor=pct>=50?'var(--good)':pct>=25?'var(--orange)':'var(--bad)';
+    const mo=new Date().toLocaleString('en-KE',{month:'long'});
+    return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin-bottom:12px">Quotes · ${mo}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
+        <div>
+          <div style="font-size:9.5px;color:var(--mute)">Generated</div>
+          <div style="font-size:32px;font-weight:800;line-height:1.1">${all.length}</div>
+          <div style="font-size:11px;color:var(--mute)">KES ${Math.round(totalVal).toLocaleString('en-KE')}</div>
+        </div>
+        <div>
+          <div style="font-size:9.5px;color:var(--mute)">Converted</div>
+          <div style="font-size:32px;font-weight:800;color:var(--good);line-height:1.1">${inv.length}</div>
+          <div style="font-size:11px;color:var(--good)">KES ${Math.round(invVal).toLocaleString('en-KE')}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+        <div style="flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px"></div>
+        </div>
+        <span style="font-size:12px;font-weight:700;color:${barColor};white-space:nowrap">${pct}% converted</span>
+      </div>
+    </div>`;
+  })()}
   ${vDashPaid()}
   ${vDashMyQuotes()}
 
