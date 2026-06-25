@@ -380,6 +380,22 @@ if (empty($_SESSION['auth'])):
   .qact .qb-del{margin-left:auto;color:var(--bad);padding:6px 10px;font-weight:700;line-height:1}
   .qact .qb-del:hover{background:#FDECEA;border-color:#F4C7C0}
 
+  /* ---- Quote builder modal ---- */
+  .qbmodal{position:fixed;inset:0;z-index:200;background:rgba(15,23,34,.55);display:none;
+    align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+  .qbmodal.open{display:flex}
+  .qbm-card{background:var(--bg);width:100%;max-width:940px;max-height:92vh;border-radius:18px;
+    box-shadow:0 30px 80px rgba(8,16,24,.5);display:flex;flex-direction:column;overflow:hidden;
+    animation:rise .24s cubic-bezier(.22,.61,.36,1) both}
+  .qbm-head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:#fff;
+    border-bottom:1px solid var(--line);flex:0 0 auto}
+  .qbm-head b{font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink)}
+  .qbm-x{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer;
+    font-size:14px;color:var(--mute);display:grid;place-items:center;transition:background .15s,color .15s,border-color .15s}
+  .qbm-x:hover{background:#FDECEA;color:var(--bad);border-color:#F4C7C0}
+  .qbm-body{padding:18px;overflow:auto;flex:1 1 auto}
+  .qbm-body > h2:first-child{display:none}
+
   /* ---- Quote builder: Zoho-style item table + totals ---- */
   .qbhead{display:none}
   .qbrow{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;align-items:end;padding:12px;
@@ -493,6 +509,14 @@ if (empty($_SESSION['auth'])):
   </div>
 
   <div class="pane" id="pane"></div>
+</div>
+
+<div id="qbModal" class="qbmodal" onclick="if(event.target===this)qbClose()">
+  <div class="qbm-card">
+    <div class="qbm-head"><b id="qbModalTitle">New quote</b>
+      <button class="qbm-x" onclick="qbClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body" id="qbModalBody"></div>
+  </div>
 </div>
 
 <script>
@@ -699,6 +723,8 @@ function render(){
   const WC_TABS={dash:1,deploy:1,ledger:1,loans:1,growth:1};
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display=(ME.admin && WC_TABS[TAB])?'':'none';
   paintFund();
+  if(QB.modalOpen){ const mb=document.getElementById('qbModalBody'); if(mb) mb.innerHTML=vNewQuote();
+    const mt=document.getElementById('qbModalTitle'); if(mt) mt.textContent=QB.id?'Edit quote':'New quote'; }
 }
 
 function loadDashTasks(){
@@ -2858,6 +2884,7 @@ function vTodo(){
 function closeNavGroups(){ document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open')); }
 
 function navActivate(b){
+  if(b.dataset.tab==='newquote'){ qbOpenNew(); closeNavGroups(); return; }   // builder opens as a popup, not a tab
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   const grp=b.closest('.navgroup');
@@ -2871,7 +2898,6 @@ function navActivate(b){
   if(TAB==='emails' && !EMAIL.loaded && !EMAIL.loadingClients){ render(); emailLoadClients(); return; }
   if(TAB==='todo' && !TASK.loaded && !TASK.loading){ render(); todoLoad(); return; }
   if(TAB==='loans'){ render(); loadLoans(); return; }
-  if(TAB==='newquote'){ render(); return; }
   if(TAB==='myquotes'){ render(); mqLoad(); return; }
   if(TAB==='clientaccess'){ render(); if(ME.admin && !QB.assignLoaded) qbAssignLoad(); return; }
   if(TAB==='settings'){ render(); if(ME.admin && !USERS.loaded) usersLoad(); return; }
@@ -3035,6 +3061,13 @@ function qbDisc(field,val){ QB[field]=val; const t=document.getElementById('qbTo
 function qbAddRow(){ QB.items.push({name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
 function qbDelRow(i){ QB.items.splice(i,1); if(!QB.items.length) QB.items.push({name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
 function qbClearCust(){ QB.customerId=''; QB.customerName=''; render(); }
+/* ---- builder modal open/close ---- */
+function qbOpen(){ QB.modalOpen=true; const m=document.getElementById('qbModal'); if(m) m.classList.add('open');
+  const b=document.getElementById('qbModalBody'); if(b) b.innerHTML=vNewQuote();
+  const t=document.getElementById('qbModalTitle'); if(t) t.textContent=QB.id?'Edit quote':'New quote';
+  document.body.style.overflow='hidden'; }
+function qbOpenNew(){ QB=Object.assign(qbBlank(), {assignOpen:QB.assignOpen,assignLoaded:QB.assignLoaded,assignments:QB.assignments,users:QB.users,aCust:null,aUsers:[]}); qbOpen(); }
+function qbClose(){ QB.modalOpen=false; const m=document.getElementById('qbModal'); if(m) m.classList.remove('open'); document.body.style.overflow=''; }
 function qbSearch(v){ clearTimeout(_qbSearchT); const box=document.getElementById('qbCustResults');
   if((v||'').trim().length<2){ if(box) box.innerHTML=''; return; }
   _qbSearchT=setTimeout(()=>{ fetch('api/customers.php?q='+encodeURIComponent(v),{credentials:'same-origin'})
@@ -3071,7 +3104,7 @@ function qbSaveUpdate(){ qbSave(()=>qbUpdate(QB.id)); }
 function qbUpdate(id){ QB.busy=true; QB.msg='Updating Zoho…'; QB.err=false; render();
   fetch('api/quote_update.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ QB.busy=false;
-    if(j.ok){ QB=Object.assign(qbBlank(), { assignOpen:QB.assignOpen, assignLoaded:QB.assignLoaded, assignments:QB.assignments, users:QB.users, aCust:null, aUsers:[] });
+    if(j.ok){ qbClose(); QB=Object.assign(qbBlank(), { assignOpen:QB.assignOpen, assignLoaded:QB.assignLoaded, assignments:QB.assignments, users:QB.users, aCust:null, aUsers:[] });
       MQ.loaded=false; MQ.msg='Quote updated in Zoho — '+(j.status==='pending_approval'?'re-submitted for approval.':'status: '+j.status+'.')+(j.note?' '+j.note:''); MQ.err=!!j.note;
       navTo('myquotes');
     } else { QB.msg=j.error||'Update failed.'; QB.err=true; render(); }
@@ -3080,7 +3113,7 @@ function qbUpdate(id){ QB.busy=true; QB.msg='Updating Zoho…'; QB.err=false; re
 function qbPush(id){ QB.busy=true; QB.msg='Pushing to Zoho…'; QB.err=false; render();
   fetch('api/quote_push.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ QB.busy=false;
-    if(j.ok){ QB=Object.assign(qbBlank(), { assignOpen:QB.assignOpen, assignLoaded:QB.assignLoaded, assignments:QB.assignments, users:QB.users, aCust:null, aUsers:[] });
+    if(j.ok){ qbClose(); QB=Object.assign(qbBlank(), { assignOpen:QB.assignOpen, assignLoaded:QB.assignLoaded, assignments:QB.assignments, users:QB.users, aCust:null, aUsers:[] });
       MQ.loaded=false; MQ.msg='Quote pushed to Zoho as '+(j.estimate_number||'estimate')+' — '+(j.status==='pending_approval'?'awaiting approval.':'status: '+j.status+'.')+(j.note?' '+j.note:''); MQ.err=!!j.note;
       navTo('myquotes');
     } else { QB.msg=j.error||'Push failed.'; QB.err=true; render(); }
@@ -3325,7 +3358,7 @@ function mqEdit(id){ fetch('api/quotes.php',{method:'POST',credentials:'same-ori
     QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
     QB.reference=q.reference||''; QB.subject=q.subject||''; QB.quoteDate=q.quote_date||today(); QB.expiryDate=q.expiry_date||'';
     QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,cost:0,tax:'vat'}];
-    QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; navTo('newquote');
+    QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; qbOpen();
   }).catch(e=>alert(''+e)); }
 function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was pushed, it stays in Zoho.)'))return;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})})
@@ -3354,6 +3387,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && QB.modalOpen) qbClose(); });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){
