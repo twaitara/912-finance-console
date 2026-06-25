@@ -2,7 +2,9 @@
 /* api/cache_meta.php — remembers when the full cache was last pulled from Zoho.
    GET  -> {ok, last: ISO8601|null}
    POST -> stamps now, returns {ok, last}. Stored in data/cache_meta.json. */
+session_start();
 header('Content-Type: application/json');
+if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 $f = __DIR__ . '/../data/cache_meta.json';
 try {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {

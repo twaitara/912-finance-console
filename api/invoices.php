@@ -1,7 +1,9 @@
 <?php
 /** Returns live unpaid invoices (KES + USD) straight from Zoho Books.
  *  USD invoices are converted to KES (live rate, with fallbacks) and tagged. */
+session_start();
 header('Content-Type: application/json');
+if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../zoho.php';
 require_once __DIR__ . '/../fx.php';
 

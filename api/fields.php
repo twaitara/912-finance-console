@@ -1,7 +1,9 @@
 <?php
 /** Lists invoice custom fields so you can confirm the exact api_name
- *  for "Funded by Working Capital" to put in config.php. Visit once, then you can delete. */
+ *  for "Funded by Working Capital" to put in config.php. Admin-only diagnostic. */
+session_start();
 header('Content-Type: application/json');
+if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Admins only.']); exit; }
 require __DIR__ . '/../zoho.php';
 
 try {

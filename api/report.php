@@ -2,7 +2,9 @@
 /** Profit-per-invoice report: all Zoho invoices in a period, matched to their
  *  expenses by reference number (which equals the invoice number). KES only.
  *  Query: ?month=06&year=2026  (month optional; empty = whole year; year empty = all). */
+session_start();
 header('Content-Type: application/json');
+if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../zoho.php';
 @set_time_limit(300);
 

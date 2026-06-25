@@ -1,6 +1,8 @@
 <?php
 /** Returns recent expenses from Zoho Books, so the cost (COGS) can be picked instead of typed. */
+session_start();
 header('Content-Type: application/json');
+if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../zoho.php';
 
 try {
