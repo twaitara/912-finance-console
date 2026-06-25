@@ -163,7 +163,20 @@ if (empty($_SESSION['auth'])):
   .wcgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
   .wcgrid>.card{margin-bottom:0}
   @media (max-width:680px){ .wcgrid{grid-template-columns:1fr} }
-  .dashtkgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+  .teambox{background:linear-gradient(135deg,#1a2b3c 0%,#15202B 100%);border-radius:16px;padding:20px 22px 22px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,.18)}
+  .teambox-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .teambox-head .title{font-size:13px;font-weight:700;color:#fff;letter-spacing:.4px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .teambox-head .title::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;background:#F56F00;box-shadow:0 0 0 3px rgba(245,111,0,.25)}
+  .teambox-head .tbtn{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s}
+  .teambox-head .tbtn:hover{background:rgba(255,255,255,.2)}
+  .teambox .wbar{margin-bottom:14px}
+  .teambox .wchip{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:#E2E8F0}
+  .teambox .wchip b{color:#fff}
+  .dashtkgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .dashtkgrid .dtk{background:#fff;border-radius:10px;padding:10px 12px;border-left:3px solid #F56F00;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .dashtkgrid .dtk .dtk-av{display:flex;gap:3px;margin-bottom:7px}
+  .dashtkgrid .dtk .dtk-title{font-weight:700;font-size:11.5px;line-height:1.35;color:#15202B}
+  .dashtkgrid .dtk .dtk-who{font-size:10px;color:#64748B;margin-top:4px}
   @media (max-width:1100px){ .dashtkgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
   @media (max-width:680px){ .dashtkgrid{grid-template-columns:1fr} }
   .invrow{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;justify-content:space-between}
@@ -885,15 +898,19 @@ function dashTeamHtml(){
   const assigned=open.filter(t=>(t.assignees||[]).length);
   const list = assigned.length? `<div class="dashtkgrid">${assigned.map(t=>{
     const av=(t.assignees||[]).map(a=>dshAvatar(a.name||a.email,20)).join('');
-    return `<div style="background:#F7F9FC;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
-      <div style="display:flex;gap:4px;margin-bottom:6px">${av}</div>
-      <div style="font-weight:600;font-size:11.5px;line-height:1.35;color:var(--ink)">${esc(t.title)}</div>
-      <div class="muted" style="font-size:10px;margin-top:4px">${(t.assignees||[]).map(a=>esc(a.name||a.email)).join(', ')}</div>
-    </div>`; }).join('')}</div>` : `<div class="muted" style="font-size:11.5px;padding:6px 0">No tasks assigned to anyone yet${unassigned?` — you have ${unassigned} waiting.`:''}.</div>`;
-  return `<div class="sect"><b>Team &amp; tasks</b><span class="ln"></span>
-      <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="gotoTodo()">Open To-Do →</button></div>
-    <div class="wbar" style="margin-bottom:${people.length||unassigned?'10px':'0'}">${chips||'<span class="muted" style="font-size:11.5px">Nobody assigned yet.</span>'}</div>
-    ${list}`;
+    return `<div class="dtk">
+      <div class="dtk-av">${av}</div>
+      <div class="dtk-title">${esc(t.title)}</div>
+      <div class="dtk-who">${(t.assignees||[]).map(a=>esc(a.name||a.email)).join(', ')}</div>
+    </div>`; }).join('')}</div>` : `<div style="color:rgba(255,255,255,.5);font-size:11.5px;padding:4px 0">No tasks assigned to anyone yet${unassigned?` — ${unassigned} unassigned.`:''}.</div>`;
+  return `<div class="teambox">
+    <div class="teambox-head">
+      <div class="title">Team &amp; Tasks</div>
+      <button class="tbtn" onclick="gotoTodo()">Open To-Do →</button>
+    </div>
+    ${(people.length||unassigned)?`<div class="wbar">${chips}</div>`:''}
+    ${list}
+  </div>`;
 }
 function vDashLite(){
   const showQuotes = tabAllowed('myquotes') || tabAllowed('newquote');
