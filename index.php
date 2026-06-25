@@ -746,6 +746,7 @@ if (empty($_SESSION['auth'])):
         <button data-tab="invrep">🧾 Invoices</button>
         <button data-tab="quotes">📋 Quotes</button>
         <button data-tab="payments">💳 Record Payment</button>
+        <button data-tab="bulkpay">⚡ Bulk Mark Paid</button>
       </div>
     </div>
 
@@ -1041,6 +1042,9 @@ function tabRefresh(){
       PAY.picked=false;PAY.clientId='';PAY.clientName='';PAY.q='';
       PAY.msg='';PAY.done=null;
       render();payLoadClients();payLoadAccounts();break;
+    case 'bulkpay':
+      BULK.loaded=false;BULK.loading=false;BULK.invoices=[];BULK.sel={};BULK.done=[];BULK.msg='';
+      render();bulkLoad();if(!PAY.accsLoaded)payLoadAccounts();break;
     case 'dash':      loadTasks();checkBackup();loadQuotes();render();break;
     default:          render();
   }
@@ -1059,6 +1063,7 @@ function render(){
   if(TAB==='invrep') p.innerHTML = vInvRep();
   if(TAB==='quotes') p.innerHTML = vQuotes();
   if(TAB==='payments'){ p.innerHTML = vPayments(); if(!PAY.loaded) payLoadClients(); if(!PAY.accsLoaded) payLoadAccounts(); }
+  if(TAB==='bulkpay'){ p.innerHTML = vBulkPay(); if(!BULK.loaded) bulkLoad(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -3218,6 +3223,182 @@ function vPayments(){
   </div>`;
 }
 /* ================= end Payments ================= */
+
+/* ================= Bulk Mark Paid ================= */
+let BULK = {
+  loaded:false, loading:false, invoices:[], sel:{},
+  date:(()=>{ const d=new Date(); return d.toISOString().slice(0,10); })(),
+  mode:'bankremittance', ref:'',
+  processing:false, done:[], msg:'', err:false
+};
+
+function bulkLoad(){
+  if(BULK.loading) return;
+  BULK.loading=true; BULK.msg=''; BULK.err=false; render();
+  fetch('api/unpaid_invoices.php',{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{
+      BULK.loading=false; BULK.loaded=true;
+      BULK.invoices=j.ok?(j.invoices||[]):[];
+      BULK.sel={};
+      BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=true; });
+      if(TAB==='bulkpay') render();
+    }).catch(e=>{ BULK.loading=false; BULK.msg='Error: '+e; BULK.err=true; if(TAB==='bulkpay') render(); });
+}
+
+function bulkToggleAll(on){
+  BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=on; });
+  render();
+}
+
+function bulkToggleClient(custId, on){
+  BULK.invoices.filter(iv=>iv.customer_id===custId).forEach(iv=>{ BULK.sel[iv.id]=on; });
+  render();
+}
+
+async function bulkProcess(){
+  const selInvs=(BULK.invoices||[]).filter(iv=>BULK.sel[iv.id]);
+  if(!selInvs.length){ BULK.msg='Select at least one invoice.'; BULK.err=true; render(); return; }
+  const byClient={};
+  selInvs.forEach(iv=>{
+    if(!byClient[iv.customer_id]) byClient[iv.customer_id]={name:iv.customer_name,invoices:[]};
+    byClient[iv.customer_id].invoices.push(iv);
+  });
+  BULK.processing=true; BULK.done=[]; BULK.msg=''; BULK.err=false; render();
+  for(const [custId,g] of Object.entries(byClient)){
+    const amount=g.invoices.reduce((s,iv)=>s+iv.balance,0);
+    const payload={
+      customer_id:custId,
+      amount:Math.round(amount*100)/100,
+      date:BULK.date,
+      mode:BULK.mode,
+      reference:BULK.ref,
+      deposit_account_id:PAY.depositId||'',
+      invoices:g.invoices.map(iv=>({invoice_id:iv.id,amount_applied:Math.round(iv.balance*100)/100}))
+    };
+    try{
+      const r=await fetch('api/payment_record.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const j=await r.json();
+      BULK.done.push({client:g.name,ok:j.ok,ref:j.ok?'#'+(j.payment?.payment_number||''):'',msg:j.ok?'':( j.error||'failed'),amount});
+    }catch(e){
+      BULK.done.push({client:g.name,ok:false,ref:'',msg:String(e),amount});
+    }
+    render();
+  }
+  const okClients=new Set(Object.keys(byClient).filter((_,i)=>BULK.done[i]?.ok));
+  BULK.invoices=BULK.invoices.filter(iv=>!BULK.sel[iv.id]||!okClients.has(iv.customer_id));
+  BULK.sel={};
+  BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=true; });
+  BULK.processing=false;
+  render();
+}
+
+function vBulkPay(){
+  const today=new Date().toISOString().slice(0,10);
+  const selInvs=(BULK.invoices||[]).filter(iv=>BULK.sel[iv.id]);
+  const selTotal=selInvs.reduce((s,iv)=>s+iv.balance,0);
+  const selClientSet=new Set(selInvs.map(iv=>iv.customer_id));
+  const selClients=selClientSet.size;
+
+  let tableHtml='';
+  if(BULK.loading){
+    tableHtml=`<div class="card muted" style="padding:12px">Loading all unpaid invoices from Zoho…</div>`;
+  } else if(BULK.loaded && !BULK.invoices.length){
+    tableHtml=`<div class="ok" style="padding:12px;border-radius:8px">🎉 No unpaid invoices — all clear!</div>`;
+  } else if(BULK.invoices.length){
+    const sorted=[...BULK.invoices].sort((a,b)=>a.customer_name.localeCompare(b.customer_name)||a.date.localeCompare(b.date));
+    let lastCust='';
+    const rows=sorted.map(iv=>{
+      const on=!!BULK.sel[iv.id];
+      const overdue=iv.due_date&&iv.due_date<today;
+      const newCust=iv.customer_id!==lastCust;
+      if(newCust) lastCust=iv.customer_id;
+      const clientInvs=BULK.invoices.filter(x=>x.customer_id===iv.customer_id);
+      const clientAllOn=clientInvs.every(x=>BULK.sel[x.id]);
+      return newCust
+        ? `<tr style="background:#F7F8FB;border-top:2px solid var(--line)">
+            <td style="padding:6px 8px"><input type="checkbox" title="Select all for ${iv.customer_name.replace(/"/g,'')}" ${clientAllOn?'checked':''} onchange="bulkToggleClient('${iv.customer_id}',this.checked)"></td>
+            <td class="l cl" colspan="4" style="padding:6px 8px;font-size:11.5px">${iv.customer_name}</td>
+            <td style="padding:6px 8px;text-align:right;font-size:10.5px;color:var(--mute)">${clientInvs.length} inv</td>
+          </tr>
+          <tr style="${on?'background:#F0FDF4':''}">
+            <td style="padding:4px 8px 4px 24px"><input type="checkbox" ${on?'checked':''} onchange="BULK.sel['${iv.id}']=this.checked;render()"></td>
+            <td class="l" style="padding:4px 8px;font-size:11px;font-weight:600">${iv.number}</td>
+            <td style="padding:4px 8px;font-size:10.5px;color:var(--mute)">${iv.date}</td>
+            <td style="padding:4px 8px;font-size:10.5px;${overdue?'color:var(--bad);font-weight:700':'color:var(--mute)'}">${iv.due_date||''}${overdue?' ⚠':''}</td>
+            <td style="padding:4px 8px;font-size:10.5px;color:var(--mute)">${iv.currency!=='KES'?iv.currency:''}</td>
+            <td style="padding:4px 8px;text-align:right;font-weight:700;font-size:11.5px;color:var(--bad)">KES ${Math.round(iv.balance).toLocaleString('en-KE')}</td>
+          </tr>`
+        : `<tr style="${on?'background:#F0FDF4':''}">
+            <td style="padding:4px 8px 4px 24px"><input type="checkbox" ${on?'checked':''} onchange="BULK.sel['${iv.id}']=this.checked;render()"></td>
+            <td class="l" style="padding:4px 8px;font-size:11px;font-weight:600">${iv.number}</td>
+            <td style="padding:4px 8px;font-size:10.5px;color:var(--mute)">${iv.date}</td>
+            <td style="padding:4px 8px;font-size:10.5px;${overdue?'color:var(--bad);font-weight:700':'color:var(--mute)'}">${iv.due_date||''}${overdue?' ⚠':''}</td>
+            <td style="padding:4px 8px;font-size:10.5px;color:var(--mute)">${iv.currency!=='KES'?iv.currency:''}</td>
+            <td style="padding:4px 8px;text-align:right;font-weight:700;font-size:11.5px;color:var(--bad)">KES ${Math.round(iv.balance).toLocaleString('en-KE')}</td>
+          </tr>`;
+    }).join('');
+    const allOn=BULK.invoices.every(iv=>BULK.sel[iv.id]);
+    tableHtml=`<div class="rptwrap" style="margin-bottom:10px;max-height:360px;overflow-y:auto">
+      <table class="rpt" style="font-size:11px">
+        <thead><tr>
+          <th style="padding:5px 8px"><input type="checkbox" title="Select all" ${allOn?'checked':''} onchange="bulkToggleAll(this.checked)"></th>
+          <th class="l" style="padding:5px 8px">Invoice</th>
+          <th class="l" style="padding:5px 8px">Date</th>
+          <th class="l" style="padding:5px 8px">Due</th>
+          <th class="l" style="padding:5px 8px">Cur</th>
+          <th style="padding:5px 8px;text-align:right">Balance</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="tot">
+          <td colspan="5" style="padding:5px 8px;text-align:right">Selected: ${selInvs.length} invoice${selInvs.length!==1?'s':''} · ${selClients} client${selClients!==1?'s':''}</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--bad)">KES ${Math.round(selTotal).toLocaleString('en-KE')}</td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+  }
+
+  let resultsHtml='';
+  if(BULK.done.length){
+    resultsHtml=`<div class="card" style="padding:10px 13px;margin-bottom:10px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:6px">Results</div>
+      ${BULK.done.map(d=>`<div style="padding:5px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:11.5px">${d.ok?'✅':'❌'} <b>${d.client}</b>${d.ref?' <span style="color:var(--good);font-size:10.5px">'+d.ref+'</span>':''}</span>
+        <span style="font-size:11px;font-weight:700;color:${d.ok?'var(--good)':'var(--bad)'}">${d.ok?'KES '+Math.round(d.amount).toLocaleString('en-KE'):d.msg}</span>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  const modeOpts=[['bankremittance','MPESA / Bank Transfer'],['cash','Cash'],['check','Cheque'],['creditcard','Credit Card'],['others','Other']];
+  const accountSel=PAY.accounts.length
+    ?`<select onchange="PAY.depositId=this.value" style="margin-bottom:0">${PAY.accounts.map(a=>`<option value="${a.id}" ${a.id===PAY.depositId?'selected':''}>${a.name}</option>`).join('')}</select>`
+    :`<select style="margin-bottom:0"><option value="">Loading accounts…</option></select>`;
+
+  const canProcess=selInvs.length>0&&!BULK.processing;
+
+  return `<div class="em-compact">
+  <h2>⚡ Bulk Mark Invoices Paid</h2>
+  ${BULK.msg?`<div class="card" style="color:${BULK.err?'var(--bad)':'var(--good)'};padding:8px 13px;margin-bottom:8px">${BULK.msg}</div>`:''}
+  ${resultsHtml}
+  ${tableHtml}
+  ${(BULK.loaded&&BULK.invoices.length)||BULK.done.length?`
+  <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:4px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:6px">Payment settings — applied to all selected</div>
+    <div class="grid2" style="gap:8px">
+      <div><label>Payment date *</label><input type="date" value="${BULK.date}" onchange="BULK.date=this.value" style="margin-bottom:0"></div>
+      <div><label>Payment mode</label><select onchange="BULK.mode=this.value" style="margin-bottom:0">${modeOpts.map(([v,l])=>`<option value="${v}" ${v===BULK.mode?'selected':''}>${l}</option>`).join('')}</select></div>
+    </div>
+    <div class="grid2" style="gap:8px;margin-top:6px">
+      <div><label>Deposit to</label>${accountSel}</div>
+      <div><label>Reference # (optional)</label><input type="text" placeholder="e.g. MPESA ref, batch #" value="${BULK.ref}" oninput="BULK.ref=this.value" style="margin-bottom:0"></div>
+    </div>
+    <button class="btn" onclick="bulkProcess()" style="margin-top:12px;width:100%" ${canProcess?'':'disabled'}>
+      ${BULK.processing?'⏳ Processing payments in Zoho…':`⚡ Mark ${selInvs.length} Invoice${selInvs.length!==1?'s':''} Paid across ${selClients} Client${selClients!==1?'s':''} — KES ${Math.round(selTotal).toLocaleString('en-KE')}`}
+    </button>
+    <div class="muted" style="font-size:10.5px;margin-top:6px">One payment per client will be created in Zoho Books. Each invoice balance is applied in full.</div>
+  </div>`:''}
+  </div>`;
+}
+/* ================= end Bulk Mark Paid ================= */
 
 /* ================= To-Do ================= */
 let TASK = { loaded:false, loading:false, tasks:[], users:[], inbox:[], inboxState:'', inboxMsg:'',
