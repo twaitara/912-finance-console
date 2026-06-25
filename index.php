@@ -726,6 +726,7 @@ if (empty($_SESSION['auth'])):
         <button data-tab="etr">🔍 ETR Check</button>
         <button data-tab="invrep">🧾 Invoices</button>
         <button data-tab="quotes">📋 Quotes</button>
+        <button data-tab="payments">💳 Record Payment</button>
       </div>
     </div>
 
@@ -1009,6 +1010,7 @@ function render(){
   if(TAB==='etr') p.innerHTML = vETR();
   if(TAB==='invrep') p.innerHTML = vInvRep();
   if(TAB==='quotes') p.innerHTML = vQuotes();
+  if(TAB==='payments'){ p.innerHTML = vPayments(); if(!PAY.loaded) payLoadClients(); }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -2907,6 +2909,210 @@ function emailDraft(){
     }).catch(e=>{ EMAIL.saving=false; EMAIL.msg='Error: '+e; EMAIL.msgErr=true; render(); });
 }
 /* ================= end Emails ================= */
+
+/* ================= Payments (record payment → Zoho Books) ================= */
+let PAY = {
+  clients:[], loaded:false, loading:false,
+  q:'', picked:false, clientId:'', clientName:'',
+  invLoading:false, invoices:[], sel:{},
+  amount:'', gross:'', date:(()=>{ const d=new Date(); return d.toISOString().slice(0,10); })(),
+  mode:'bankremittance', ref:'', notes:'', bankCharges:'',
+  depositId:'', accounts:[], accsLoaded:false,
+  msg:'', msgErr:false, saving:false, done:null
+};
+
+function payLoadClients(){
+  if(PAY.loaded||PAY.loading) return;
+  PAY.loading=true;
+  fetch('api/email_clients.php',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    PAY.loading=false; PAY.loaded=true;
+    PAY.clients = j.ok ? j.clients : [];
+    render();
+  }).catch(e=>{ PAY.loading=false; PAY.loaded=true; render(); });
+}
+function payLoadAccounts(){
+  if(PAY.accsLoaded) return;
+  fetch('api/payment_accounts.php',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    PAY.accsLoaded=true;
+    PAY.accounts = j.ok ? j.accounts : [];
+    if(!PAY.depositId && PAY.accounts.length) PAY.depositId=PAY.accounts[0].id;
+    const el=document.getElementById('payDepositSel'); if(el) payRenderAccounts();
+  }).catch(()=>{ PAY.accsLoaded=true; });
+}
+function payRenderAccounts(){
+  const el=document.getElementById('payDepositSel'); if(!el) return;
+  el.innerHTML=PAY.accounts.map(a=>`<option value="${a.id}" ${a.id===PAY.depositId?'selected':''}>${a.name}</option>`).join('');
+}
+function paySearch(v){ PAY.q=v; PAY.picked=false; const el=document.getElementById('payCList'); if(el) el.innerHTML=payCListHtml(); }
+function payPickClient(id){
+  const c=(PAY.clients||[]).find(x=>x.id===id); if(!c) return;
+  PAY.q=c.name; PAY.picked=true; PAY.clientId=id; PAY.clientName=c.name;
+  PAY.invoices=[]; PAY.sel={}; PAY.invLoading=true; PAY.done=null; PAY.msg=''; render();
+  fetch('api/client_account.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({customer_id:id,from:'',to:''})}).then(r=>r.json()).then(j=>{
+    PAY.invLoading=false;
+    if(j.ok){ PAY.invoices=(j.invoices||[]).filter(iv=>iv.unpaid); PAY.sel={}; PAY.invoices.forEach(iv=>{ PAY.sel[iv.id||iv.number]=true; }); }
+    else { PAY.msg='Could not load invoices: '+(j.error||'failed'); PAY.msgErr=true; }
+    payLoadAccounts(); render();
+  }).catch(e=>{ PAY.invLoading=false; PAY.msg='Error: '+e; PAY.msgErr=true; render(); });
+}
+function payCListHtml(){
+  const q=(PAY.q||'').trim().toLowerCase();
+  if(PAY.picked||!q) return '';
+  const matches=(PAY.clients||[]).filter(c=>(c.name||'').toLowerCase().includes(q)).slice(0,12);
+  if(!matches.length) return `<div class="muted" style="padding:8px 4px">No client found.</div>`;
+  return `<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:8px">`
+    +matches.map(c=>`<div style="padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12.5px;font-weight:600;text-transform:uppercase" onmousedown="payPickClient('${c.id}')">${c.name||'(no name)'}</div>`).join('')+'</div>';
+}
+function paySelTotal(){
+  return (PAY.invoices||[]).filter(iv=>PAY.sel[iv.id||iv.number]).reduce((s,iv)=>s+(iv.balance||0),0);
+}
+function payWhtHtml(gross){
+  if(!gross||gross<=0) return '';
+  const rates=[{r:0.05,label:'5% — Professional / Management / Training / Technical fees'},
+               {r:0.03,label:'3% — Contractual services / Supply of goods / Commissions'},
+               {r:0.02,label:'2% — Imported goods commission'}];
+  return `<div style="margin:6px 0 4px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">KRA Withholding Tax suggestions — click to apply</div>`
+    +rates.map(({r,label})=>{
+      const wht=Math.round(gross*r); const net=gross-wht;
+      return `<div onclick="payApplyWht(${net})" style="cursor:pointer;padding:6px 10px;border:1px solid var(--line);border-radius:7px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;background:#fff;transition:background .12s" onmouseover="this.style.background='#FFF4EB';this.style.borderColor='#F7C99A'" onmouseout="this.style.background='#fff';this.style.borderColor='var(--line)'">
+        <span style="font-size:11px;color:var(--ink)">${label}</span>
+        <span style="font-size:11px;text-align:right;flex:0 0 auto;margin-left:8px"><span style="color:var(--bad);font-weight:700">−KES ${Math.round(wht).toLocaleString('en-KE')}</span> <span style="color:var(--mute)">→ net</span> <span style="font-weight:700">KES ${Math.round(net).toLocaleString('en-KE')}</span></span>
+      </div>`;}).join('')+'</div>';
+}
+function payApplyWht(net){ PAY.amount=String(net); const el=document.getElementById('payAmount'); if(el){ el.value=net; } }
+function payGrossChange(v){
+  PAY.gross=v;
+  const g=parseFloat(v)||0;
+  const el=document.getElementById('payWht'); if(el) el.innerHTML=payWhtHtml(g);
+}
+function payAmountChange(v){ PAY.amount=v; }
+
+async function paySubmit(){
+  if(!PAY.clientId){ PAY.msg='Select a client first.'; PAY.msgErr=true; render(); return; }
+  const amt=parseFloat(PAY.amount||PAY.gross)||0;
+  if(amt<=0){ PAY.msg='Enter the amount received.'; PAY.msgErr=true; render(); return; }
+  const selInvs=(PAY.invoices||[]).filter(iv=>PAY.sel[iv.id||iv.number]);
+  if(!selInvs.length){ PAY.msg='Select at least one invoice to apply the payment to.'; PAY.msgErr=true; render(); return; }
+  PAY.saving=true; PAY.msg=''; render();
+  const invoices=selInvs.map(iv=>({ invoice_id:iv.id, amount_applied:Math.min(amt, iv.balance||0) }));
+  try{
+    const r=await fetch('api/payment_record.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ customer_id:PAY.clientId, amount:amt, date:PAY.date, mode:PAY.mode,
+        reference:PAY.ref, notes:PAY.notes, bank_charges:parseFloat(PAY.bankCharges)||0,
+        deposit_account_id:PAY.depositId, invoices })});
+    const j=await r.json();
+    PAY.saving=false;
+    if(j.ok){ PAY.done=j.payment; PAY.msg='Payment recorded in Zoho Books — #'+j.payment.payment_number; PAY.msgErr=false; PAY.amount=''; PAY.gross=''; PAY.invoices=[]; PAY.sel={}; PAY.picked=false; PAY.q=''; PAY.clientId=''; }
+    else { PAY.msg='Error: '+(j.error||'failed'); PAY.msgErr=true; }
+  }catch(e){ PAY.saving=false; PAY.msg='Error: '+e; PAY.msgErr=true; }
+  render();
+}
+
+function vPayments(){
+  const today=new Date().toISOString().slice(0,10);
+  const selTotal=paySelTotal();
+  const gross=parseFloat(PAY.gross)||selTotal;
+
+  let invoiceBlock='';
+  if(PAY.invLoading){
+    invoiceBlock=`<div class="card muted" style="padding:10px 13px">Loading invoices…</div>`;
+  } else if(PAY.clientId && PAY.invoices.length===0 && !PAY.invLoading){
+    invoiceBlock=`<div class="card muted" style="padding:10px 13px">No unpaid invoices for this client.</div>`;
+  } else if(PAY.invoices.length){
+    const invRows=PAY.invoices.map(iv=>{
+      const key=iv.id||iv.number;
+      const on=!!PAY.sel[key];
+      const bal=iv.balance||0;
+      const sent=on?'text-decoration:line-through;color:#aaa':'';
+      return `<tr style="${on?'background:#F7FDF9':''}">
+        <td class="l" style="padding:5px 8px"><input type="checkbox" ${on?'checked':''} onchange="PAY.sel['${key}']=this.checked;payGrossChange(document.getElementById('payGross')?.value||'');render()"></td>
+        <td class="l" style="padding:5px 8px;font-weight:700;font-size:11.5px">${iv.number||key}</td>
+        <td style="padding:5px 8px;font-size:10.5px;color:var(--mute)">${iv.date||''}</td>
+        <td style="padding:5px 8px;font-size:10.5px;color:var(--mute)">${iv.dueDate||iv.due_date||''}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:700;font-size:11.5px;color:var(--bad)">KES ${Math.round(bal).toLocaleString('en-KE')}</td>
+      </tr>`;}).join('');
+    invoiceBlock=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin:10px 0 4px">Unpaid invoices — tick those this payment covers</div>
+      <div class="rptwrap" style="margin-bottom:8px">
+        <table class="rpt" style="font-size:11px">
+          <thead><tr>
+            <th class="l" style="padding:5px 8px"><input type="checkbox" title="Select all" onchange="PAY.invoices.forEach(iv=>{PAY.sel[iv.id||iv.number]=this.checked});render()"></th>
+            <th class="l" style="padding:5px 8px">Invoice</th><th class="l" style="padding:5px 8px">Date</th><th class="l" style="padding:5px 8px">Due</th><th style="padding:5px 8px;text-align:right">Balance</th>
+          </tr></thead>
+          <tbody>${invRows}</tbody>
+          <tfoot><tr class="tot"><td colspan="4" style="padding:5px 8px;text-align:right">Selected total</td><td style="padding:5px 8px;text-align:right;color:var(--bad)">KES ${Math.round(selTotal).toLocaleString('en-KE')}</td></tr></tfoot>
+        </table>
+      </div>`;
+  }
+
+  const modeOpts=[['bankremittance','MPESA / Bank Transfer'],['cash','Cash'],['check','Cheque'],['creditcard','Credit Card'],['others','Other']];
+  const accountSel=PAY.accounts.length
+    ? `<select id="payDepositSel" onchange="PAY.depositId=this.value" style="margin-bottom:0">${PAY.accounts.map(a=>`<option value="${a.id}" ${a.id===PAY.depositId?'selected':''}>${a.name}</option>`).join('')}</select>`
+    : `<select id="payDepositSel" style="margin-bottom:0"><option value="">Loading accounts…</option></select>`;
+
+  return `<div class="em-compact">
+  <h2>💳 Record a Payment</h2>
+  ${PAY.done?`<div class="ok" style="padding:10px 13px;margin-bottom:10px;border-radius:9px">
+    ✓ Payment <b>#${PAY.done.payment_number}</b> recorded in Zoho Books — KES ${Math.round(PAY.done.amount||0).toLocaleString('en-KE')} on ${PAY.done.date||''}
+    <span style="display:block;font-size:10.5px;margin-top:3px;color:var(--good)">The invoice balances have been updated in Zoho.</span>
+  </div>`:''}
+  <label>Client</label>
+  <input id="paySearch" type="text" autocomplete="off" placeholder="🔍 Search client name…" value="${(PAY.q||'').replace(/"/g,'&quot;')}" oninput="paySearch(this.value)" onblur="setTimeout(()=>{const el=document.getElementById('payCList');if(el&&!PAY.picked){}},200)">
+  <div id="payCList">${payCListHtml()}</div>
+
+  ${invoiceBlock}
+
+  ${PAY.clientId && !PAY.invLoading && PAY.invoices.length ? `
+  <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">Payment details</div>
+    <div class="grid2" style="gap:8px;margin-bottom:0">
+      <div>
+        <label>Invoice gross (for WHT calc)</label>
+        <input id="payGross" type="number" min="0" step="0.01" placeholder="e.g. ${Math.round(selTotal)||''}" value="${PAY.gross||''}" oninput="payGrossChange(this.value)" style="margin-bottom:0">
+      </div>
+      <div>
+        <label>Amount received (KES) *</label>
+        <input id="payAmount" type="number" min="0" step="0.01" placeholder="Actual amount received" value="${PAY.amount||''}" oninput="payAmountChange(this.value)" style="margin-bottom:0">
+      </div>
+    </div>
+    <div id="payWht" style="margin:6px 0">${payWhtHtml(gross)}</div>
+    <div class="grid2" style="gap:8px">
+      <div>
+        <label>Payment date *</label>
+        <input type="date" value="${PAY.date||today}" onchange="PAY.date=this.value" style="margin-bottom:0">
+      </div>
+      <div>
+        <label>Bank charges (if any)</label>
+        <input type="number" min="0" step="0.01" placeholder="0" value="${PAY.bankCharges||''}" oninput="PAY.bankCharges=this.value" style="margin-bottom:0">
+      </div>
+    </div>
+    <div class="grid2" style="gap:8px;margin-top:6px">
+      <div>
+        <label>Payment mode</label>
+        <select onchange="PAY.mode=this.value" style="margin-bottom:0">${modeOpts.map(([v,l])=>`<option value="${v}" ${v===PAY.mode?'selected':''}>${l}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Deposit to</label>
+        ${accountSel}
+      </div>
+    </div>
+    <div class="grid2" style="gap:8px;margin-top:6px">
+      <div>
+        <label>Reference # / Transaction ID</label>
+        <input type="text" placeholder="e.g. MPESA ref, cheque #" value="${PAY.ref||''}" oninput="PAY.ref=this.value" style="margin-bottom:0">
+      </div>
+      <div>
+        <label>Notes</label>
+        <input type="text" placeholder="Optional notes" value="${PAY.notes||''}" oninput="PAY.notes=this.value" style="margin-bottom:0">
+      </div>
+    </div>
+    ${PAY.msg?`<div class="${PAY.msgErr?'warn':'ok'}" style="margin-top:8px;padding:8px 11px;border-radius:8px;font-size:12px">${PAY.msg}</div>`:''}
+    <button class="btn" style="margin-top:10px" onclick="paySubmit()" ${PAY.saving?'disabled':''}>${PAY.saving?'Saving to Zoho…':'💾 Save payment to Zoho Books'}</button>
+    <div class="muted" style="margin-top:6px">This records the payment directly in Zoho Books and updates the invoice balance immediately.</div>
+  </div>` : (PAY.msg&&!PAY.clientId?`<div class="warn" style="margin-top:8px">${PAY.msg}</div>`:'')}
+  </div>`;
+}
+/* ================= end Payments ================= */
 
 /* ================= To-Do ================= */
 let TASK = { loaded:false, loading:false, tasks:[], users:[], inbox:[], inboxState:'', inboxMsg:'',
