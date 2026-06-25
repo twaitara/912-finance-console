@@ -1052,6 +1052,10 @@ function tabRefresh(){
 
 function render(){
   const p = document.getElementById('pane');
+  // Preserve text input focus + cursor position across re-renders (fixes search inputs)
+  const _ae=document.activeElement;
+  const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
+  const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -1078,6 +1082,8 @@ function render(){
   paintFund();
   if(QB.modalOpen){ const mb=document.getElementById('qbModalBody'); if(mb) mb.innerHTML=vNewQuote();
     const mt=document.getElementById('qbModalTitle'); if(mt) mt.textContent=QB.id?'Edit quote':'New quote'; }
+  // Restore focus to whichever text input was active before the re-render
+  if(_fid){ const re=document.getElementById(_fid); if(re){ re.focus(); try{re.setSelectionRange(_ss,_se);}catch(e){} } }
 }
 
 let DPAID = {loaded:false, loading:false, data:null};
