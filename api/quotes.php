@@ -139,14 +139,19 @@ try {
         $terms = substr(trim((string)($in['terms'] ?? '')), 0, 2000);
         $ref   = substr(trim((string)($in['reference'] ?? '')), 0, 80);
         $subj  = substr(trim((string)($in['subject'] ?? '')), 0, 190);
+        if ($subj === '') throw new Exception('Subject is required.');           // subject is mandatory
         $qdate = preg_replace('/[^0-9\-]/', '', (string)($in['quote_date'] ?? '')) ?: null;
         $edate = preg_replace('/[^0-9\-]/', '', (string)($in['expiry_date'] ?? '')) ?: null;
         $itemsJson = json_encode($items);
 
+        // editable only while a quote is still awaiting approval
+        $editable = ['local_draft', 'draft', 'pending_approval'];
+
         if (!empty($in['id'])) {
             $row = $own($in['id']);
-            // a quote already pushed to Zoho is locked locally (edit it in Zoho)
-            if (!empty($row['zoho_estimate_id'])) throw new Exception('Already pushed to Zoho — edit it there.');
+            if (!in_array($row['status'], $editable, true)) {
+                throw new Exception('This quote can no longer be edited (status: ' . $row['status'] . '). Only quotes awaiting approval are editable.');
+            }
             $pdo->prepare("UPDATE quotes SET zoho_customer_id=?, customer_name=?, reference=?, subject=?, quote_date=?, expiry_date=?, currency=?, line_items=?, notes=?, terms=?, sub_total=?, tax_amount=?, discount_value=?, discount_type=?, discount_amount=?, total=? WHERE id=?")
                 ->execute([$custId, $custNm, $ref, $subj, $qdate, $edate, $cur, $itemsJson, $notes, $terms, $sub, $tax, $discVal, $discType, $discAmt, $total, (int)$row['id']]);
             $id = (int)$row['id'];

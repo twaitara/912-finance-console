@@ -2817,7 +2817,9 @@ function navActivate(b){
 }
 
 /* ===================== Quotes → Zoho (Create group) ===================== */
-function qbBlank(){ return { id:0, customerId:'', customerName:'', currency:'KES',
+const EDITABLE_STATUSES = ['local_draft','draft','pending_approval'];
+function mqEditable(q){ return EDITABLE_STATUSES.includes(q.status); }
+function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'', customerName:'', currency:'KES',
            reference:'', subject:'', quoteDate:today(), expiryDate:'',
            items:[{name:'',description:'',qty:1,rate:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
            discVal:0, discType:'percent',
@@ -2896,7 +2898,7 @@ function vNewQuote(){
       <div><label>Quote date</label><input type="date" value="${qesc(QB.quoteDate)}" oninput="QB.quoteDate=this.value" style="margin-bottom:0"></div>
       <div><label>Expiry date</label><input type="date" value="${qesc(QB.expiryDate)}" oninput="QB.expiryDate=this.value" style="margin-bottom:0"></div>
     </div>
-    <label style="margin-top:14px">Subject</label>
+    <label style="margin-top:14px"><span style="color:var(--bad)">*</span> Subject (required)</label>
     <input type="text" placeholder="Let your customer know what this quote is for" value="${qesc(QB.subject)}" oninput="QB.subject=this.value" style="margin-bottom:0">
   </div>
 
@@ -2920,11 +2922,14 @@ function vNewQuote(){
   </div>
 
   ${QB.msg?`<div class="${QB.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(QB.msg)}</div>`:''}
-  <div class="row" style="gap:8px">
-    <button class="btn sec" style="flex:1" onclick="qbSave()" ${QB.busy?'disabled':''}>Save draft</button>
-    <button class="btn" style="flex:1" onclick="qbSaveAndPush()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save & push to Zoho →'}</button>
-  </div>
-  <div class="muted" style="font-size:11px;margin-top:8px">Pushing creates a Zoho estimate and submits it for approval. You'll see Approved/Declined under <b>My Quotes</b>.</div>`;
+  ${QB.zohoId
+    ? `<div class="warn" style="background:#FFF4D6;color:#9A6700;margin-bottom:10px;font-size:11.5px">Editing a quote that's awaiting approval in Zoho. Saving updates it in Zoho and re-submits it for approval.</div>
+       <button class="btn" style="width:100%" onclick="qbSaveUpdate()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save changes & re-submit to Zoho →'}</button>`
+    : `<div class="row" style="gap:8px">
+        <button class="btn sec" style="flex:1" onclick="qbSave()" ${QB.busy?'disabled':''}>Save draft</button>
+        <button class="btn" style="flex:1" onclick="qbSaveAndPush()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save & push to Zoho →'}</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:8px">Pushing creates a Zoho estimate and submits it for approval. You'll see Approved/Declined under <b>My Quotes</b>.</div>`}`;
 }
 function qbTotalsHtml(){
   const cur=QB.currency||'KES';
@@ -2963,7 +2968,13 @@ function qbPayload(){ return { id:QB.id||undefined, zoho_customer_id:QB.customer
   currency:QB.currency, reference:QB.reference, subject:QB.subject, quote_date:QB.quoteDate, expiry_date:QB.expiryDate,
   notes:QB.notes, terms:QB.terms, discount_value:QB.discVal, discount_type:QB.discType,
   line_items:QB.items.map(it=>({name:it.name,description:it.description,qty:it.qty,rate:it.rate,tax:it.tax||'vat'})) }; }
-function qbSave(cb){ QB.busy=true; QB.msg=''; render();
+function qbReqOk(){
+  if(!QB.customerId && !QB.customerName){ QB.msg='Choose a customer.'; QB.err=true; render(); return false; }
+  if(!String(QB.subject||'').trim()){ QB.msg='Subject is required.'; QB.err=true; render(); return false; }
+  if(!QB.items.some(it=>String(it.name||'').trim())){ QB.msg='Add at least one line item.'; QB.err=true; render(); return false; }
+  return true;
+}
+function qbSave(cb){ if(!qbReqOk())return; QB.busy=true; QB.msg=''; render();
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:'save'},qbPayload()))})
   .then(r=>r.json()).then(j=>{ QB.busy=false;
     if(j.ok){ QB.id=j.quote.id; QB.msg='Saved draft #'+j.quote.id+'.'; QB.err=false; MQ.loaded=false; if(cb){cb();return;} render(); }
@@ -2971,6 +2982,16 @@ function qbSave(cb){ QB.busy=true; QB.msg=''; render();
   }).catch(e=>{ QB.busy=false; QB.msg='Error: '+e; QB.err=true; render(); });
 }
 function qbSaveAndPush(){ qbSave(()=>qbPush(QB.id)); }
+function qbSaveUpdate(){ qbSave(()=>qbUpdate(QB.id)); }
+function qbUpdate(id){ QB.busy=true; QB.msg='Updating Zoho…'; QB.err=false; render();
+  fetch('api/quote_update.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ QB.busy=false;
+    if(j.ok){ QB=Object.assign(qbBlank(), { assignOpen:QB.assignOpen, assignLoaded:QB.assignLoaded, assignments:QB.assignments, users:QB.users, aCust:null, aUsers:[] });
+      MQ.loaded=false; MQ.msg='Quote updated in Zoho — '+(j.status==='pending_approval'?'re-submitted for approval.':'status: '+j.status+'.')+(j.note?' '+j.note:''); MQ.err=!!j.note;
+      navTo('myquotes');
+    } else { QB.msg=j.error||'Update failed.'; QB.err=true; render(); }
+  }).catch(e=>{ QB.busy=false; QB.msg='Error: '+e; QB.err=true; render(); });
+}
 function qbPush(id){ QB.busy=true; QB.msg='Pushing to Zoho…'; QB.err=false; render();
   fetch('api/quote_push.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ QB.busy=false;
@@ -3065,8 +3086,8 @@ function vMyQuotes(){
         <div style="margin-top:4px">${quoteBadge(q.status)}</div></div></div>
       <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqTogglePreview(${q.id})">${isOpen?'Hide ▴':'Preview ▾'}</button>
-        ${!pushed?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqEdit(${q.id})">Edit</button>
-          <button class="btn" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqPush(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Pushing…':'Push to Zoho →'}</button>`:''}
+        ${mqEditable(q)?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqEdit(${q.id})">Edit</button>`:''}
+        ${!pushed?`<button class="btn" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqPush(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Pushing…':'Push to Zoho →'}</button>`:''}
         ${pushed?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSyncOne(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Checking…':'↻ Check status'}</button>`:''}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqDelete(${q.id})">Remove</button>
       </div>
@@ -3121,7 +3142,8 @@ function mqPush(id){ MQ.busyId=id; render();
 }
 function mqEdit(id){ fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',id})})
   .then(r=>r.json()).then(j=>{ if(!j.ok){ alert(j.error||'Could not load'); return; } const q=j.quote;
-    QB.id=q.id; QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
+    QB.id=q.id; QB.zohoId=q.zoho_estimate_id||''; QB.status=q.status||'local_draft';
+    QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
     QB.reference=q.reference||''; QB.subject=q.subject||''; QB.quoteDate=q.quote_date||today(); QB.expiryDate=q.expiry_date||'';
     QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,tax:'vat'}];
     QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; navTo('newquote');
