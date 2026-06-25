@@ -395,6 +395,10 @@ if (empty($_SESSION['auth'])):
   .qact .qb-del:hover{background:#FDECEA;border-color:#F4C7C0}
 
   /* ---- To-Do: compact, scannable task rows that expand to edit ---- */
+  .tkgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start;margin-bottom:6px}
+  .tkgrid .tkcard{margin-bottom:0}
+  @media (max-width:1040px){ .tkgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  @media (max-width:680px){ .tkgrid{grid-template-columns:1fr} }
   .tkcard{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--sh-sm);transition:box-shadow .18s ease,border-color .18s ease}
   .tkcard:hover{box-shadow:var(--sh-md)}
   .tkcard.open{border-color:#CBD5E1;box-shadow:var(--sh-md)}
@@ -2981,10 +2985,10 @@ function vTodo(){
     ${TASK.msg?`<div class="${TASK.msgErr?'warn':'ok'}" style="margin-bottom:10px">${TASK.msg}</div>`:''}
     <div class="muted" style="margin:-4px 2px 14px;font-size:12px">Tasks assigned to you. Tap a task to open it, tick the circle when it's done.</div>
     <div class="sect" style="margin-top:6px"><b>Open</b><span class="ln"></span><span class="pill" style="background:#FFF4EB;color:var(--orange)">${open.length}</span></div>
-    ${open.length? open.map(todoTaskCard).join('') : `<div class="card muted" style="text-align:center;padding:20px">Nothing assigned to you right now. 🎉</div>`}
+    ${open.length? `<div class="tkgrid">${open.map(todoTaskCard).join('')}</div>` : `<div class="card muted" style="text-align:center;padding:20px">Nothing assigned to you right now. 🎉</div>`}
     ${done.length?`<div class="sect"><b>Done</b><span class="ln"></span><span class="pill" style="background:#E7F6EC;color:var(--good)">${done.length}</span>
         <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="TASK.showDone=!TASK.showDone;render()">${TASK.showDone?'Hide':'Show'}</button>
-      </div>${TASK.showDone? done.map(todoTaskCard).join('') : ''}`:''}`;
+      </div>${TASK.showDone? `<div class="tkgrid">${done.map(todoTaskCard).join('')}</div>` : ''}`:''}`;
   }
 
   return `<h2>To-Do</h2>
@@ -3016,7 +3020,7 @@ function vTodo(){
   ${todoInboxHtml()}
 
   <div class="sect"><b>Open tasks</b><span class="ln"></span><span class="pill" style="background:#FFF4EB;color:var(--orange)">${open.length}</span></div>
-  ${open.length? open.map(todoTaskCard).join('') : `<div class="card muted" style="text-align:center;padding:20px">Nothing open. 🎉</div>`}
+  ${open.length? `<div class="tkgrid">${open.map(todoTaskCard).join('')}</div>` : `<div class="card muted" style="text-align:center;padding:20px">Nothing open. 🎉</div>`}
 
   ${done.length?`<div class="sect"><b>Done</b><span class="ln"></span><span class="pill" style="background:#E7F6EC;color:var(--good)">${done.length}</span>
       <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="TASK.showDone=!TASK.showDone;render()">${TASK.showDone?'Hide':'Show'}</button>
