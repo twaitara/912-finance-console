@@ -2915,7 +2915,7 @@ let PAY = {
   clients:[], loaded:false, loading:false,
   q:'', picked:false, clientId:'', clientName:'',
   invLoading:false, invoices:[], sel:{},
-  amount:'', gross:'', date:(()=>{ const d=new Date(); return d.toISOString().slice(0,10); })(),
+  amount:'', gross:'', whtSel:{}, date:(()=>{ const d=new Date(); return d.toISOString().slice(0,10); })(),
   mode:'bankremittance', ref:'', notes:'', bankCharges:'',
   depositId:'', accounts:[], accsLoaded:false,
   msg:'', msgErr:false, saving:false, done:null
@@ -2967,26 +2967,51 @@ function payCListHtml(){
 function paySelTotal(){
   return (PAY.invoices||[]).filter(iv=>PAY.sel[iv.id||iv.number]).reduce((s,iv)=>s+(iv.balance||0),0);
 }
-function payWhtHtml(gross){
-  if(!gross||gross<=0) return '';
-  const rates=[{r:0.05,label:'5% — Professional / Management / Training / Technical fees'},
-               {r:0.03,label:'3% — Contractual services / Supply of goods / Commissions'},
-               {r:0.02,label:'2% — Imported goods commission'}];
-  return `<div style="margin:6px 0 4px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">KRA Withholding Tax suggestions — click to apply</div>`
-    +rates.map(({r,label})=>{
-      const wht=Math.round(gross*r); const net=gross-wht;
-      return `<div onclick="payApplyWht(${net})" style="cursor:pointer;padding:6px 10px;border:1px solid var(--line);border-radius:7px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;background:#fff;transition:background .12s" onmouseover="this.style.background='#FFF4EB';this.style.borderColor='#F7C99A'" onmouseout="this.style.background='#fff';this.style.borderColor='var(--line)'">
-        <span style="font-size:11px;color:var(--ink)">${label}</span>
-        <span style="font-size:11px;text-align:right;flex:0 0 auto;margin-left:8px"><span style="color:var(--bad);font-weight:700">−KES ${Math.round(wht).toLocaleString('en-KE')}</span> <span style="color:var(--mute)">→ net</span> <span style="font-weight:700">KES ${Math.round(net).toLocaleString('en-KE')}</span></span>
-      </div>`;}).join('')+'</div>';
+const WHT_RATES=[
+  {key:'5',  r:0.05, label:'5% — Professional / Management / Consulting / Training / Technical'},
+  {key:'3',  r:0.03, label:'3% — Contractual services / Supply of goods / Commissions'},
+  {key:'2',  r:0.02, label:'2% — Imported goods commission'},
+  {key:'10', r:0.10, label:'10% — Dividends (resident)'},
+  {key:'15', r:0.15, label:'15% — Interest / Royalties'},
+];
+function payWhtToggle(key){
+  PAY.whtSel[key]=!PAY.whtSel[key];
+  const el=document.getElementById('payWht');
+  if(el) el.innerHTML=payWhtHtml(parseFloat(PAY.gross)||0);
 }
-function payApplyWht(net){ PAY.amount=String(net); const el=document.getElementById('payAmount'); if(el){ el.value=net; } }
+function payApplyWht(net){ PAY.amount=String(net); const el=document.getElementById('payAmount'); if(el) el.value=net; }
 function payGrossChange(v){
   PAY.gross=v;
-  const g=parseFloat(v)||0;
-  const el=document.getElementById('payWht'); if(el) el.innerHTML=payWhtHtml(g);
+  const el=document.getElementById('payWht'); if(el) el.innerHTML=payWhtHtml(parseFloat(v)||0);
 }
 function payAmountChange(v){ PAY.amount=v; }
+function payWhtHtml(gross){
+  if(!gross||gross<=0) return '';
+  let totalWht=0;
+  WHT_RATES.forEach(({key,r})=>{ if(PAY.whtSel[key]) totalWht+=gross*r; });
+  const net=gross-totalWht;
+  const rows=WHT_RATES.map(({key,r,label})=>{
+    const wht=Math.round(gross*r); const on=!!PAY.whtSel[key];
+    return `<tr style="${on?'background:#FFF4EB':''}">
+      <td style="padding:5px 8px;width:28px"><input type="checkbox" ${on?'checked':''} onchange="payWhtToggle('${key}')"></td>
+      <td class="l" style="padding:5px 8px;font-size:11px">${label}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--bad);font-size:11px;white-space:nowrap">KES ${wht.toLocaleString('en-KE')}</td>
+    </tr>`;}).join('');
+  const summary=totalWht>0
+    ?`<div style="margin-top:6px;padding:8px 11px;background:#FFF4EB;border:1.5px solid #F7C99A;border-radius:8px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:11.5px"><b>Combined WHT:</b> <span style="color:var(--bad);font-weight:700">−KES ${Math.round(totalWht).toLocaleString('en-KE')}</span>&nbsp;&nbsp;<span style="color:var(--mute)">→ client pays:</span> <b style="font-size:13px">KES ${Math.round(net).toLocaleString('en-KE')}</b></span>
+        <button onclick="payApplyWht(${Math.round(net)})" style="border:1.5px solid var(--orange);color:var(--orange);background:#fff;border-radius:7px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">↓ Use KES ${Math.round(net).toLocaleString('en-KE')}</button>
+      </div>`
+    :`<div class="muted" style="margin-top:4px;font-size:10.5px">Tick one or more WHT types — combined deduction and net amount appear here.</div>`;
+  return `<div style="margin:6px 0">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">KRA Withholding Tax — tick all that apply (combinations allowed)</div>
+    <div class="rptwrap"><table class="rpt" style="font-size:11px">
+      <thead><tr><th style="padding:5px 8px;width:28px"></th><th class="l" style="padding:5px 8px">WHT type</th><th style="padding:5px 8px;text-align:right">Deduction on KES ${Math.round(gross).toLocaleString('en-KE')}</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${summary}
+  </div>`;
+}
 
 async function paySubmit(){
   if(!PAY.clientId){ PAY.msg='Select a client first.'; PAY.msgErr=true; render(); return; }
