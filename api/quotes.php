@@ -34,11 +34,23 @@ function quotes_table(PDO $pdo){
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    // additive columns for the fuller (Zoho-style) form — safe to re-run
+    foreach ([
+        "ADD COLUMN reference VARCHAR(80) DEFAULT '' AFTER customer_name",
+        "ADD COLUMN subject VARCHAR(190) DEFAULT '' AFTER reference",
+        "ADD COLUMN quote_date DATE NULL AFTER subject",
+        "ADD COLUMN expiry_date DATE NULL AFTER quote_date",
+        "ADD COLUMN terms TEXT AFTER notes",
+        "ADD COLUMN discount_value DECIMAL(12,2) DEFAULT 0 AFTER tax_amount",
+        "ADD COLUMN discount_type VARCHAR(10) DEFAULT 'percent' AFTER discount_value",
+        "ADD COLUMN discount_amount DECIMAL(14,2) DEFAULT 0 AFTER discount_type",
+    ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
 }
 
-/* normalise + price the line items; returns [cleanItems, sub, tax, total] */
-function quote_price($rawItems, $vatRate){
-    $items = []; $sub = 0.0;
+/* normalise + price line items (with per-line tax + an entity discount applied before tax).
+   Returns [cleanItems, sub, discAmt, tax, total]. */
+function quote_price($rawItems, $vatRate, $discVal, $discType){
+    $items = []; $sub = 0.0; $taxedBase = 0.0;
     foreach ((array)$rawItems as $it){
         $name = trim((string)($it['name'] ?? ''));
         if ($name === '') continue;
@@ -46,18 +58,27 @@ function quote_price($rawItems, $vatRate){
         $rate = round((float)($it['rate'] ?? 0), 2);
         if ($qty <= 0) $qty = 1;
         $amount = round($qty * $rate, 2);
+        $tax = (strtolower((string)($it['tax'] ?? 'vat')) === 'none') ? 'none' : 'vat';
         $sub += $amount;
+        if ($tax === 'vat') $taxedBase += $amount;
         $items[] = [
             'name'        => substr($name, 0, 190),
             'description' => substr(trim((string)($it['description'] ?? '')), 0, 500),
             'qty'         => $qty,
             'rate'        => $rate,
             'amount'      => $amount,
+            'tax'         => $tax,
         ];
     }
     $sub = round($sub, 2);
-    $tax = round($sub * (float)$vatRate, 2);
-    return [$items, $sub, $tax, round($sub + $tax, 2)];
+    $discVal = max(0, (float)$discVal);
+    $discType = ($discType === 'amount') ? 'amount' : 'percent';
+    $discAmt = $discType === 'percent' ? round($sub * $discVal / 100, 2) : min(round($discVal, 2), $sub);
+    // discount is before tax — spread it across taxed lines proportionally
+    $taxedAfter = $taxedBase - ($sub > 0 ? $discAmt * ($taxedBase / $sub) : 0);
+    $tax = round(max(0, $taxedAfter) * (float)$vatRate, 2);
+    $total = round($sub - $discAmt + $tax, 2);
+    return [$items, $sub, $discAmt, $tax, $total];
 }
 
 function quote_out(array $r){
@@ -66,6 +87,8 @@ function quote_out(array $r){
     $r['sub_total'] = (float)$r['sub_total'];
     $r['tax_amount'] = (float)$r['tax_amount'];
     $r['total'] = (float)$r['total'];
+    $r['discount_value'] = (float)($r['discount_value'] ?? 0);
+    $r['discount_amount'] = (float)($r['discount_amount'] ?? 0);
     return $r;
 }
 
@@ -107,23 +130,30 @@ try {
         $custId = trim((string)($in['zoho_customer_id'] ?? ''));
         $custNm = trim((string)($in['customer_name'] ?? ''));
         if ($custNm === '') throw new Exception('Choose a customer.');
-        [$items, $sub, $tax, $total] = quote_price($in['line_items'] ?? [], $vat);
+        $discType = (strtolower((string)($in['discount_type'] ?? 'percent')) === 'amount') ? 'amount' : 'percent';
+        $discVal  = max(0, (float)($in['discount_value'] ?? 0));
+        [$items, $sub, $discAmt, $tax, $total] = quote_price($in['line_items'] ?? [], $vat, $discVal, $discType);
         if (!$items) throw new Exception('Add at least one line item.');
         $cur   = trim((string)($in['currency'] ?? 'KES')) ?: 'KES';
         $notes = substr(trim((string)($in['notes'] ?? '')), 0, 1000);
+        $terms = substr(trim((string)($in['terms'] ?? '')), 0, 2000);
+        $ref   = substr(trim((string)($in['reference'] ?? '')), 0, 80);
+        $subj  = substr(trim((string)($in['subject'] ?? '')), 0, 190);
+        $qdate = preg_replace('/[^0-9\-]/', '', (string)($in['quote_date'] ?? '')) ?: null;
+        $edate = preg_replace('/[^0-9\-]/', '', (string)($in['expiry_date'] ?? '')) ?: null;
         $itemsJson = json_encode($items);
 
         if (!empty($in['id'])) {
             $row = $own($in['id']);
             // a quote already pushed to Zoho is locked locally (edit it in Zoho)
             if (!empty($row['zoho_estimate_id'])) throw new Exception('Already pushed to Zoho — edit it there.');
-            $pdo->prepare("UPDATE quotes SET zoho_customer_id=?, customer_name=?, currency=?, line_items=?, notes=?, sub_total=?, tax_amount=?, total=? WHERE id=?")
-                ->execute([$custId, $custNm, $cur, $itemsJson, $notes, $sub, $tax, $total, (int)$row['id']]);
+            $pdo->prepare("UPDATE quotes SET zoho_customer_id=?, customer_name=?, reference=?, subject=?, quote_date=?, expiry_date=?, currency=?, line_items=?, notes=?, terms=?, sub_total=?, tax_amount=?, discount_value=?, discount_type=?, discount_amount=?, total=? WHERE id=?")
+                ->execute([$custId, $custNm, $ref, $subj, $qdate, $edate, $cur, $itemsJson, $notes, $terms, $sub, $tax, $discVal, $discType, $discAmt, $total, (int)$row['id']]);
             $id = (int)$row['id'];
         } else {
-            $pdo->prepare("INSERT INTO quotes (created_by, created_email, zoho_customer_id, customer_name, currency, line_items, notes, sub_total, tax_amount, total, status)
-                           VALUES (?,?,?,?,?,?,?,?,?,?, 'local_draft')")
-                ->execute([$me, $_SESSION['email'] ?? '', $custId, $custNm, $cur, $itemsJson, $notes, $sub, $tax, $total]);
+            $pdo->prepare("INSERT INTO quotes (created_by, created_email, zoho_customer_id, customer_name, reference, subject, quote_date, expiry_date, currency, line_items, notes, terms, sub_total, tax_amount, discount_value, discount_type, discount_amount, total, status)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'local_draft')")
+                ->execute([$me, $_SESSION['email'] ?? '', $custId, $custNm, $ref, $subj, $qdate, $edate, $cur, $itemsJson, $notes, $terms, $sub, $tax, $discVal, $discType, $discAmt, $total]);
             $id = (int)$pdo->lastInsertId();
         }
         $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([$id]);

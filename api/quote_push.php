@@ -59,7 +59,9 @@ try {
             'rate'        => (float)($it['rate'] ?? 0),
             'quantity'    => (float)($it['qty'] ?? 1),
         ];
-        if ($taxId !== '') $li['tax_id'] = $taxId;
+        // per-line tax: only attach VAT where the line is taxable
+        $lineTax = strtolower((string)($it['tax'] ?? 'vat'));
+        if ($lineTax !== 'none' && $taxId !== '') $li['tax_id'] = $taxId;
         $lineItems[] = $li;
     }
 
@@ -67,7 +69,19 @@ try {
         'customer_id' => (string)$q['zoho_customer_id'],
         'line_items'  => $lineItems,
     ];
-    if (!empty($q['notes'])) $body['notes'] = $q['notes'];
+    if (!empty($q['reference']))    $body['reference_number'] = $q['reference'];
+    if (!empty($q['quote_date']))   $body['date']             = $q['quote_date'];
+    if (!empty($q['expiry_date']))  $body['expiry_date']      = $q['expiry_date'];
+    if (!empty($q['notes']))        $body['notes']            = $q['notes'];
+    if (!empty($q['terms']))        $body['terms']            = $q['terms'];
+    // entity-level discount, applied before tax (matches the form preview)
+    if ((float)($q['discount_value'] ?? 0) > 0) {
+        $body['discount']             = (($q['discount_type'] ?? 'percent') === 'amount')
+                                        ? (float)$q['discount_value']
+                                        : ((float)$q['discount_value'] . '%');
+        $body['discount_type']        = 'entity_level';
+        $body['is_discount_before_tax'] = true;
+    }
 
     [$d, $c] = zoho_api('POST', 'estimates', $body);
     if ($c >= 400 || empty($d['estimate']['estimate_id'])) {
