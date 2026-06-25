@@ -256,20 +256,26 @@ if (empty($_SESSION['auth'])):
         <button data-tab="etr">ETR Check</button>
         <button data-tab="invrep">Invoices</button>
         <button data-tab="quotes">Quotes</button>
-        <button data-tab="emails">Emails</button>
+      </div>
+    </div>
+
+    <div class="navgroup">
+      <button class="grp">Tasks <span class="car">▾</span></button>
+      <div class="submenu">
         <button data-tab="todo">To-Do</button>
+        <button data-ext="tasks_board.php">Task Board</button>
+      </div>
+    </div>
+
+    <div class="navgroup">
+      <button class="grp">Clients <span class="car">▾</span></button>
+      <div class="submenu">
+        <button data-tab="emails">Emails</button>
+        <button data-ext="audrey.php">Audrey Reports</button>
       </div>
     </div>
 
     <button data-tab="settings">Settings</button>
-
-    <div class="navgroup">
-      <button class="grp">Client Reports <span class="car">▾</span></button>
-      <div class="submenu">
-        <button data-ext="audrey.php">Audrey Reports</button>
-        <button data-ext="tasks_board.php">Task Board</button>
-      </div>
-    </div>
   </div>
 
   <div class="pane" id="pane"></div>
