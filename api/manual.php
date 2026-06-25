@@ -96,5 +96,6 @@ header('Content-Type: text/html; charset=utf-8');
     <p>Tap <b>Tasks → To-Do</b> to see the tasks assigned to you. Tick a task when it's done.</p>
 
     <div class="foot">Need help? Contact your admin. · <?php echo $co; ?></div>
+    <div style="text-align:center;padding:10px 0 0;font-size:10.5px;color:#b0bec5">This system is designed for 912 Holdings, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited</div>
   </div>
 </body></html>

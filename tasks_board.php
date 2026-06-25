@@ -339,4 +339,5 @@ function taskCard(t){
 }
 load();
 </script>
+<div style="text-align:center;padding:18px 12px 22px;font-size:11px;color:#94A3B8;border-top:1px solid #E6EAF0;margin-top:24px">This system is designed for 912 Holdings, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited</div>
 </body></html>

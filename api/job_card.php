@@ -125,6 +125,7 @@ try {
     </div>
     <div class="sign"><span>Authorized Signature</span></div>
   </div>
+  <div style="text-align:center;padding:14px 12px 18px;font-size:10.5px;color:#94A3B8">This system is designed for 912 Holdings, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited</div>
 </body></html><?php
 } catch (Exception $e) {
     http_response_code(500);
