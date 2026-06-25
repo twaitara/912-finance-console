@@ -734,7 +734,7 @@ function loadDashTasks(){
 }
 function loadDashQuotes(){
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
-  .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='dash') render(); } }).catch(()=>{});
+  .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=mqNormalize(j.quotes||[]); MQ.loaded=true; if(TAB==='dash') render(); } }).catch(()=>{});
 }
 function dshInitials(name){ const p=String(name||'?').trim().split(/\s+/); return ((p[0]||'?')[0]+(p[1]?p[1][0]:'')).toUpperCase(); }
 function dshColor(name){ const pal=['#F56F00','#2350C5','#16A34A','#7C3AED','#DB2777','#0891B2','#CA8A04','#DC2626']; let h=0; const s=String(name||''); for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0; return pal[h%pal.length]; }
@@ -2940,6 +2940,7 @@ const STATUS_GROUPS = [
 function mqStatusSet(){ const s=new Set(); MQ.statuses.forEach(k=>{ const g=STATUS_GROUPS.find(x=>x.key===k); if(g) g.set.forEach(v=>s.add(v)); }); return s; }
 const MQ_PER_PAGE = 50;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function mqNormalize(qs){ (qs||[]).forEach(q=>{ if(q.zoho_invoice_number) q.status='invoiced'; }); return qs||[]; }   /* an invoice number means invoiced, regardless of estimate status */
 function mqMonthKey(q){ return String(q.created_at||q.quote_date||'').slice(0,7); }   /* YYYY-MM */
 function mqMonthLabel(k){ if(!k||k.length<7) return k||'—'; const m=parseInt(k.slice(5,7),10); return (MONTHS_SHORT[m-1]||k.slice(5,7))+' '+k.slice(0,4); }
 const qesc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -3370,13 +3371,13 @@ function mqDecline(id){ if(!confirm('Decline this quote? It will be marked Decli
 }
 function mqLoad(){ MQ.loading=true;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
-  .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='myquotes'){ render(); if(MQ.quotes.some(q=>q.zoho_estimate_id)) mqSync(true); } } })
+  .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=mqNormalize(j.quotes||[]); MQ.loaded=true; if(TAB==='myquotes'){ render(); if(MQ.quotes.some(q=>q.zoho_estimate_id)) mqSync(true); } } })
   .catch(()=>{ MQ.loading=false; });
 }
 function mqSync(silent){ if(MQ.syncing)return; MQ.syncing=true; if(!silent) MQ.msg=''; if(TAB==='myquotes')render();
   fetch('api/quote_sync.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
   .then(r=>r.json()).then(j=>{ MQ.syncing=false;
-    if(j.ok){ (j.quotes||[]).forEach(u=>{ const q=MQ.quotes.find(x=>x.id===u.id); if(q) q.status=u.status; }); }
+    if(j.ok){ (j.quotes||[]).forEach(u=>{ const q=MQ.quotes.find(x=>x.id===u.id); if(q) q.status=u.status; }); mqNormalize(MQ.quotes); }
     if(TAB==='myquotes')render();
   }).catch(()=>{ MQ.syncing=false; if(TAB==='myquotes')render(); });
 }
