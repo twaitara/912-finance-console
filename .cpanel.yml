@@ -1,0 +1,14 @@
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/tonyketter/public_html/WORKINGCAPITAL
+    - /bin/cp index.php $DEPLOYPATH
+    - /bin/cp audrey.php $DEPLOYPATH
+    - /bin/cp calendar_oauth.php $DEPLOYPATH
+    - /bin/cp connect_calendar.php $DEPLOYPATH
+    - /bin/cp fx.php $DEPLOYPATH
+    - /bin/cp mail.php $DEPLOYPATH
+    - /bin/cp settings_store.php $DEPLOYPATH
+    - /bin/cp users_store.php $DEPLOYPATH
+    - /bin/cp tasks_board.php $DEPLOYPATH
+    - /bin/cp workdrive.php $DEPLOYPATH
+    - /bin/cp -R api $DEPLOYPATH
