@@ -3504,7 +3504,7 @@ function vJobCards(){
         </div>
         <div class="qact">
           <button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Open the printable job card / delivery note')} onclick="window.open('api/job_card.php?id=${q.id}','_blank')">🧾 ${ME.admin?'Open / print':'View'} job card</button>
-          ${ME.admin?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ Invoice PDF</button>`:''}
+          ${ME.admin?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ Download Quote PDF</button>`:''}
         </div>
       </div>`;}).join('')}`;
 }
