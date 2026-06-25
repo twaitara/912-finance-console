@@ -10,6 +10,26 @@ require __DIR__ . '/../db.php';
 require __DIR__ . '/../zoho.php';
 @set_time_limit(90);
 
+function quote_inv_vat_tax_id(){
+    $cache = __DIR__ . '/../data/zoho_vat.json';
+    if (is_file($cache) && (time() - filemtime($cache) < 86400)) {
+        $t = json_decode(file_get_contents($cache), true);
+        if (isset($t['tax_id'])) return (string)$t['tax_id'];
+    }
+    [$data, $code] = zoho_api('GET', 'settings/taxes');
+    $id = '';
+    if ($code < 400) {
+        foreach (($data['taxes'] ?? []) as $tax) {
+            $pct = (float)($tax['tax_percentage'] ?? 0);
+            $nm  = strtolower((string)($tax['tax_name'] ?? ''));
+            if (abs($pct - 16.0) < 0.01 || strpos($nm, 'vat') !== false) { $id = (string)($tax['tax_id'] ?? ''); if (abs($pct-16.0)<0.01) break; }
+        }
+        if (!is_dir(__DIR__ . '/../data')) @mkdir(__DIR__ . '/../data', 0775, true);
+        @file_put_contents($cache, json_encode(['tax_id'=>$id]));
+    }
+    return $id;
+}
+
 try {
     $pdo = db();
     $me    = $_SESSION['user'] ?? '';
@@ -39,9 +59,39 @@ try {
         exit;
     }
 
+    // Try Zoho's native convert first; if it isn't available, build the invoice from the
+    // quote's line items (the same proven method we use to create the estimate).
     [$d, $c] = zoho_api('POST', 'invoices/fromestimate', null, ['estimate_id' => $q['zoho_estimate_id']]);
+
     if ($c >= 400 || empty($d['invoice']['invoice_id'])) {
-        throw new Exception($d['message'] ?? 'Zoho could not convert the estimate to an invoice (check scope: ZohoBooks.invoices.CREATE).');
+        // ---- fallback: create the invoice directly ----
+        $taxId = quote_inv_vat_tax_id();
+        $items = json_decode($q['line_items'] ?: '[]', true) ?: [];
+        if (!$items) throw new Exception('Quote has no line items.');
+        $lineItems = [];
+        foreach ($items as $it) {
+            $li = [
+                'name'        => mb_strtoupper(trim((string)($it['name'] ?? 'Item')), 'UTF-8'),
+                'description' => (string)($it['description'] ?? ''),
+                'rate'        => (float)($it['rate'] ?? 0),
+                'quantity'    => (float)($it['qty'] ?? 1),
+            ];
+            if (strtolower((string)($it['tax'] ?? 'vat')) !== 'none' && $taxId !== '') $li['tax_id'] = $taxId;
+            $lineItems[] = $li;
+        }
+        $body = ['customer_id' => (string)$q['zoho_customer_id'], 'line_items' => $lineItems];
+        if (!empty($q['reference']))  $body['reference_number'] = $q['reference'];
+        if (!empty($q['notes']))      $body['notes']            = $q['notes'];
+        if (!empty($q['terms']))      $body['terms']            = $q['terms'];
+        if ((float)($q['discount_value'] ?? 0) > 0) {
+            $body['discount']               = (($q['discount_type'] ?? 'percent') === 'amount') ? (float)$q['discount_value'] : ((float)$q['discount_value'] . '%');
+            $body['discount_type']          = 'entity_level';
+            $body['is_discount_before_tax'] = true;
+        }
+        [$d, $c] = zoho_api('POST', 'invoices', $body);
+        if ($c >= 400 || empty($d['invoice']['invoice_id'])) {
+            throw new Exception($d['message'] ?? 'Zoho could not create the invoice (check scope: ZohoBooks.invoices.CREATE).');
+        }
     }
     $invId = (string)$d['invoice']['invoice_id'];
     $invNo = (string)($d['invoice']['invoice_number'] ?? '');
