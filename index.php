@@ -1139,6 +1139,48 @@ function vDashPaid(){
   </div>`;
 }
 
+function vDashMyQuotes(){
+  if(!MQ.loaded) return `<div class="card" style="padding:14px 16px;margin-bottom:10px"><span class="muted" style="font-size:11.5px">Loading quote stats…</span></div>`;
+  // admin: filter to own quotes; non-admin: server already scopes to their quotes
+  const all=ME.admin
+    ?(MQ.quotes||[]).filter(q=>String(q.created_by||'').toLowerCase()===String(ME.user||'').toLowerCase())
+    :(MQ.quotes||[]);
+  if(!all.length) return '';
+  const invoiced =all.filter(q=>q.status==='invoiced'||q.zoho_invoice_number);
+  const approved =all.filter(q=>q.status==='approved'||q.status==='accepted');
+  const pending  =all.filter(q=>['pending_approval','sent','draft'].includes(q.status));
+  const declined =all.filter(q=>q.status==='declined'||q.status==='rejected');
+  const totalVal  =all.reduce((s,q)=>s+(+q.total||0),0);
+  const invVal    =invoiced.reduce((s,q)=>s+(+q.total||0),0);
+  const appVal    =approved.reduce((s,q)=>s+(+q.total||0),0);
+  const pct=totalVal>0?Math.round(invVal/totalVal*100):0;
+  const barColor=pct>=50?'var(--good)':pct>=25?'var(--orange)':'var(--bad)';
+  return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
+    <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin-bottom:12px">My quote performance</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin-bottom:14px">
+      <div>
+        <div style="font-size:9.5px;color:var(--mute);margin-bottom:3px">Quotes generated</div>
+        <div style="font-size:26px;font-weight:800;line-height:1">${all.length}</div>
+        <div style="font-size:11.5px;color:var(--mute);margin-top:4px">KES ${Math.round(totalVal).toLocaleString('en-KE')}</div>
+      </div>
+      <div>
+        <div style="font-size:9.5px;color:var(--mute);margin-bottom:3px">Converted to invoice</div>
+        <div style="font-size:26px;font-weight:800;color:var(--good);line-height:1">${invoiced.length}</div>
+        <div style="font-size:11.5px;color:var(--good);margin-top:4px">KES ${Math.round(invVal).toLocaleString('en-KE')}</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+      <span style="font-size:10.5px;color:var(--mute)">Conversion rate</span>
+      <span style="font-size:13px;font-weight:800;color:${barColor}">${pct}%</span>
+    </div>
+    <div style="height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin-bottom:${appVal>0||declined.length?'12':'0'}px">
+      <div style="height:100%;width:${pct}%;background:${barColor};border-radius:4px"></div>
+    </div>
+    ${appVal>0?`<div style="padding:8px 12px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;font-size:11px;font-weight:600;color:#16A34A;margin-bottom:6px">Pipeline (approved, not yet invoiced) · KES ${Math.round(appVal).toLocaleString('en-KE')}</div>`:''}
+    ${pending.length||declined.length?`<div style="font-size:10.5px;color:var(--mute)">${pending.length?`${pending.length} pending/sent`:''} ${pending.length&&declined.length?'·':''} ${declined.length?`${declined.length} declined`:''}</div>`:''}
+  </div>`;
+}
+
 function loadDashTasks(){
   fetch('api/tasks.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ if(j.ok){ TASK.tasks=j.tasks||[]; if(TAB==='dash') render(); } }).catch(()=>{});
@@ -1250,6 +1292,7 @@ function vDashLite(){
       <div class="kpi" style="--accent:${decl?'var(--bad)':'var(--mute)'}"><div class="l">Declined</div><div class="n" style="${decl?'color:var(--bad)':''}">${decl}</div><div class="h">${decl?'Needs a rethink':'None'}</div></div>
       <div class="kpi" style="--accent:var(--blue)"><div class="l">Open tasks</div><div class="n">${myTasks.length}</div><div class="h">Assigned to you</div></div>
     </div>
+    ${vDashMyQuotes()}
     <div class="sect"><b>My quotes</b><span class="ln"></span>
       <button class="btn" style="width:auto;padding:5px 12px;font-size:11px" onclick="navTo('newquote')">+ New quote</button></div>
     ${mine.length? mine.slice(0,5).map(q=>`<div class="invrow" onclick="navTo('myquotes')">
@@ -1311,6 +1354,7 @@ function vDash(){
   </div>
 
   ${vDashPaid()}
+  ${vDashMyQuotes()}
 
   <div class="sect"><b>Working capital</b><span class="ln"></span>
     <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="gotoLoans()">Manage loans →</button></div>
