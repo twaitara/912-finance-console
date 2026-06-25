@@ -2880,7 +2880,7 @@ function navActivate(b){
 
 /* ===================== Quotes → Zoho (Create group) ===================== */
 const EDITABLE_STATUSES = ['local_draft','draft','pending_approval'];
-function mqEditable(q){ return EDITABLE_STATUSES.includes(q.status); }
+function mqEditable(q){ return ME.admin || EDITABLE_STATUSES.includes(q.status); }   /* admins can edit any quote */
 function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'', customerName:'', currency:'KES',
            reference:'', subject:'', quoteDate:today(), expiryDate:'',
            items:[{name:'',description:'',qty:1,rate:0,cost:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
@@ -2907,6 +2907,8 @@ function qbLineCost(it){ return (parseFloat(it.qty)||0)*(parseFloat(it.cost)||0)
 function qbSub(){ return QB.items.reduce((s,it)=>s+qbLineAmt(it),0); }
 function qbCostTotal(){ return QB.items.reduce((s,it)=>s+qbLineCost(it),0); }
 function qbProfit(){ return qbSub()-qbDiscAmt()-qbCostTotal(); }
+function qbAmtCellHtml(it){ const amt=qbLineAmt(it); const lp=amt-qbLineCost(it);
+  return `${fmtn(amt)}${ME.admin?`<div style="font-size:9.5px;font-weight:600;color:${lp<0?'var(--bad)':'var(--good)'}" title="Line profit (ex VAT)">+${fmtn(lp)}</div>`:''}`; }
 function qbDiscAmt(){ const sub=qbSub(); const v=Math.max(0,parseFloat(QB.discVal)||0);
   return QB.discType==='amount' ? Math.min(v,sub) : sub*v/100; }
 function qbTax(){ const sub=qbSub(); if(sub<=0) return 0;
@@ -2953,7 +2955,7 @@ function vNewQuote(){
       <div class="qbc-rate"><span class="qbc-lab">Rate</span><input type="number" step="0.01" min="0" value="${qesc(it.rate)}" oninput="qbItem(${i},'rate',this.value)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-cost"><span class="qbc-lab">Unit cost</span><input type="number" step="0.01" min="0" placeholder="0" value="${qesc(it.cost)}" oninput="qbItem(${i},'cost',this.value)" title="Your cost per unit (internal — not sent to the customer)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-tax"><span class="qbc-lab">Tax</span><select onchange="qbItem(${i},'tax',this.value)" style="margin-bottom:0">${taxOpt(it.tax)}</select></div>
-      <div class="qbc-amt"><span class="qbc-lab">Amount</span><div id="qbAmt${i}" style="font-weight:700;font-size:13px">${fmtn(qbLineAmt(it))}</div></div>
+      <div class="qbc-amt"><span class="qbc-lab">Amount</span><div id="qbAmt${i}" style="font-weight:700;font-size:13px">${qbAmtCellHtml(it)}</div></div>
       <button class="qbc-del btn sec" onclick="qbDelRow(${i})" title="Remove">✕</button>
     </div>`).join('');
 
@@ -3002,7 +3004,7 @@ function vNewQuote(){
 
   ${QB.msg?`<div class="${QB.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(QB.msg)}</div>`:''}
   ${QB.zohoId
-    ? `<div class="warn" style="background:#FFF4D6;color:#9A6700;margin-bottom:10px;font-size:11.5px">Editing a quote that's awaiting approval in Zoho. Saving updates it in Zoho and re-submits it for approval.</div>
+    ? `<div class="warn" style="background:#FFF4D6;color:#9A6700;margin-bottom:10px;font-size:11.5px">Editing a quote that's already in Zoho. Saving updates it there${(QB.status==='approved'||QB.status==='sent'||QB.status==='accepted')?'.':' and re-submits it for approval.'}</div>
        <button class="btn" style="width:100%" onclick="qbSaveUpdate()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save changes & re-submit to Zoho →'}</button>`
     : `<div class="row" style="gap:8px">
         <button class="btn sec" style="flex:1" onclick="qbSave()" ${QB.busy?'disabled':''}>Save draft</button>
@@ -3027,7 +3029,7 @@ function qbTotalsHtml(){
     <div class="row" style="margin-top:6px"><b style="color:var(--good)">Profit (ex VAT)</b><b style="color:${qbProfit()<0?'var(--bad)':'var(--good)'}">${fmtn(qbProfit())}${qbSub()>0?` · ${Math.round(qbProfit()/qbSub()*100)}%`:''}</b></div>`:''}`;
 }
 function qbItem(i,field,val){ if(!QB.items[i])return; QB.items[i][field]=val;
-  const a=document.getElementById('qbAmt'+i); if(a) a.textContent=fmtn(qbLineAmt(QB.items[i]));
+  const a=document.getElementById('qbAmt'+i); if(a) a.innerHTML=qbAmtCellHtml(QB.items[i]);
   const t=document.getElementById('qbTotals'); if(t) t.innerHTML=qbTotalsHtml(); }
 function qbDisc(field,val){ QB[field]=val; const t=document.getElementById('qbTotals'); if(t) t.innerHTML=qbTotalsHtml(); }
 function qbAddRow(){ QB.items.push({name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
@@ -3203,6 +3205,9 @@ function mqListHtml(){
         ${mqEditable(q)?`<button class="btn sec qb" onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
         ${!pushed?`<button class="btn qb" onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
         ${pushed?`<button class="btn sec qb" onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
+        ${ME.admin?`<select class="qb" title="Change status" onchange="mqSetStatus(${q.id},this.value)" style="width:auto;font-size:11.5px;padding:6px 8px;margin-bottom:0;border-radius:9px">
+          ${[['draft','Draft'],['pending_approval','Pending'],['approved','Approved'],['declined','Declined'],['sent','Sent'],['accepted','Accepted'],['invoiced','Invoiced'],['expired','Expired']].map(s=>`<option value="${s[0]}" ${q.status===s[0]?'selected':''}>${s[1]}</option>`).join('')}
+        </select>`:''}
         <button class="btn sec qb qb-del" onclick="mqDelete(${q.id})" title="Remove from app">✕</button>
       </div>
       ${isOpen?mqPreviewHtml(q):''}
@@ -3269,6 +3274,13 @@ function mqSend(id){ MQ.busyId=id; MQ.msg=''; render();
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
 function mqPdf(id){ window.open('api/quote_pdf.php?id='+id,'_blank'); }
+function mqSetStatus(id,status){ MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_set_status.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q)q.status=j.status; MQ.msg='Status set to '+j.status+'.'+(j.note?' '+j.note:''); MQ.err=!!j.note; }
+    else { MQ.msg=j.error||'Could not change status.'; MQ.err=true; } render();
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
 function mqApprove(id){ MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_approve.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;

@@ -160,7 +160,8 @@ try {
 
         if (!empty($in['id'])) {
             $row = $own($in['id']);
-            if (!in_array($row['status'], $editable, true)) {
+            // technicians can edit only while awaiting approval; the owner can edit any quote
+            if (!$admin && !in_array($row['status'], $editable, true)) {
                 throw new Exception('This quote can no longer be edited (status: ' . $row['status'] . '). Only quotes awaiting approval are editable.');
             }
             $pdo->prepare("UPDATE quotes SET zoho_customer_id=?, customer_name=?, reference=?, subject=?, quote_date=?, expiry_date=?, currency=?, line_items=?, notes=?, terms=?, sub_total=?, tax_amount=?, discount_value=?, discount_type=?, discount_amount=?, total_cost=?, profit=?, total=? WHERE id=?")

@@ -45,7 +45,8 @@ try {
     if (!$q) throw new Exception('Quote not found.');
     if (!$admin && $q['created_by'] !== $me) throw new Exception('Not your quote.');
     if (empty($q['zoho_estimate_id'])) throw new Exception('This quote is not in Zoho yet — use Push.');
-    if (!in_array($q['status'], ['draft', 'pending_approval'], true)) {
+    // technicians: only draft/pending; owner: any status (e.g. fix an approved quote)
+    if (!$admin && !in_array($q['status'], ['draft', 'pending_approval'], true)) {
         throw new Exception('This Zoho quote can no longer be edited (status: ' . $q['status'] . ').');
     }
 
