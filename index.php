@@ -2880,7 +2880,7 @@ function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
-let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{} };
+let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{}, users:[] };
 const MQ_PER_PAGE = 50;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function mqMonthKey(q){ return String(q.created_at||q.quote_date||'').slice(0,7); }   /* YYYY-MM */
@@ -3127,7 +3127,11 @@ function vMyQuotes(){
   const all=MQ.quotes||[];
   // month options from the data (newest first)
   const monthKeys=[...new Set(all.map(mqMonthKey).filter(k=>k&&k.length>=7))].sort().reverse();
-  const filtered = MQ.month==='all' ? all : all.filter(q=>mqMonthKey(q)===MQ.month);
+  // distinct creators (for the multi-select "who created" filter — admins only)
+  const creators=[...new Set(all.map(q=>q.created_by).filter(Boolean))].sort();
+  let filtered = all;
+  if(MQ.month!=='all') filtered=filtered.filter(q=>mqMonthKey(q)===MQ.month);
+  if(MQ.users.length) filtered=filtered.filter(q=>MQ.users.includes(q.created_by));
   const pages=Math.max(1,Math.ceil(filtered.length/MQ_PER_PAGE));
   if(MQ.page>pages) MQ.page=pages; if(MQ.page<1) MQ.page=1;
   const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
@@ -3149,7 +3153,14 @@ function vMyQuotes(){
       </div>
       ${isOpen?mqPreviewHtml(q):''}
     </div>`; }).join('')
-    : `<div class="card muted" style="text-align:center;padding:22px">${all.length?'No quotes in this month.':'No quotes yet. Make one under <b>New Quote</b>.'}</div>`;
+    : `<div class="card muted" style="text-align:center;padding:22px">${all.length?'No quotes match the filters.':'No quotes yet. Make one under <b>New Quote</b>.'}</div>`;
+
+  const userFilter = (ME.admin && creators.length>1) ? `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
+      <span class="muted" style="font-size:11px">Created by:</span>
+      <button class="btn${MQ.users.length===0?'':' sec'}" style="width:auto;padding:4px 11px;font-size:11px" onclick="mqClearUsers()">Everyone</button>
+      ${creators.map(u=>`<button class="btn${MQ.users.includes(u)?'':' sec'}" style="width:auto;padding:4px 11px;font-size:11px" onclick="mqToggleUser('${qesc(u).replace(/'/g,'&#39;')}')">${qesc(u)}</button>`).join('')}
+    </div>` : '';
 
   const monthSel = `<select onchange="mqSetMonth(this.value)" style="width:auto;margin-bottom:0;font-size:12px;padding:6px 10px">
       <option value="all" ${MQ.month==='all'?'selected':''}>All months</option>
@@ -3168,12 +3179,15 @@ function vMyQuotes(){
       <span style="display:inline-flex;gap:8px;align-items:center;margin-left:auto">${monthSel}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
     </div>
+    ${userFilter}
     ${cards}
     ${pager}`;
 }
 function mqTogglePreview(id){ MQ.open[id]=!MQ.open[id]; render(); }
 function mqSetMonth(v){ MQ.month=v; MQ.page=1; render(); }
 function mqGoPage(n){ MQ.page=n; render(); }
+function mqToggleUser(u){ const i=MQ.users.indexOf(u); if(i>=0) MQ.users.splice(i,1); else MQ.users.push(u); MQ.page=1; render(); }
+function mqClearUsers(){ MQ.users=[]; MQ.page=1; render(); }
 function mqLoad(){ MQ.loading=true;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='myquotes'){ render(); if(MQ.quotes.some(q=>q.zoho_estimate_id)) mqSync(true); } } })
