@@ -1010,7 +1010,7 @@ function render(){
   if(TAB==='etr') p.innerHTML = vETR();
   if(TAB==='invrep') p.innerHTML = vInvRep();
   if(TAB==='quotes') p.innerHTML = vQuotes();
-  if(TAB==='payments'){ p.innerHTML = vPayments(); if(!PAY.loaded) payLoadClients(); }
+  if(TAB==='payments'){ p.innerHTML = vPayments(); if(!PAY.loaded) payLoadClients(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -2936,12 +2936,8 @@ function payLoadAccounts(){
     PAY.accsLoaded=true;
     PAY.accounts = j.ok ? j.accounts : [];
     if(!PAY.depositId && PAY.accounts.length) PAY.depositId=PAY.accounts[0].id;
-    const el=document.getElementById('payDepositSel'); if(el) payRenderAccounts();
+    if(TAB==='payments') render();
   }).catch(()=>{ PAY.accsLoaded=true; });
-}
-function payRenderAccounts(){
-  const el=document.getElementById('payDepositSel'); if(!el) return;
-  el.innerHTML=PAY.accounts.map(a=>`<option value="${a.id}" ${a.id===PAY.depositId?'selected':''}>${a.name}</option>`).join('');
 }
 function paySearch(v){ PAY.q=v; PAY.picked=false; const el=document.getElementById('payCList'); if(el) el.innerHTML=payCListHtml(); }
 function payPickClient(id){
