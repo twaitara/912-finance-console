@@ -2887,7 +2887,14 @@ function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
-let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{}, users:[] };
+let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{}, users:[], statuses:[] };
+const STATUS_GROUPS = [
+  {key:'approved', label:'Approved', set:['approved','accepted']},
+  {key:'pending',  label:'Pending',  set:['pending_approval','draft','local_draft']},
+  {key:'declined', label:'Declined', set:['declined','rejected']},
+  {key:'sent',     label:'Sent',     set:['sent','invoiced']},
+];
+function mqStatusSet(){ const s=new Set(); MQ.statuses.forEach(k=>{ const g=STATUS_GROUPS.find(x=>x.key===k); if(g) g.set.forEach(v=>s.add(v)); }); return s; }
 const MQ_PER_PAGE = 50;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function mqMonthKey(q){ return String(q.created_at||q.quote_date||'').slice(0,7); }   /* YYYY-MM */
@@ -3146,6 +3153,7 @@ function vMyQuotes(){
   let filtered = all;
   if(MQ.month!=='all') filtered=filtered.filter(q=>mqMonthKey(q)===MQ.month);
   if(MQ.users.length) filtered=filtered.filter(q=>MQ.users.includes(q.created_by));
+  if(MQ.statuses.length){ const ss=mqStatusSet(); filtered=filtered.filter(q=>ss.has(q.status)); }
   const pages=Math.max(1,Math.ceil(filtered.length/MQ_PER_PAGE));
   if(MQ.page>pages) MQ.page=pages; if(MQ.page<1) MQ.page=1;
   const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
@@ -3183,6 +3191,13 @@ function vMyQuotes(){
     </div>`; }).join('')
     : `<div class="card muted" style="text-align:center;padding:22px">${all.length?'No quotes match the filters.':'No quotes yet. Make one under <b>New Quote</b>.'}</div>`;
 
+  const statusFilter = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:${(ME.admin && creators.length>1)?'8px':'12px'}">
+      <span class="muted" style="font-size:11px">Status:</span>
+      <button class="btn${MQ.statuses.length===0?'':' sec'}" style="width:auto;padding:4px 11px;font-size:11px" onclick="mqClearStatus()">All</button>
+      ${STATUS_GROUPS.map(g=>`<button class="btn${MQ.statuses.includes(g.key)?'':' sec'}" style="width:auto;padding:4px 11px;font-size:11px" onclick="mqToggleStatus('${g.key}')">${g.label}</button>`).join('')}
+    </div>`;
+
   const userFilter = (ME.admin && creators.length>1) ? `
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
       <span class="muted" style="font-size:11px">Created by:</span>
@@ -3207,6 +3222,7 @@ function vMyQuotes(){
       <span style="display:inline-flex;gap:8px;align-items:center;margin-left:auto">${monthSel}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
     </div>
+    ${statusFilter}
     ${userFilter}
     ${cards}
     ${pager}`;
@@ -3216,6 +3232,8 @@ function mqSetMonth(v){ MQ.month=v; MQ.page=1; render(); }
 function mqGoPage(n){ MQ.page=n; render(); }
 function mqToggleUser(u){ const i=MQ.users.indexOf(u); if(i>=0) MQ.users.splice(i,1); else MQ.users.push(u); MQ.page=1; render(); }
 function mqClearUsers(){ MQ.users=[]; MQ.page=1; render(); }
+function mqToggleStatus(k){ const i=MQ.statuses.indexOf(k); if(i>=0) MQ.statuses.splice(i,1); else MQ.statuses.push(k); MQ.page=1; render(); }
+function mqClearStatus(){ MQ.statuses=[]; MQ.page=1; render(); }
 function mqSend(id){ MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_send.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
