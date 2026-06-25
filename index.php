@@ -3675,5 +3675,8 @@ else { render(); }
 loadDashTasks();
 loadDashQuotes();
 </script>
-<div style="text-align:center;padding:18px 12px 22px;font-size:11px;color:#94A3B8;border-top:1px solid #E6EAF0;margin-top:24px">This system is designed for 912 Holdings, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited</div>
+<div style="text-align:center;padding:18px 12px 22px;border-top:1px solid #E6EAF0;margin-top:24px;line-height:1.7">
+  <div style="font-size:11.5px;color:#64748B">This system is designed for <b>912 Holdings</b>, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited &amp; Global IT Limited</div>
+  <div style="font-size:11px;color:#F56F00;margin-top:5px">&#9888; If you can see information of a company you are not associated with, report immediately to <b>Njuguna Waitara — 0722 974 970</b></div>
+</div>
 </body></html>

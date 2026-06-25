@@ -96,6 +96,9 @@ header('Content-Type: text/html; charset=utf-8');
     <p>Tap <b>Tasks → To-Do</b> to see the tasks assigned to you. Tick a task when it's done.</p>
 
     <div class="foot">Need help? Contact your admin. · <?php echo $co; ?></div>
-    <div style="text-align:center;padding:10px 0 0;font-size:10.5px;color:#b0bec5">This system is designed for 912 Holdings, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited</div>
+    <div style="text-align:center;padding:10px 0 0;line-height:1.7">
+      <div style="font-size:11px;color:#64748B">This system is designed for <b>912 Holdings</b>, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited &amp; Global IT Limited</div>
+      <div style="font-size:10.5px;color:#E07000;margin-top:4px">&#9888; If you can see information of a company you are not associated with, report immediately to <b>Njuguna Waitara — 0722 974 970</b></div>
+    </div>
   </div>
 </body></html>
