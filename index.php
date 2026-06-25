@@ -2916,6 +2916,7 @@ function navActivate(b){
   if(TAB==='loans'){ render(); loadLoans(); return; }
   if(TAB==='myquotes'){ render(); mqLoad(); return; }
   if(TAB==='clientaccess'){ render(); if(ME.admin && !QB.assignLoaded) qbAssignLoad(); return; }
+  if(TAB==='jobcards'){ render(); loadJobCards(); return; }
   if(TAB==='settings'){ render(); if(ME.admin && !USERS.loaded) usersLoad(); return; }
   render();
 }
@@ -3403,13 +3404,38 @@ function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was p
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})})
   .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=MQ.quotes.filter(q=>q.id!==id); render(); } else alert(j.error||'Delete failed'); }).catch(e=>alert(''+e)); }
 
-function vJobCards(){ return `<h2>Job cards</h2>
-  <div class="card" style="text-align:center;padding:26px">
-    <div style="font-size:30px;margin-bottom:6px">🧾</div>
-    <b style="font-size:14px">Generate job cards from an approved quote</b>
-    <div class="muted" style="margin-top:6px;max-width:460px;margin-left:auto;margin-right:auto">Open <b>My Quotes</b>, find an approved quote and tap <b>🧾 Job Card</b>. The quote is turned into a Zoho invoice and a printable Delivery Note / Job Card (no prices) opens for the customer to sign.</div>
-    <button class="btn" style="width:auto;padding:8px 16px;font-size:12px;margin-top:14px" onclick="navTo('myquotes')">Go to My Quotes →</button>
-  </div>`; }
+function vJobCards(){
+  const jobs=(MQ.quotes||[]).filter(q=>q.status==='invoiced'||q.zoho_invoice_number)
+    .slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+  if(!MQ.loaded) return `<h2>Job cards</h2><div class="card muted" style="text-align:center;padding:22px">Loading…</div>`;
+  if(!jobs.length) return `<h2>Job cards</h2>
+    <div class="card" style="text-align:center;padding:26px">
+      <div style="font-size:30px;margin-bottom:6px">🧾</div>
+      <b style="font-size:14px">No job cards yet</b>
+      <div class="muted" style="margin-top:6px;max-width:460px;margin-left:auto;margin-right:auto">Open <b>My Quotes</b>, find an approved quote and tap <b>🧾 Job Card</b>. The quote becomes a Zoho invoice and a printable Delivery Note / Job Card (no prices) opens for the customer to sign.</div>
+      <button class="btn" style="width:auto;padding:8px 16px;font-size:12px;margin-top:14px" onclick="navTo('myquotes')">Go to My Quotes →</button>
+    </div>`;
+  return `<h2>Job cards</h2>
+    <div class="muted" style="margin:-6px 0 12px">${jobs.length} job card${jobs.length===1?'':'s'} generated${ME.admin?'':' by you'}.</div>
+    ${jobs.map(q=>{
+      const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
+      return `<div class="card" style="border-left:4px solid var(--blue)">
+        <div class="row" style="align-items:flex-start;gap:12px">
+          <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(q.customer_name||'(no customer)')}</b>
+            <div class="muted" style="margin-top:3px;font-size:11.5px"><span style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number||'—')}</span> · ${ME.admin?('by '+qesc(q.created_by)+' · '):''}${q.line_items.length} item${q.line_items.length===1?'':'s'}${date?(' · '+date):''}</div></div>
+          <div style="text-align:right;white-space:nowrap"><div style="color:var(--orange);font-weight:700;font-size:15px">${qesc(q.currency||'KES')} ${fmtn(q.total)}</div>
+            <div style="margin-top:5px">${quoteBadge('invoiced')}</div></div>
+        </div>
+        <div class="qact">
+          <button class="btn qb" style="background:var(--blue);box-shadow:none" onclick="window.open('api/job_card.php?id=${q.id}','_blank')">🧾 ${ME.admin?'Open / print':'View'} job card</button>
+          ${ME.admin?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ Invoice PDF</button>`:''}
+        </div>
+      </div>`;}).join('')}`;
+}
+function loadJobCards(){ MQ.loading=true;
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
+  .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=mqNormalize(j.quotes||[]); MQ.loaded=true; if(TAB==='jobcards') render(); } }).catch(()=>{ MQ.loading=false; });
+}
 
 /* programmatic tab switch (used after push / edit) */
 function navTo(tab){ const b=document.querySelector('.tabs button[data-tab="'+tab+'"]'); if(b){ navActivate(b); } else { TAB=tab; render(); } }
