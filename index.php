@@ -3016,8 +3016,9 @@ function vTodo(){
     <button class="btn" style="width:auto;padding:9px 16px;margin-top:8px" onclick="todoAdd()">${TASK.newMode==='cal'?'Send calendar invite':(TASK.newMode==='both'?'+ Add task & invite':'+ Add task')}</button>
   </div>
 
-  <div class="sect"><b>From your email</b><span class="ln"></span></div>
-  ${todoInboxHtml()}
+  <div class="sect"><b>From your email</b><span class="ln"></span>
+    <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="TASK.hideInbox=!TASK.hideInbox;render()">${TASK.hideInbox?'Show':'Hide'}</button></div>
+  ${TASK.hideInbox? '' : todoInboxHtml()}
 
   <div class="sect"><b>Open tasks</b><span class="ln"></span><span class="pill" style="background:#FFF4EB;color:var(--orange)">${open.length}</span></div>
   ${open.length? `<div class="tkgrid">${open.map(todoTaskCard).join('')}</div>` : `<div class="card muted" style="text-align:center;padding:20px">Nothing open. 🎉</div>`}
