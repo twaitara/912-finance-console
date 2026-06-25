@@ -391,11 +391,11 @@ if (empty($_SESSION['auth'])):
   .qbsplit{display:grid;grid-template-columns:1fr;gap:10px;align-items:start}
   .qbsplit>.card{margin-bottom:0}
   @media (min-width:820px){
-    .qbhead{display:grid;grid-template-columns:1fr 80px 100px 122px 110px 34px;gap:12px;
+    .qbhead{display:grid;grid-template-columns:1fr 64px 90px 90px 104px 96px 30px;gap:10px;
       padding:8px 12px;background:linear-gradient(180deg,#F4F7FB,#EDF1F7);border:1px solid var(--line);
       border-radius:10px;margin-bottom:8px;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);font-weight:700}
-    .qbhead .qbc-qty,.qbhead .qbc-rate,.qbhead .qbc-amt{text-align:right}
-    .qbrow{grid-template-columns:1fr 80px 100px 122px 110px 34px;gap:12px;align-items:center;
+    .qbhead .qbc-qty,.qbhead .qbc-rate,.qbhead .qbc-cost,.qbhead .qbc-amt{text-align:right}
+    .qbrow{grid-template-columns:1fr 64px 90px 90px 104px 96px 30px;gap:10px;align-items:center;
       border:none;border-bottom:1px solid var(--line);border-radius:0;margin-bottom:0;padding:10px 12px;background:transparent}
     .qbrow:last-of-type{border-bottom:none}
     .qbrow .qbc-item,.qbrow .qbc-amt{grid-column:auto}
@@ -2883,7 +2883,7 @@ const EDITABLE_STATUSES = ['local_draft','draft','pending_approval'];
 function mqEditable(q){ return EDITABLE_STATUSES.includes(q.status); }
 function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'', customerName:'', currency:'KES',
            reference:'', subject:'', quoteDate:today(), expiryDate:'',
-           items:[{name:'',description:'',qty:1,rate:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
+           items:[{name:'',description:'',qty:1,rate:0,cost:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
@@ -2903,7 +2903,10 @@ const qesc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 let _qbSearchT=null, _qbAssignT=null;
 
 function qbLineAmt(it){ return (parseFloat(it.qty)||0)*(parseFloat(it.rate)||0); }
+function qbLineCost(it){ return (parseFloat(it.qty)||0)*(parseFloat(it.cost)||0); }
 function qbSub(){ return QB.items.reduce((s,it)=>s+qbLineAmt(it),0); }
+function qbCostTotal(){ return QB.items.reduce((s,it)=>s+qbLineCost(it),0); }
+function qbProfit(){ return qbSub()-qbDiscAmt()-qbCostTotal(); }
 function qbDiscAmt(){ const sub=qbSub(); const v=Math.max(0,parseFloat(QB.discVal)||0);
   return QB.discType==='amount' ? Math.min(v,sub) : sub*v/100; }
 function qbTax(){ const sub=qbSub(); if(sub<=0) return 0;
@@ -2948,6 +2951,7 @@ function vNewQuote(){
       </div>
       <div class="qbc-qty"><span class="qbc-lab">Qty</span><input type="number" step="0.01" min="0" value="${qesc(it.qty)}" oninput="qbItem(${i},'qty',this.value)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-rate"><span class="qbc-lab">Rate</span><input type="number" step="0.01" min="0" value="${qesc(it.rate)}" oninput="qbItem(${i},'rate',this.value)" style="margin-bottom:0;text-align:right"></div>
+      <div class="qbc-cost"><span class="qbc-lab">Unit cost</span><input type="number" step="0.01" min="0" placeholder="0" value="${qesc(it.cost)}" oninput="qbItem(${i},'cost',this.value)" title="Your cost per unit (internal — not sent to the customer)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-tax"><span class="qbc-lab">Tax</span><select onchange="qbItem(${i},'tax',this.value)" style="margin-bottom:0">${taxOpt(it.tax)}</select></div>
       <div class="qbc-amt"><span class="qbc-lab">Amount</span><div id="qbAmt${i}" style="font-weight:700;font-size:13px">${fmtn(qbLineAmt(it))}</div></div>
       <button class="qbc-del btn sec" onclick="qbDelRow(${i})" title="Remove">✕</button>
@@ -2980,7 +2984,7 @@ function vNewQuote(){
   <div class="card">
     <div class="qbhead">
       <div class="qbc-item">Item details</div><div class="qbc-qty">Qty</div><div class="qbc-rate">Rate</div>
-      <div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
+      <div class="qbc-cost">Unit cost</div><div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
     </div>
     ${rows}
     <button class="btn sec" style="width:auto;padding:7px 12px;font-size:12px;margin-top:10px" onclick="qbAddRow()">⊕ Add new row</button>
@@ -3018,7 +3022,9 @@ function qbTotalsHtml(){
         </select></span>
       <b style="color:var(--bad)">− ${fmtn(qbDiscAmt())}</b></div>
     <div class="row" style="margin-top:10px"><span style="color:var(--blue)">VAT (${Math.round((CFG.vat||0.16)*100)}%)</span><b>${fmtn(qbTax())}</b></div>
-    <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><b>Total ( ${qesc(cur)} )</b><b style="color:var(--orange);font-size:17px">${fmtn(qbTotal())}</b></div>`;
+    <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><b>Total ( ${qesc(cur)} )</b><b style="color:var(--orange);font-size:17px">${fmtn(qbTotal())}</b></div>
+    ${ME.admin?`<div class="row" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)"><span class="muted">Cost (internal)</span><span>${fmtn(qbCostTotal())}</span></div>
+    <div class="row" style="margin-top:6px"><b style="color:var(--good)">Profit (ex VAT)</b><b style="color:${qbProfit()<0?'var(--bad)':'var(--good)'}">${fmtn(qbProfit())}${qbSub()>0?` · ${Math.round(qbProfit()/qbSub()*100)}%`:''}</b></div>`:''}`;
 }
 function qbItem(i,field,val){ if(!QB.items[i])return; QB.items[i][field]=val;
   const a=document.getElementById('qbAmt'+i); if(a) a.textContent=fmtn(qbLineAmt(QB.items[i]));
@@ -3042,7 +3048,7 @@ function qbPick(id,name,cur){ QB.customerId=id; QB.customerName=name; QB.currenc
 function qbPayload(){ return { id:QB.id||undefined, zoho_customer_id:QB.customerId, customer_name:QB.customerName,
   currency:QB.currency, reference:QB.reference, subject:QB.subject, quote_date:QB.quoteDate, expiry_date:QB.expiryDate,
   notes:QB.notes, terms:QB.terms, discount_value:QB.discVal, discount_type:QB.discType,
-  line_items:QB.items.map(it=>({name:it.name,description:it.description,qty:it.qty,rate:it.rate,tax:it.tax||'vat'})) }; }
+  line_items:QB.items.map(it=>({name:it.name,description:it.description,qty:it.qty,rate:it.rate,cost:it.cost,tax:it.tax||'vat'})) }; }
 function qbReqOk(){
   if(!QB.customerId && !QB.customerName){ QB.msg='Choose a customer.'; QB.err=true; render(); return false; }
   if(!String(QB.subject||'').trim()){ QB.msg='Subject is required.'; QB.err=true; render(); return false; }
@@ -3125,12 +3131,19 @@ function qbASave(){ if(!QB.aCust)return; fetch('api/customer_assign.php',{method
 /* ---- My Quotes ---- */
 function mqPreviewHtml(q){
   const its=q.line_items||[];
-  const rows=its.map(it=>`<div class="row" style="gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)">
+  const showProfit=ME.admin;
+  const rows=its.map(it=>{
+    const amt=(it.amount!=null?it.amount:(it.qty*it.rate));
+    const lp=(it.profit!=null?it.profit:(amt-(it.qty*(it.cost||0))));
+    return `<div class="row" style="gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)">
       <div style="flex:1;min-width:0"><div style="font-size:11.5px;font-weight:600;text-transform:uppercase">${qesc(it.name||'')}</div>
         ${it.description?`<div class="muted" style="font-size:10.5px">${qesc(it.description)}</div>`:''}</div>
-      <div class="muted" style="font-size:11px;white-space:nowrap">${fmt1(it.qty)} × ${fmtn(it.rate)}${(it.tax==='none')?' · no tax':''}</div>
-      <div style="font-weight:600;font-size:11.5px;white-space:nowrap;min-width:74px;text-align:right">${fmtn(it.amount!=null?it.amount:(it.qty*it.rate))}</div>
-    </div>`).join('');
+      <div class="muted" style="font-size:11px;white-space:nowrap">${fmt1(it.qty)} × ${fmtn(it.rate)}${(it.tax==='none')?' · no tax':''}${showProfit&&(it.cost>0)?` · cost ${fmtn(it.cost)}`:''}</div>
+      <div style="white-space:nowrap;min-width:84px;text-align:right">
+        <div style="font-weight:600;font-size:11.5px">${fmtn(amt)}</div>
+        ${showProfit?`<div style="font-size:10px;color:${lp<0?'var(--bad)':'var(--good)'}">+${fmtn(lp)}</div>`:''}
+      </div>
+    </div>`;}).join('');
   const meta=[];
   if(q.reference) meta.push('Ref: '+qesc(q.reference));
   if(q.subject) meta.push('Subject: '+qesc(q.subject));
@@ -3141,6 +3154,8 @@ function mqPreviewHtml(q){
     ${rows||'<div class="muted" style="font-size:11px">No line items.</div>'}
     <div class="row" style="margin-top:8px"><span class="muted" style="font-size:11px">Sub ${fmtn(q.sub_total)}${(q.discount_amount>0)?' · disc −'+fmtn(q.discount_amount):''} · VAT ${fmtn(q.tax_amount)}</span>
       <b style="font-size:12px">${qesc(q.currency||'KES')} ${fmtn(q.total)}</b></div>
+    ${ME.admin?`<div class="row" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)"><span class="muted" style="font-size:11px">Cost ${fmtn(q.total_cost||0)}</span>
+      <b style="font-size:12px;color:${(q.profit||0)<0?'var(--bad)':'var(--good)'}">Profit ${fmtn(q.profit||0)}${q.sub_total>0?` · ${Math.round((q.profit||0)/q.sub_total*100)}%`:''}</b></div>`:''}
     ${q.notes?`<div class="muted" style="font-size:11px;margin-top:6px">📝 ${qesc(q.notes)}</div>`:''}
   </div>`;
 }
@@ -3176,6 +3191,7 @@ function mqListHtml(){
         <div style="text-align:right;white-space:nowrap">
           <div style="color:var(--orange);font-weight:700;font-size:15px">${qesc(q.currency||'KES')} ${fmtn(q.total)}</div>
           <div style="margin-top:5px">${quoteBadge(q.status)}</div>
+          ${ME.admin?`<div style="margin-top:5px;font-size:10.5px;font-weight:600;color:${(q.profit||0)<0?'var(--bad)':'var(--good)'}">Profit ${fmtn(q.profit||0)}</div>`:''}
         </div>
       </div>
       <div class="qact">
@@ -3294,7 +3310,7 @@ function mqEdit(id){ fetch('api/quotes.php',{method:'POST',credentials:'same-ori
     QB.id=q.id; QB.zohoId=q.zoho_estimate_id||''; QB.status=q.status||'local_draft';
     QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
     QB.reference=q.reference||''; QB.subject=q.subject||''; QB.quoteDate=q.quote_date||today(); QB.expiryDate=q.expiry_date||'';
-    QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,tax:'vat'}];
+    QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,cost:0,tax:'vat'}];
     QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; navTo('newquote');
   }).catch(e=>alert(''+e)); }
 function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was pushed, it stays in Zoho.)'))return;
