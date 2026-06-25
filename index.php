@@ -373,6 +373,13 @@ if (empty($_SESSION['auth'])):
   /* ---- Pane entrance: a touch smoother ---- */
   @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 
+  /* ---- My Quotes cards: tidy action bar (no more edge-to-edge spread) ---- */
+  .qcard{padding:14px 16px}
+  .qact{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+  .qact .qb{width:auto;padding:6px 12px;font-size:12px;border-radius:9px}
+  .qact .qb-del{margin-left:auto;color:var(--bad);padding:6px 10px;font-weight:700;line-height:1}
+  .qact .qb-del:hover{background:#FDECEA;border-color:#F4C7C0}
+
   /* ---- Quote builder: Zoho-style item table + totals ---- */
   .qbhead{display:none}
   .qbrow{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;align-items:end;padding:12px;
@@ -2914,6 +2921,13 @@ function quoteBadge(status){
   const m=map[status]||[status||'—','#64748B','#F1F4F8'];
   return `<span class="pill" style="color:${m[1]};background:${m[2]}">${m[0]}</span>`;
 }
+function quoteAccent(s){
+  if(s==='approved'||s==='accepted') return 'var(--good)';
+  if(s==='declined'||s==='rejected') return 'var(--bad)';
+  if(s==='pending_approval') return '#E0A400';
+  if(s==='sent'||s==='invoiced') return 'var(--blue)';
+  return '#CBD5E1';
+}
 
 /* ---- New Quote (builder) — laid out like the Zoho estimate form ---- */
 function vNewQuote(){
@@ -3137,19 +3151,33 @@ function vMyQuotes(){
   const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
 
   const cards = slice.length ? slice.map(q=>{
-    const pushed=!!q.zoho_estimate_id; const isOpen=!!MQ.open[q.id];
-    return `<div class="card">
-      <div class="row" style="align-items:flex-start"><div>
-        <b style="font-size:13.5px">${qesc(q.customer_name||'(no customer)')}</b>
-        <div class="muted" style="margin-top:2px">${pushed?('Zoho '+qesc(q.zoho_estimate_number||'')+' · '):''}${ME.admin?('by '+qesc(q.created_by)+' · '):''}${q.line_items.length} item${q.line_items.length===1?'':'s'}</div>
-      </div><div style="text-align:right"><b style="color:var(--orange)">${qesc(q.currency||'KES')} ${fmtn(q.total)}</b>
-        <div style="margin-top:4px">${quoteBadge(q.status)}</div></div></div>
-      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqTogglePreview(${q.id})">${isOpen?'Hide ▴':'Preview ▾'}</button>
-        ${mqEditable(q)?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqEdit(${q.id})">Edit</button>`:''}
-        ${!pushed?`<button class="btn" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqPush(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Pushing…':'Push to Zoho →'}</button>`:''}
-        ${pushed?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSyncOne(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Checking…':'↻ Check status'}</button>`:''}
-        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqDelete(${q.id})">Remove</button>
+    const pushed=!!q.zoho_estimate_id; const isOpen=!!MQ.open[q.id]; const busy=MQ.busyId===q.id;
+    const acc=quoteAccent(q.status);
+    const canSend=pushed && ['approved','sent','accepted'].includes(q.status);
+    const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
+    const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
+                 ME.admin?('by '+qesc(q.created_by)):null,
+                 `${q.line_items.length} item${q.line_items.length===1?'':'s'}`,
+                 date?date:null ].filter(Boolean).join(' · ');
+    return `<div class="card qcard" style="border-left:4px solid ${acc}">
+      <div class="row" style="align-items:flex-start;gap:12px">
+        <div style="min-width:0;flex:1">
+          <b style="font-size:14px">${qesc(q.customer_name||'(no customer)')}</b>
+          <div class="muted" style="margin-top:3px;font-size:11.5px">${meta}</div>
+        </div>
+        <div style="text-align:right;white-space:nowrap">
+          <div style="color:var(--orange);font-weight:700;font-size:15px">${qesc(q.currency||'KES')} ${fmtn(q.total)}</div>
+          <div style="margin-top:5px">${quoteBadge(q.status)}</div>
+        </div>
+      </div>
+      <div class="qact">
+        <button class="btn sec qb" onclick="mqTogglePreview(${q.id})">${isOpen?'▴ Hide':'▾ Preview'}</button>
+        ${canSend?`<button class="btn qb" onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
+        ${pushed?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
+        ${mqEditable(q)?`<button class="btn sec qb" onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
+        ${!pushed?`<button class="btn qb" onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
+        ${pushed?`<button class="btn sec qb" onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
+        <button class="btn sec qb qb-del" onclick="mqDelete(${q.id})" title="Remove from app">✕</button>
       </div>
       ${isOpen?mqPreviewHtml(q):''}
     </div>`; }).join('')
@@ -3188,6 +3216,14 @@ function mqSetMonth(v){ MQ.month=v; MQ.page=1; render(); }
 function mqGoPage(n){ MQ.page=n; render(); }
 function mqToggleUser(u){ const i=MQ.users.indexOf(u); if(i>=0) MQ.users.splice(i,1); else MQ.users.push(u); MQ.page=1; render(); }
 function mqClearUsers(){ MQ.users=[]; MQ.page=1; render(); }
+function mqSend(id){ MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_send.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ MQ.msg='Sent to '+(j.email||'the customer')+(j.number?(' ('+j.number+')'):'')+'.'; MQ.err=false; const q=MQ.quotes.find(x=>x.id===id); if(q)q.status='sent'; }
+    else { MQ.msg=j.error||'Send failed.'; MQ.err=true; } render();
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
+function mqPdf(id){ window.open('api/quote_pdf.php?id='+id,'_blank'); }
 function mqLoad(){ MQ.loading=true;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='myquotes'){ render(); if(MQ.quotes.some(q=>q.zoho_estimate_id)) mqSync(true); } } })
