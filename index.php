@@ -394,6 +394,28 @@ if (empty($_SESSION['auth'])):
   .qact .qb-del{margin-left:auto;color:var(--bad);padding:6px 10px;font-weight:700;line-height:1}
   .qact .qb-del:hover{background:#FDECEA;border-color:#F4C7C0}
 
+  /* ---- To-Do: compact, scannable task rows that expand to edit ---- */
+  .tkcard{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--sh-sm);transition:box-shadow .18s ease,border-color .18s ease}
+  .tkcard:hover{box-shadow:var(--sh-md)}
+  .tkcard.open{border-color:#CBD5E1;box-shadow:var(--sh-md)}
+  .tkcard.done{opacity:.62}
+  .tk-row{display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer}
+  .tk-check{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:2px solid #CBD5E1;display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;background:#fff;transition:background .15s ease,border-color .15s ease}
+  .tk-check:hover{border-color:var(--good)}
+  .tkcard.done .tk-check{background:var(--good);border-color:var(--good)}
+  .tk-main{flex:1;min-width:0}
+  .tk-title{font-weight:600;font-size:13.5px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tkcard.done .tk-title{text-decoration:line-through;color:var(--mute)}
+  .tk-sub{display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap}
+  .tk-tag{background:#FFF4EB;color:var(--orange);border:1px solid #F7D9BC;border-radius:20px;padding:1px 9px;font-size:10.5px;font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tk-sent{font-size:10px;color:var(--good);font-weight:600}
+  .tk-people{display:flex;align-items:center;flex:0 0 auto}
+  .tk-people .avatar{margin-left:-7px;box-shadow:0 0 0 2px #fff}
+  .tk-people .avatar:first-child{margin-left:0}
+  .tk-more{margin-left:-7px;width:24px;height:24px;border-radius:50%;background:#E6EAF0;color:var(--mute);display:grid;place-items:center;font-size:10px;font-weight:700;box-shadow:0 0 0 2px #fff}
+  .tk-caret{flex:0 0 auto;color:#9AA7B8;font-size:11px}
+  .tk-body{padding:12px 14px 14px;border-top:1px solid var(--line);background:#FAFBFD;animation:rise .2s ease both}
+
   /* ---- Quote builder modal ---- */
   .qbmodal{position:fixed;inset:0;z-index:200;background:rgba(15,23,34,.55);display:none;
     align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
@@ -2856,29 +2878,39 @@ function todoAssigneeChips(t){
   return `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px">${chips||'<span class="muted" style="font-size:11px">No one assigned yet.</span>'} ${addSel}</div>`;
 }
 
+function todoCardToggle(id){ TASK.open=TASK.open||{}; TASK.open[id]=!TASK.open[id]; render(); }
 function todoTaskCard(t){
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const done=t.status==='done';
-  const tickedCount=(t.assignees||[]).filter(a=>a.ticked).length;
-  const sent = t.sent_at ? `<span class="muted" style="font-size:10px">sent ✓</span>` : '';
-  return `<div class="card" style="border-left:3px solid ${done?'var(--good)':'var(--orange)'};${done?'opacity:.7':''}">
-    <div class="row" style="align-items:flex-start;gap:8px">
-      <label style="display:flex;align-items:center;gap:7px;flex:1">
-        <input type="checkbox" ${done?'checked':''} onclick="todoToggle(${t.id},this.checked)">
-        <span style="font-weight:600;font-size:13px;${done?'text-decoration:line-through':''}">${esc(t.title)}</span>
-      </label>
-      <button class="btn sec" style="width:auto;padding:3px 8px;font-size:11px" onclick="todoDelete(${t.id})">✕</button>
-    </div>
-    <input type="text" placeholder="Subject / short label…" style="width:100%;margin-top:8px;font-size:12px;font-weight:600" value="${esc(t.subject||'')}" onchange="todoField(${t.id},'subject',this.value)">
-    <textarea placeholder="Notes…" style="width:100%;margin-top:8px;min-height:46px;font-size:12px" onchange="todoField(${t.id},'notes',this.value)">${esc(t.notes||'')}</textarea>
+  const open=!!(TASK.open&&TASK.open[t.id]);
+  const as=t.assignees||[];
+  const tickedCount=as.filter(a=>a.ticked).length;
+  const avatars = as.slice(0,4).map(a=>dshAvatar(a.name||a.email,24)).join('') + (as.length>4?`<span class="tk-more">+${as.length-4}</span>`:'');
+  const sent = t.sent_at ? `<span class="tk-sent" title="Emailed to assignees">✓ sent</span>` : '';
+  const head = `<div class="tk-row" onclick="todoCardToggle(${t.id})">
+      <span class="tk-check" title="${done?'Mark not done':'Mark done'}" onclick="event.stopPropagation();todoToggle(${t.id},${done?'false':'true'})">${done?'✓':''}</span>
+      <div class="tk-main">
+        <div class="tk-title">${esc(t.title)}</div>
+        <div class="tk-sub">${t.subject?`<span class="tk-tag">${esc(t.subject)}</span>`:''}${as.length?'':'<span class="muted" style="font-size:10.5px">Unassigned</span>'}${sent}</div>
+      </div>
+      <div class="tk-people">${avatars}</div>
+      <span class="tk-caret">${open?'▴':'▾'}</span>
+    </div>`;
+  if(!open) return `<div class="tkcard${done?' done':''}">${head}</div>`;
+
+  const adminBody = ME.admin ? `
+    <label style="margin-top:0">Subject / short label</label>
+    <input type="text" placeholder="e.g. Site survey" style="width:100%;font-size:12px;font-weight:600" value="${esc(t.subject||'')}" onchange="todoField(${t.id},'subject',this.value)">
+    <label style="margin-top:12px">Notes</label>
+    <textarea placeholder="Notes…" style="width:100%;min-height:54px;font-size:12px" onchange="todoField(${t.id},'notes',this.value)">${esc(t.notes||'')}</textarea>
     <div class="muted" style="font-size:10.5px;margin-top:8px">Assignees (tick who to send to):</div>
     ${todoAssigneeChips(t)}
-    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+    <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
       <button class="btn" style="width:auto;padding:6px 12px;font-size:12px" onclick="todoSend(${t.id})" ${(tickedCount===0||TASK.busyId===t.id)?'disabled':''}>${TASK.busyId===t.id?'Sending…':'✉ Send to ticked ('+tickedCount+')'}</button>
       <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="todoCalToggle(${t.id})">📅 Calendar</button>
-      ${sent}
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px;color:var(--bad);margin-left:auto" onclick="todoDelete(${t.id})">🗑 Delete</button>
     </div>
-    ${TASK.calId===t.id?`<div class="card" style="background:#F7F9FC;margin-top:8px">
+    ${TASK.calId===t.id?`<div class="card" style="background:#fff;margin-top:10px">
       <div class="muted" style="font-size:10.5px;margin-bottom:6px">Emails a calendar invite to the ticked assignees — they tap once to add it to their calendar.</div>
       <div class="grid2" style="gap:8px">
         <div><label>Date</label><input type="date" value="${esc(TASK.calDate||today())}" onchange="TASK.calDate=this.value"></div>
@@ -2888,8 +2920,12 @@ function todoTaskCard(t){
       <input type="number" step="15" min="5" value="${esc(TASK.calDur||60)}" onchange="TASK.calDur=this.value">
       <button class="btn" style="margin-top:8px;width:auto;padding:6px 12px;font-size:12px" onclick="todoCalSend(${t.id})" ${(tickedCount===0||TASK.calBusy)?'disabled':''}>${TASK.calBusy?'Sending…':'Send calendar invite to ticked ('+tickedCount+')'}</button>
       ${(TASK.calMsg&&TASK.calId===t.id)?`<div class="${TASK.calErr?'warn':'ok'}" style="margin-top:8px;font-size:12px">${TASK.calMsg}</div>`:''}
-    </div>`:''}
-  </div>`;
+    </div>`:''}` : `
+    <label style="margin-top:0">Notes</label>
+    <textarea placeholder="Add a progress note…" style="width:100%;min-height:54px;font-size:12px" onchange="todoField(${t.id},'notes',this.value)">${esc(t.notes||'')}</textarea>
+    ${as.length>1?`<div class="muted" style="font-size:11px;margin-top:8px">Also on this: ${as.filter(a=>String(a.name||a.email).toLowerCase()!==String(ME.user||'').toLowerCase()).map(a=>esc(a.name||a.email)).join(', ')||'just you'}</div>`:''}`;
+
+  return `<div class="tkcard open${done?' done':''}">${head}<div class="tk-body">${adminBody}</div></div>`;
 }
 
 function todoInboxHtml(){
@@ -2943,11 +2979,10 @@ function vTodo(){
   if(!ME.admin){
     return `<h2>My to-do</h2>
     ${TASK.msg?`<div class="${TASK.msgErr?'warn':'ok'}" style="margin-bottom:10px">${TASK.msg}</div>`:''}
-    <div class="muted" style="margin:-4px 2px 12px;font-size:12px">Tasks assigned to you. Mark them done and add notes as you go.</div>
-    <div style="font-weight:600;font-size:13px;margin:6px 2px 8px">Open (${open.length})</div>
-    ${open.length? open.map(todoTaskCard).join('') : `<div class="card muted" style="text-align:center">Nothing assigned to you right now. 🎉</div>`}
-    ${done.length?`<div class="row" style="margin:14px 2px 8px">
-        <span style="font-weight:600;font-size:13px">Done (${done.length})</span>
+    <div class="muted" style="margin:-4px 2px 14px;font-size:12px">Tasks assigned to you. Tap a task to open it, tick the circle when it's done.</div>
+    <div class="sect" style="margin-top:6px"><b>Open</b><span class="ln"></span><span class="pill" style="background:#FFF4EB;color:var(--orange)">${open.length}</span></div>
+    ${open.length? open.map(todoTaskCard).join('') : `<div class="card muted" style="text-align:center;padding:20px">Nothing assigned to you right now. 🎉</div>`}
+    ${done.length?`<div class="sect"><b>Done</b><span class="ln"></span><span class="pill" style="background:#E7F6EC;color:var(--good)">${done.length}</span>
         <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="TASK.showDone=!TASK.showDone;render()">${TASK.showDone?'Hide':'Show'}</button>
       </div>${TASK.showDone? done.map(todoTaskCard).join('') : ''}`:''}`;
   }
@@ -2977,14 +3012,13 @@ function vTodo(){
     <button class="btn" style="width:auto;padding:9px 16px;margin-top:8px" onclick="todoAdd()">${TASK.newMode==='cal'?'Send calendar invite':(TASK.newMode==='both'?'+ Add task & invite':'+ Add task')}</button>
   </div>
 
-  <div style="font-weight:600;font-size:13px;margin:10px 2px 8px">From your email</div>
+  <div class="sect"><b>From your email</b><span class="ln"></span></div>
   ${todoInboxHtml()}
 
-  <div style="font-weight:600;font-size:13px;margin:14px 2px 8px">Open tasks (${open.length})</div>
-  ${open.length? open.map(todoTaskCard).join('') : `<div class="card muted" style="text-align:center">Nothing open. 🎉</div>`}
+  <div class="sect"><b>Open tasks</b><span class="ln"></span><span class="pill" style="background:#FFF4EB;color:var(--orange)">${open.length}</span></div>
+  ${open.length? open.map(todoTaskCard).join('') : `<div class="card muted" style="text-align:center;padding:20px">Nothing open. 🎉</div>`}
 
-  ${done.length?`<div class="row" style="margin:14px 2px 8px">
-      <span style="font-weight:600;font-size:13px">Done (${done.length})</span>
+  ${done.length?`<div class="sect"><b>Done</b><span class="ln"></span><span class="pill" style="background:#E7F6EC;color:var(--good)">${done.length}</span>
       <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="TASK.showDone=!TASK.showDone;render()">${TASK.showDone?'Hide':'Show'}</button>
     </div>${TASK.showDone? done.map(todoTaskCard).join('') : ''}`:''}`;
 }
