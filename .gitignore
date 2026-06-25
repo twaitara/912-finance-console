@@ -1,0 +1,11 @@
+config.php
+data/
+mail_token.php
+mail_token.old
+*.old
+*.zip
+index_backup_*.php
+api/error_log
+.htaccess1
+.DS_Store
+Thumbs.db
