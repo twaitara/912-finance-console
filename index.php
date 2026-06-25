@@ -2157,7 +2157,7 @@ function saveSettings(){
 /* ================= Emails (client statements -> Zoho Mail draft) ================= */
 let EMAIL = { clients:[], loaded:false, loadingClients:false, clientId:'', data:null, loading:false,
               picked:{}, intro:'', subject:'', from:'', to:'', to_email:'', toEdited:false, book:[], newEmail:'',
-              clientSearch:'', clientPicked:false, msg:'', msgErr:false, saving:false,
+              clientSearch:'', clientPicked:false, msg:'', msgErr:false, saving:false, unpaidQ:'',
               bulkSel:{}, bulkProg:{}, bulkRunning:false, bulkDone:0, bulkTotal:0, bulkMsg:'', bulkErr:false };
 
 function emailLoadClients(){
@@ -2321,7 +2321,8 @@ function vEmail(){
   return `
   <h2>Email a client</h2>
   ${EMAIL.msg && !EMAIL.data && !EMAIL.clientId ? `<div class="warn">${EMAIL.msg}</div>`:''}
-  ${emUnpaidTableHtml()}
+  ${(EMAIL.clients||[]).some(c=>c.unpaid)?`<input id="emUnpaidSearch" type="text" autocomplete="off" placeholder="🔍 Quick search clients below…" value="${(EMAIL.unpaidQ||'').replace(/"/g,'&quot;')}" oninput="emailUnpaidSearch(this.value)" style="margin-bottom:10px">`:''}
+  <div id="emUnpaidBox">${emUnpaidTableHtml()}</div>
   <label>Search a client</label>
   <input id="emClientSearch" type="text" autocomplete="off" placeholder="Search client name or email…" value="${(EMAIL.clientSearch||'').replace(/"/g,'&quot;')}" oninput="emailClientSearch(this.value)">
   <div id="emClientList">${emClientListHtml()}</div>
@@ -2379,10 +2380,13 @@ function emailUnmarkSent(id){
     body:JSON.stringify({action:'unmark',customer_id:id})}).then(r=>r.json()).then(j=>{
     if(!j.ok && c){ c.sent=true; render(); } }).catch(()=>{ if(c){ c.sent=true; render(); } });
 }
+function emailUnpaidSearch(v){ EMAIL.unpaidQ=v; const b=document.getElementById('emUnpaidBox'); if(b) b.innerHTML=emUnpaidTableHtml(); }
 function emUnpaidTableHtml(){
-  const list=(EMAIL.clients||[]).filter(c=>c.unpaid).slice()
-    .sort((a,b)=>{ const sa=a.sent?1:0, sb=b.sent?1:0; if(sa!==sb) return sa-sb; return (b.unpaidTotal||0)-(a.unpaidTotal||0); });
-  if(!list.length) return '';
+  const q=(EMAIL.unpaidQ||'').trim().toLowerCase();
+  let list=(EMAIL.clients||[]).filter(c=>c.unpaid);
+  if(q) list=list.filter(c=>((c.name||'')+' '+(c.email||'')).toLowerCase().includes(q));
+  list=list.slice().sort((a,b)=>{ const sa=a.sent?1:0, sb=b.sent?1:0; if(sa!==sb) return sa-sb; return (b.unpaidTotal||0)-(a.unpaidTotal||0); });
+  if(!list.length) return q?`<div class="muted" style="padding:14px;text-align:center;margin-bottom:10px">No unpaid client matches “${qesc(EMAIL.unpaidQ)}”.</div>`:'';
   let tot=0, cnt=0;
   const allSel = list.length && list.every(c=>EMAIL.bulkSel[c.id]);
   const rows=list.map(c=>{ tot+=(c.unpaidTotal||0); cnt+=(c.unpaidCount||0);
