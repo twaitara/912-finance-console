@@ -13,6 +13,7 @@ function users_table(PDO $pdo) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     try { $pdo->exec("ALTER TABLE app_users ADD COLUMN email VARCHAR(190) DEFAULT '' AFTER pass_hash"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE app_users ADD COLUMN disabled TINYINT NOT NULL DEFAULT 0 AFTER is_admin"); } catch (Exception $e) {}
 }
 
 /* Canonical permissionable tabs: key => label. Keep in sync with the nav. */
@@ -55,6 +56,7 @@ function user_authenticate(PDO $pdo, $username, $password) {
     $st->execute([trim($username)]);
     $u = $st->fetch(PDO::FETCH_ASSOC);
     if (!$u) return false;
+    if (!empty($u['disabled'])) return false;            // disabled users cannot sign in
     if (!password_verify($password, $u['pass_hash'])) return false;
     return $u;
 }

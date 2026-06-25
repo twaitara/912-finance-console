@@ -1329,8 +1329,8 @@ function vUsers(){
     const chips = u.is_admin? '<span class="pill" style="background:#EEF2FE;color:var(--blue)">Full access</span>'
       : (tabs.length? tabs.map(t=>`<span class="pill" style="background:#F1F4F8;color:var(--ink)">${ALLTABS[t]||t}</span>`).join(' ') : '<span class="muted" style="font-size:11px">No tabs</span>');
     const editing = N.editId===u.id;
-    return `<div class="card">
-      <div class="row"><b style="font-size:14px">${esc(u.username)}${u.is_admin?' 👑':''}</b>
+    return `<div class="card" style="${u.disabled?'opacity:.62':''}">
+      <div class="row"><b style="font-size:14px">${esc(u.username)}${u.is_admin?' 👑':''} ${u.disabled?'<span class="pill" style="background:#FDECEA;color:var(--bad)">Disabled</span>':''}</b>
         <span class="muted" style="font-size:11px">#${u.id}</span></div>
       <div class="muted" style="font-size:11px;margin-top:2px">${u.email?('✉ '+esc(u.email)):'<span style="color:var(--bad)">no email — cannot see their tasks</span>'}${u.calendar?' · <span style="color:var(--good)">📅 calendar connected</span>':''}</div>
       <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">${chips}</div>
@@ -1343,6 +1343,7 @@ function vUsers(){
           ${u.is_admin?'':`<button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userEdit(${u.id})">Edit tabs</button>`}
           <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userSetEmail(${u.id},'${esc(u.email||'').replace(/'/g,'')}')">Set email</button>
           <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userPasswd(${u.id},'${esc(u.username).replace(/'/g,'')}')">Reset password</button>
+          <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px;${u.disabled?'color:var(--good)':'color:var(--bad)'}" onclick="userToggleActive(${u.id},${u.disabled?0:1},'${esc(u.username).replace(/'/g,'')}')">${u.disabled?'Enable':'Disable'}</button>
           <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userDelete(${u.id},'${esc(u.username).replace(/'/g,'')}')">Delete</button>
         </div>`}
     </div>`;
@@ -1390,6 +1391,12 @@ async function userPasswd(id,name){
 async function userDelete(id,name){
   if(!confirm('Delete user '+name+'?')) return;
   const j = await api('api/users.php?action=delete',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+  if(j.ok){ USERS.list=j.users||[]; } else alert(j.error||'Failed.');
+  render();
+}
+async function userToggleActive(id,disabled,name){
+  if(disabled && !confirm('Disable '+name+'? They will be signed out and unable to log in, but their quotes and tasks are kept.')) return;
+  const j = await api('api/users.php?action=set_disabled',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,disabled})});
   if(j.ok){ USERS.list=j.users||[]; } else alert(j.error||'Failed.');
   render();
 }

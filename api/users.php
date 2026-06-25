@@ -14,8 +14,8 @@ $action = $_GET['action'] ?? 'list';
 $pdo = db();
 
 function users_payload(PDO $pdo) {
-    $rows = $pdo->query("SELECT id,username,email,tabs,is_admin FROM app_users ORDER BY is_admin DESC, username ASC")->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($rows as &$r) { $r['id'] = (int)$r['id']; $r['is_admin'] = (int)$r['is_admin']; }
+    $rows = $pdo->query("SELECT id,username,email,tabs,is_admin,disabled FROM app_users ORDER BY is_admin DESC, username ASC")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as &$r) { $r['id'] = (int)$r['id']; $r['is_admin'] = (int)$r['is_admin']; $r['disabled'] = (int)($r['disabled'] ?? 0); }
     return ['ok'=>true, 'users'=>$rows];
 }
 
@@ -116,6 +116,13 @@ try {
         $p = (string)($in['password'] ?? ''); if ($p === '') throw new Exception('Password required.');
         $pdo->prepare("UPDATE app_users SET pass_hash=? WHERE id=?")->execute([password_hash($p, PASSWORD_DEFAULT), $id]);
         echo json_encode(['ok'=>true]); exit;
+    }
+
+    if ($action === 'set_disabled') {   // quickly disable/enable a login without deleting
+        $id = (int)($in['id'] ?? 0); if (!$id) throw new Exception('No user.');
+        $dis = !empty($in['disabled']) ? 1 : 0;
+        $pdo->prepare("UPDATE app_users SET disabled=? WHERE id=?")->execute([$dis, $id]);
+        echo json_encode(users_payload($pdo)); exit;
     }
 
     if ($action === 'delete') {
