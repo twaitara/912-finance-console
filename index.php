@@ -3233,7 +3233,9 @@ function mqListHtml(){
     const pushed=!!q.zoho_estimate_id; const isOpen=!!MQ.open[q.id]; const busy=MQ.busyId===q.id;
     const acc=quoteAccent(q.status);
     const canSend=pushed && ['approved','sent','accepted'].includes(q.status);
-    const canJob=pushed && ['approved','sent','accepted','invoiced'].includes(q.status);
+    // technicians may generate the job card once (approved → invoiced), but not re-download after; admins always can
+    const canJob=pushed && (ME.admin?['approved','sent','accepted','invoiced']:['approved','sent','accepted']).includes(q.status);
+    const isInvoiced=q.status==='invoiced'||!!q.zoho_invoice_number;
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
                  q.zoho_invoice_number?`<span style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number)}</span>`:null,
@@ -3258,6 +3260,7 @@ function mqListHtml(){
         <button class="btn sec qb" style="color:var(--bad);border-color:#F4C7C0" onclick="mqDecline(${q.id})" ${busy?'disabled':''}>✕ Decline</button>`:''}
         ${canSend?`<button class="btn qb" onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
         ${canJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Job Card'}</button>`:''}
+        ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px">🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
         ${!pushed?`<button class="btn qb" onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}

@@ -46,6 +46,8 @@ function quotes_table(PDO $pdo){
         "ADD COLUMN discount_amount DECIMAL(14,2) DEFAULT 0 AFTER discount_type",
         "ADD COLUMN total_cost DECIMAL(14,2) DEFAULT 0 AFTER discount_amount",
         "ADD COLUMN profit DECIMAL(14,2) DEFAULT 0 AFTER total_cost",
+        "ADD COLUMN zoho_invoice_id VARCHAR(64) DEFAULT '' AFTER zoho_estimate_number",
+        "ADD COLUMN zoho_invoice_number VARCHAR(64) DEFAULT '' AFTER zoho_invoice_id",
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
 }
 
