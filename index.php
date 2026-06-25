@@ -1045,7 +1045,7 @@ function tabRefresh(){
     case 'bulkpay':
       BULK.loaded=false;BULK.loading=false;BULK.invoices=[];BULK.sel={};BULK.done=[];BULK.msg='';
       render();bulkLoad();if(!PAY.accsLoaded)payLoadAccounts();break;
-    case 'dash':      loadTasks();checkBackup();loadQuotes();render();break;
+    case 'dash':      DPAID.loaded=false;DPAID.data=null;loadTasks();checkBackup();loadQuotes();dashPaidLoad();render();break;
     default:          render();
   }
 }
@@ -1078,6 +1078,58 @@ function render(){
   paintFund();
   if(QB.modalOpen){ const mb=document.getElementById('qbModalBody'); if(mb) mb.innerHTML=vNewQuote();
     const mt=document.getElementById('qbModalTitle'); if(mt) mt.textContent=QB.id?'Edit quote':'New quote'; }
+}
+
+let DPAID = {loaded:false, loading:false, data:null};
+function dashPaidLoad(){
+  if(DPAID.loading) return;
+  DPAID.loading=true;
+  fetch('api/dash_paid.php',{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{
+      DPAID.loading=false; DPAID.loaded=true; DPAID.data=j.ok?j:null;
+      if(TAB==='dash') render();
+    }).catch(()=>{ DPAID.loading=false; DPAID.loaded=true; });
+}
+function vDashPaid(){
+  const d=DPAID.data;
+  if(DPAID.loading) return `<div class="card" style="padding:14px 16px;margin-bottom:10px"><div class="muted" style="font-size:11.5px">Loading recent payments…</div></div>`;
+  if(!d) return '';
+  const wht=Math.max(0,Math.round(d.gross-d.net));
+  const rows=(d.rows||[]).map(r=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--line);gap:10px">
+      <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.customer}</span>
+      <span style="font-size:10px;color:var(--mute);white-space:nowrap">${r.date}</span>
+      <span style="font-size:11.5px;font-weight:700;color:var(--good);white-space:nowrap">KES ${Math.round(r.amount).toLocaleString('en-KE')}</span>
+    </div>`).join('');
+  return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
+    <div style="background:var(--grad-orange);padding:14px 16px 12px">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:10px">Payments received · last ${d.days} days · ${d.count} payment${d.count!==1?'s':''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 20px">
+        <div>
+          <div style="font-size:9.5px;color:rgba(255,255,255,.65);margin-bottom:2px">Gross billed</div>
+          <div style="font-size:21px;font-weight:800;color:#fff;line-height:1">KES ${Math.round(d.gross).toLocaleString('en-KE')}</div>
+          ${wht>0?`<div style="font-size:9.5px;color:rgba(255,255,255,.6);margin-top:3px">WHT −KES ${wht.toLocaleString('en-KE')}</div>`:''}
+        </div>
+        <div>
+          <div style="font-size:9.5px;color:rgba(255,255,255,.65);margin-bottom:2px">Net received</div>
+          <div style="font-size:21px;font-weight:800;color:#fff;line-height:1">KES ${Math.round(d.net).toLocaleString('en-KE')}</div>
+        </div>
+        <div>
+          <div style="font-size:9.5px;color:rgba(255,255,255,.65);margin-bottom:2px">Expenses</div>
+          <div style="font-size:17px;font-weight:700;color:rgba(255,255,255,.85);line-height:1">KES ${Math.round(d.expenses).toLocaleString('en-KE')}</div>
+        </div>
+        <div style="border-left:2px solid rgba(255,255,255,.25);padding-left:16px">
+          <div style="font-size:9.5px;color:rgba(255,255,255,.65);margin-bottom:2px">Profit</div>
+          <div style="font-size:22px;font-weight:800;color:#fff;line-height:1">${d.profit<0?'−':''}KES ${Math.abs(Math.round(d.profit)).toLocaleString('en-KE')}</div>
+          ${d.profit<0?`<div style="font-size:9.5px;color:rgba(255,200,100,.9);margin-top:3px">expenses exceed revenue</div>`:''}
+        </div>
+      </div>
+    </div>
+    ${rows?`<div style="padding:8px 16px 12px">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">Most recent</div>
+      ${rows}
+    </div>`:''}
+  </div>`;
 }
 
 function loadDashTasks(){
@@ -1250,6 +1302,8 @@ function vDash(){
     <div class="kpi" style="--accent:var(--blue)"><div class="l">Open tasks</div><div class="n">${openTasks}</div><div class="h">On the to-do list</div></div>
     <div class="kpi" style="--accent:var(--good)"><div class="l">Restored</div><div class="n">${s.restored.length}</div><div class="h">Bridges repaid</div></div>
   </div>
+
+  ${vDashPaid()}
 
   <div class="sect"><b>Working capital</b><span class="ln"></span>
     <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="gotoLoans()">Manage loans →</button></div>
@@ -4395,6 +4449,7 @@ if(ME.admin){ loadDeployments(); loadLoans(); loadCacheMeta(); loadBackupStatus(
 else { render(); }
 loadDashTasks();
 loadDashQuotes();
+dashPaidLoad();
 </script>
 <div style="text-align:center;padding:18px 12px 22px;border-top:1px solid #E6EAF0;margin-top:24px;line-height:1.7">
   <div style="font-size:11.5px;color:#64748B">This system is designed for <b>912 Holdings</b>, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited &amp; Global IT Limited</div>
