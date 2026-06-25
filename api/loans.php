@@ -4,7 +4,9 @@
  *  Each fund tracks its own balance; outstanding loans reduce that fund's available.
  *  The PRIMARY fund mirrors the working-capital fund value from Settings.
  *  Stored in MySQL, not Zoho. Principal only (no interest). */
+session_start();
 header('Content-Type: application/json');
+if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Owner only.']); exit; }
 require __DIR__ . '/../db.php';
 require_once __DIR__ . '/../settings_store.php';
 $cfg = require __DIR__ . '/../config.php';

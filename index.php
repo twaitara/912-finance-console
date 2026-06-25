@@ -691,6 +691,10 @@ function loadDashTasks(){
   fetch('api/tasks.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ if(j.ok){ TASK.tasks=j.tasks||[]; if(TAB==='dash') render(); } }).catch(()=>{});
 }
+function loadDashQuotes(){
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='dash') render(); } }).catch(()=>{});
+}
 function dshInitials(name){ const p=String(name||'?').trim().split(/\s+/); return ((p[0]||'?')[0]+(p[1]?p[1][0]:'')).toUpperCase(); }
 function dshColor(name){ const pal=['#F56F00','#2350C5','#16A34A','#7C3AED','#DB2777','#0891B2','#CA8A04','#DC2626']; let h=0; const s=String(name||''); for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0; return pal[h%pal.length]; }
 function dshAvatar(name,sz){ const z=sz||26; return `<span class="avatar" style="background:${dshColor(name)};width:${z}px;height:${z}px;font-size:${Math.round(z*0.38)}px">${dshInitials(name)}</span>`; }
@@ -767,17 +771,47 @@ function dashTeamHtml(){
     </div>`;
 }
 function vDashLite(){
-  const showTeam = tabAllowed('todo');
+  const showQuotes = tabAllowed('myquotes') || tabAllowed('newquote');
+  const showTasks = tabAllowed('todo');
   const showAudrey = tabAllowed('audrey');
   const showBoard = tabAllowed('taskboard');
+  const mine=MQ.quotes||[];
+  const pend=mine.filter(q=>q.status==='pending_approval').length;
+  const appr=mine.filter(q=>q.status==='approved'||q.status==='accepted').length;
+  const decl=mine.filter(q=>q.status==='declined'||q.status==='rejected').length;
+  const myTasks=(TASK.tasks||[]).filter(t=>t.status!=='done');
   let html = `
   <div class="dsh-hero">
     <div class="ey">Welcome</div>
     <div style="font-size:22px;font-weight:800;letter-spacing:-.3px;margin-top:6px">${String(ME.user||'').replace(/</g,'&lt;')}</div>
-    <div class="sub"><div><div class="l">Signed in to</div><div class="v">${(CFG.biz||'912 Finance Console')}</div></div></div>
-  </div>
-  <div class="muted" style="margin:-4px 2px 14px">Use the menu above to open the tabs you have access to.</div>`;
-  if(showTeam) html += dashTeamHtml();
+    <div class="sub">
+      <div><div class="l">My quotes</div><div class="v">${mine.length}</div></div>
+      <div><div class="l">Open tasks</div><div class="v">${myTasks.length}</div></div>
+    </div>
+  </div>`;
+  if(showQuotes){
+    html += `<div class="kpis">
+      <div class="kpi" style="--accent:var(--orange)"><div class="l">Awaiting approval</div><div class="n">${pend}</div><div class="h">Pending in Zoho</div></div>
+      <div class="kpi" style="--accent:var(--good)"><div class="l">Approved</div><div class="n">${appr}</div><div class="h">Good to go</div></div>
+      <div class="kpi" style="--accent:${decl?'var(--bad)':'var(--mute)'}"><div class="l">Declined</div><div class="n" style="${decl?'color:var(--bad)':''}">${decl}</div><div class="h">${decl?'Needs a rethink':'None'}</div></div>
+      <div class="kpi" style="--accent:var(--blue)"><div class="l">Open tasks</div><div class="n">${myTasks.length}</div><div class="h">Assigned to you</div></div>
+    </div>
+    <div class="sect"><b>My quotes</b><span class="ln"></span>
+      <button class="btn" style="width:auto;padding:5px 12px;font-size:11px" onclick="navTo('newquote')">+ New quote</button></div>
+    ${mine.length? mine.slice(0,5).map(q=>`<div class="invrow" onclick="navTo('myquotes')">
+        <div><div style="font-size:12.5px;font-weight:600">${String(q.customer_name||'(no customer)').replace(/</g,'&lt;')}</div>
+          <div class="muted">${q.zoho_estimate_number?('Zoho '+q.zoho_estimate_number+' · '):''}${(q.currency||'KES')} ${fmtn(q.total)}</div></div>
+        ${quoteBadge(q.status)}</div>`).join('')
+      : `<div class="card muted" style="text-align:center;padding:18px">No quotes yet. <span style="color:var(--orange);cursor:pointer" onclick="navTo('newquote')">Create your first →</span></div>`}`;
+  }
+  if(showTasks){
+    html += `<div class="sect"><b>My tasks</b><span class="ln"></span>${myTasks.length?`<span class="pill" style="background:#EEF2FE;color:var(--blue)">${myTasks.length} open</span>`:''}</div>
+    ${myTasks.length? myTasks.slice(0,6).map(t=>`<div class="invrow" onclick="navTo('todo')">
+        <div><div style="font-size:12.5px;font-weight:600">${String(t.title||'').replace(/</g,'&lt;')}</div>
+          ${t.subject?`<div class="muted">${String(t.subject).replace(/</g,'&lt;')}</div>`:''}</div>
+        <span class="muted" style="font-size:11px">open ›</span></div>`).join('')
+      : `<div class="card muted" style="text-align:center;padding:16px">No open tasks assigned to you. 🎉</div>`}`;
+  }
   if(showAudrey || showBoard){
     html += `<div class="sect"><b>Shared links</b><span class="ln"></span></div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:6px">
@@ -791,7 +825,7 @@ function vDashLite(){
         <span class="btn sec" style="width:auto;padding:5px 9px;font-size:10.5px">Open →</span></div>`:''}
     </div>`;
   }
-  if(!showTeam && !showAudrey && !showBoard){
+  if(!showQuotes && !showTasks && !showAudrey && !showBoard){
     html += `<div class="card muted" style="text-align:center;padding:22px">Open one of your tabs from the menu above to get started.</div>`;
   }
   return html;
@@ -1226,7 +1260,8 @@ function vUsers(){
     <label>Email <span class="muted" style="font-weight:400">(must match how tasks are assigned to them)</span></label>
     <input type="text" value="${esc(N.newE||'')}" oninput="USERS.newE=this.value" placeholder="e.g. bashir@nineonetwo.co.ke">
     <label style="display:flex;align-items:center;gap:8px;margin:8px 0"><input type="checkbox" style="width:auto" ${N.newAdmin?'checked':''} onchange="USERS.newAdmin=this.checked;render()"> <span>Admin (full access + manage users)</span></label>
-    ${N.newAdmin?'':`<label>Allowed tabs <span class="muted" style="font-weight:400">(tap to toggle)</span></label>
+    ${N.newAdmin?'':`<div class="row" style="margin:4px 0"><label style="margin:0">Allowed tabs <span class="muted" style="font-weight:400">(tap to toggle)</span></label>
+      <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="uTechPreset('new')">⚡ Technician preset</button></div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px">${uTabsBoxes(N.newTabs,'uNewToggle')}</div>`}
     <button class="btn" style="margin-top:8px" onclick="userCreate()">Create user</button>
     ${N.msg?`<div class="${N.err?'warn':'ok'}" style="margin-top:8px;font-size:12px">${N.msg}</div>`:''}
@@ -1242,7 +1277,8 @@ function vUsers(){
         <span class="muted" style="font-size:11px">#${u.id}</span></div>
       <div class="muted" style="font-size:11px;margin-top:2px">${u.email?('✉ '+esc(u.email)):'<span style="color:var(--bad)">no email — cannot see their tasks</span>'}${u.calendar?' · <span style="color:var(--good)">📅 calendar connected</span>':''}</div>
       <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">${chips}</div>
-      ${!u.is_admin&&editing?`<div style="margin-top:10px"><label>Allowed tabs</label>
+      ${!u.is_admin&&editing?`<div style="margin-top:10px"><div class="row"><label style="margin:0">Allowed tabs</label>
+        <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="uTechPreset('edit')">⚡ Technician preset</button></div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px">${uTabsBoxes(N.editTabs,'uEditToggle')}</div>
         <button class="btn" style="width:auto;padding:7px 13px;font-size:12px" onclick="userSaveTabs(${u.id})">Save tabs</button>
         <button class="btn sec" style="width:auto;padding:7px 13px;font-size:12px" onclick="USERS.editId=0;render()">Cancel</button></div>`
@@ -1265,6 +1301,8 @@ function vUsers(){
 
 function uNewToggle(k){ const a=USERS.newTabs; const i=a.indexOf(k); if(i>=0)a.splice(i,1); else a.push(k); render(); }
 function uEditToggle(k){ const a=USERS.editTabs; const i=a.indexOf(k); if(i>=0)a.splice(i,1); else a.push(k); render(); }
+const TECH_TABS=['dash','newquote','myquotes','todo'];
+function uTechPreset(which){ if(which==='edit') USERS.editTabs=TECH_TABS.slice(); else USERS.newTabs=TECH_TABS.slice(); render(); }
 function userEdit(id){ const u=(USERS.list||[]).find(x=>x.id===id); USERS.editId=id; USERS.editTabs=(u&&u.tabs?u.tabs.split(','):[]).filter(Boolean); render(); }
 async function userCreate(){
   const N=USERS;
@@ -3202,10 +3240,8 @@ document.addEventListener('click', function(e){
 }, true);
 
 applyPerms();
-loadDeployments();
-loadLoans();
-loadCacheMeta();
-loadBackupStatus();
+if(ME.admin){ loadDeployments(); loadLoans(); loadCacheMeta(); loadBackupStatus(); }
+else { render(); loadDashQuotes(); }
 loadDashTasks();
 </script>
 </body></html>

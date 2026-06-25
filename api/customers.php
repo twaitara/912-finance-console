@@ -17,13 +17,8 @@ try {
     $me    = $_SESSION['user'] ?? '';
     $admin = !empty($_SESSION['is_admin']);
 
-    /* customer ids this user is allowed to quote for (admins: unrestricted) */
+    /* All signed-in users may quote for any Zoho customer (assignment no longer restricts search). */
     $allowed = null;
-    if (!$admin) {
-        $st = $pdo->prepare("SELECT zoho_customer_id FROM customer_assignees WHERE username=?");
-        $st->execute([$me]);
-        $allowed = array_fill_keys(array_column($st->fetchAll(PDO::FETCH_ASSOC), 'zoho_customer_id'), true);
-    }
 
     if (isset($_GET['mine'])) {
         $st = $pdo->prepare("SELECT zoho_customer_id id, customer_name name FROM customer_assignees WHERE username=? ORDER BY customer_name");

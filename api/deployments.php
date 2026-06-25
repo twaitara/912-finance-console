@@ -1,6 +1,8 @@
 <?php
 /** Deployment records: list, create (with Zoho flag write-back), log cost, restore, delete. */
+session_start();
 header('Content-Type: application/json');
+if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Owner only.']); exit; }
 require __DIR__ . '/../db.php';
 require __DIR__ . '/../zoho.php';
 require_once __DIR__ . '/../fx.php';

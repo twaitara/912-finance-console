@@ -13,6 +13,9 @@
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
+$ME_USER  = $_SESSION['user']  ?? '';
+$ME_EMAIL = $_SESSION['email'] ?? '';
+$ADMIN    = !empty($_SESSION['is_admin']);
 
 require __DIR__ . '/../db.php';
 
@@ -53,9 +56,12 @@ function tk_assignees(PDO $pdo, $taskId){
     return $rows;
 }
 
-function tk_list(PDO $pdo){
+/* When $email/$user are given (a non-admin), only tasks assigned to that person are returned. */
+function tk_list(PDO $pdo, $email = null, $user = null){
     $rows = $pdo->query("SELECT * FROM tasks ORDER BY (status='done') ASC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($rows as &$r) {
+    $filter = ($email !== null || $user !== null);
+    $out = [];
+    foreach ($rows as $r) {
         $r['id'] = (int)$r['id'];
         $a = tk_assignees($pdo, $r['id']);
         // legacy: synthesize a single assignee from old columns if none in the new table
@@ -63,8 +69,26 @@ function tk_list(PDO $pdo){
             $a = [['name'=>$r['assignee_name'] ?: $r['assignee_email'], 'email'=>$r['assignee_email'], 'ticked'=>true]];
         }
         $r['assignees'] = $a;
+        if ($filter) {
+            $mine = false;
+            foreach ($a as $p) {
+                if ($email && strcasecmp((string)($p['email'] ?? ''), (string)$email) === 0) { $mine = true; break; }
+                if ($user  && strcasecmp((string)($p['name']  ?? ''), (string)$user)  === 0) { $mine = true; break; }
+            }
+            if (!$mine) continue;
+        }
+        $out[] = $r;
     }
-    return $rows;
+    return $out;
+}
+
+/* Is this person an assignee of the task? (used to gate non-admin edits) */
+function tk_user_on_task(PDO $pdo, $taskId, $email, $user){
+    foreach (tk_assignees($pdo, (int)$taskId) as $p) {
+        if ($email && strcasecmp((string)($p['email'] ?? ''), (string)$email) === 0) return true;
+        if ($user  && strcasecmp((string)($p['name']  ?? ''), (string)$user)  === 0) return true;
+    }
+    return false;
 }
 
 function tk_set_assignees(PDO $pdo, $taskId, $list){
@@ -87,7 +111,20 @@ try {
     if (!is_array($in)) $in = $_POST;
     $action = $in['action'] ?? 'list';
 
-    if ($action === 'list') { echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo)]); exit; }
+    // Technicians (non-admins) may only work on their own assigned tasks; owners do everything.
+    if (!$ADMIN) {
+        if (in_array($action, ['add','set_assignees','delete','send'], true)) {
+            throw new Exception('Only the owner can create, assign, send or delete tasks.');
+        }
+        if (in_array($action, ['toggle','update','toggle_assignee'], true)) {
+            $tid = (int)($in['id'] ?? 0);
+            if (!$tid || !tk_user_on_task($pdo, $tid, $ME_EMAIL, $ME_USER)) {
+                throw new Exception('You can only update tasks assigned to you.');
+            }
+        }
+    }
+
+    if ($action === 'list') { echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit; }
 
     if ($action === 'add') {
         $title = trim($in['title'] ?? '');
@@ -96,7 +133,7 @@ try {
         $st->execute([$title, trim($in['subject'] ?? ''), trim($in['notes'] ?? ''), $in['source'] ?? 'manual', $in['source_ref'] ?? '']);
         $id = (int)$pdo->lastInsertId();
         if (!empty($in['assignees']) && is_array($in['assignees'])) tk_set_assignees($pdo, $id, $in['assignees']);
-        echo json_encode(['ok'=>true,'id'=>$id,'tasks'=>tk_list($pdo)]); exit;
+        echo json_encode(['ok'=>true,'id'=>$id,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 
     if ($action === 'update') {
@@ -108,13 +145,13 @@ try {
         if (!$fields) throw new Exception('Nothing to update.');
         $vals[]=$id;
         $pdo->prepare("UPDATE tasks SET ".implode(',', $fields)." WHERE id=?")->execute($vals);
-        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo)]); exit;
+        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 
     if ($action === 'set_assignees') {
         $id = (int)($in['id'] ?? 0); if (!$id) throw new Exception('No task id.');
         tk_set_assignees($pdo, $id, is_array($in['assignees'] ?? null) ? $in['assignees'] : []);
-        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo)]); exit;
+        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 
     if ($action === 'toggle_assignee') {
@@ -122,7 +159,7 @@ try {
         if (!$id || $email==='') throw new Exception('Missing task or email.');
         $tick = !empty($in['ticked']) ? 1 : 0;
         $pdo->prepare("UPDATE task_assignees SET ticked=? WHERE task_id=? AND email=?")->execute([$tick,$id,$email]);
-        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo)]); exit;
+        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 
     if ($action === 'toggle') {
@@ -130,14 +167,14 @@ try {
         $status = ($in['status'] ?? 'open') === 'done' ? 'done' : 'open';
         $done = $status === 'done' ? date('Y-m-d H:i:s') : null;
         $pdo->prepare("UPDATE tasks SET status=?, done_at=? WHERE id=?")->execute([$status, $done, $id]);
-        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo)]); exit;
+        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 
     if ($action === 'delete') {
         $id = (int)($in['id'] ?? 0); if (!$id) throw new Exception('No task id.');
         $pdo->prepare("DELETE FROM tasks WHERE id=?")->execute([$id]);
         $pdo->prepare("DELETE FROM task_assignees WHERE task_id=?")->execute([$id]);
-        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo)]); exit;
+        echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 
     if ($action === 'send') {
@@ -173,7 +210,7 @@ try {
             throw new Exception('Could not send: ' . $msg);
         }
         $pdo->prepare("UPDATE tasks SET sent_at=? WHERE id=?")->execute([date('Y-m-d H:i:s'), $id]);
-        echo json_encode(['ok'=>true,'sent'=>true,'to'=>$toList,'tasks'=>tk_list($pdo)]); exit;
+        echo json_encode(['ok'=>true,'sent'=>true,'to'=>$toList,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 
     throw new Exception('Unknown action.');
