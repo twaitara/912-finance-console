@@ -56,12 +56,14 @@ function quote_price($rawItems, $vatRate, $discVal, $discType){
     foreach ((array)$rawItems as $it){
         $name = trim((string)($it['name'] ?? ''));
         if ($name === '') continue;
-        $qty  = round((float)($it['qty'] ?? 0), 2);
-        $rate = round((float)($it['rate'] ?? 0), 2);
-        $cost = max(0, round((float)($it['cost'] ?? 0), 2));
+        $qty   = round((float)($it['qty'] ?? 0), 2);
+        $rate  = round((float)($it['rate'] ?? 0), 2);
+        $cost  = max(0, round((float)($it['cost'] ?? 0), 2));          // estimated unit cost
+        $acost = max(0, round((float)($it['actual_cost'] ?? 0), 2));   // actual cost (overrides)
+        $effCost = $acost > 0 ? $acost : $cost;                         // actual wins, else unit cost
         if ($qty <= 0) $qty = 1;
         $amount   = round($qty * $rate, 2);
-        $lineCost = round($qty * $cost, 2);
+        $lineCost = round($qty * $effCost, 2);
         $tax = (strtolower((string)($it['tax'] ?? 'vat')) === 'none') ? 'none' : 'vat';
         $sub += $amount;
         $costTotal += $lineCost;
@@ -72,8 +74,9 @@ function quote_price($rawItems, $vatRate, $discVal, $discType){
             'qty'         => $qty,
             'rate'        => $rate,
             'cost'        => $cost,
+            'actual_cost' => $acost,
             'amount'      => $amount,
-            'profit'      => round($amount - $lineCost, 2),   // line profit (ex VAT)
+            'profit'      => round($amount - $lineCost, 2),   // line profit (ex VAT, using effective cost)
             'tax'         => $tax,
         ];
     }

@@ -407,11 +407,11 @@ if (empty($_SESSION['auth'])):
   .qbsplit{display:grid;grid-template-columns:1fr;gap:10px;align-items:start}
   .qbsplit>.card{margin-bottom:0}
   @media (min-width:820px){
-    .qbhead{display:grid;grid-template-columns:1fr 64px 90px 90px 104px 96px 30px;gap:10px;
+    .qbhead{display:grid;grid-template-columns:1fr 52px 78px 84px 84px 96px 86px 28px;gap:9px;
       padding:8px 12px;background:linear-gradient(180deg,#F4F7FB,#EDF1F7);border:1px solid var(--line);
-      border-radius:10px;margin-bottom:8px;font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);font-weight:700}
-    .qbhead .qbc-qty,.qbhead .qbc-rate,.qbhead .qbc-cost,.qbhead .qbc-amt{text-align:right}
-    .qbrow{grid-template-columns:1fr 64px 90px 90px 104px 96px 30px;gap:10px;align-items:center;
+      border-radius:10px;margin-bottom:8px;font-size:9px;text-transform:uppercase;letter-spacing:.3px;color:var(--mute);font-weight:700}
+    .qbhead .qbc-qty,.qbhead .qbc-rate,.qbhead .qbc-cost,.qbhead .qbc-acost,.qbhead .qbc-amt{text-align:right}
+    .qbrow{grid-template-columns:1fr 52px 78px 84px 84px 96px 86px 28px;gap:9px;align-items:center;
       border:none;border-bottom:1px solid var(--line);border-radius:0;margin-bottom:0;padding:10px 12px;background:transparent}
     .qbrow:last-of-type{border-bottom:none}
     .qbrow .qbc-item,.qbrow .qbc-amt{grid-column:auto}
@@ -2909,7 +2909,7 @@ const EDITABLE_STATUSES = ['local_draft','draft','pending_approval'];
 function mqEditable(q){ return ME.admin || EDITABLE_STATUSES.includes(q.status); }   /* admins can edit any quote */
 function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'', customerName:'', currency:'KES',
            reference:'', subject:'', quoteDate:today(), expiryDate:'',
-           items:[{name:'',description:'',qty:1,rate:0,cost:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
+           items:[{name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
@@ -2929,7 +2929,8 @@ const qesc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 let _qbSearchT=null, _qbAssignT=null;
 
 function qbLineAmt(it){ return (parseFloat(it.qty)||0)*(parseFloat(it.rate)||0); }
-function qbLineCost(it){ return (parseFloat(it.qty)||0)*(parseFloat(it.cost)||0); }
+function qbEffCost(it){ const a=parseFloat(it.acost)||0; return a>0?a:(parseFloat(it.cost)||0); }   /* actual cost wins, else unit cost */
+function qbLineCost(it){ return (parseFloat(it.qty)||0)*qbEffCost(it); }
 function qbSub(){ return QB.items.reduce((s,it)=>s+qbLineAmt(it),0); }
 function qbCostTotal(){ return QB.items.reduce((s,it)=>s+qbLineCost(it),0); }
 function qbProfit(){ return qbSub()-qbDiscAmt()-qbCostTotal(); }
@@ -2979,7 +2980,8 @@ function vNewQuote(){
       </div>
       <div class="qbc-qty"><span class="qbc-lab">Qty</span><input type="number" step="0.01" min="0" value="${qesc(it.qty)}" oninput="qbItem(${i},'qty',this.value)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-rate"><span class="qbc-lab">Rate</span><input type="number" step="0.01" min="0" value="${qesc(it.rate)}" oninput="qbItem(${i},'rate',this.value)" style="margin-bottom:0;text-align:right"></div>
-      <div class="qbc-cost"><span class="qbc-lab">Unit cost</span><input type="number" step="0.01" min="0" placeholder="0" value="${qesc(it.cost)}" oninput="qbItem(${i},'cost',this.value)" title="Your cost per unit (internal — not sent to the customer)" style="margin-bottom:0;text-align:right"></div>
+      <div class="qbc-cost"><span class="qbc-lab">Unit cost</span><input type="number" step="0.01" min="0" placeholder="0" value="${qesc(it.cost)}" oninput="qbItem(${i},'cost',this.value)" title="Estimated cost per unit (internal)" style="margin-bottom:0;text-align:right"></div>
+      <div class="qbc-acost"><span class="qbc-lab">Actual cost</span><input type="number" step="0.01" min="0" placeholder="—" value="${qesc(it.acost)}" oninput="qbItem(${i},'acost',this.value)" title="Real cost per unit once known (overrides unit cost for profit)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-tax"><span class="qbc-lab">Tax</span><select onchange="qbItem(${i},'tax',this.value)" style="margin-bottom:0">${taxOpt(it.tax)}</select></div>
       <div class="qbc-amt"><span class="qbc-lab">Amount</span><div id="qbAmt${i}" style="font-weight:700;font-size:13px">${qbAmtCellHtml(it)}</div></div>
       <button class="qbc-del btn sec" onclick="qbDelRow(${i})" title="Remove">✕</button>
@@ -3012,7 +3014,7 @@ function vNewQuote(){
   <div class="card">
     <div class="qbhead">
       <div class="qbc-item">Item details</div><div class="qbc-qty">Qty</div><div class="qbc-rate">Rate</div>
-      <div class="qbc-cost">Unit cost</div><div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
+      <div class="qbc-cost">Unit cost</div><div class="qbc-acost">Actual cost</div><div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
     </div>
     ${rows}
     <button class="btn sec" style="width:auto;padding:7px 12px;font-size:12px;margin-top:10px" onclick="qbAddRow()">⊕ Add new row</button>
@@ -3085,7 +3087,7 @@ function qbPick(id,name,cur){ cur=(cur||'KES');
 function qbPayload(){ return { id:QB.id||undefined, zoho_customer_id:QB.customerId, customer_name:QB.customerName,
   currency:QB.currency, reference:QB.reference, subject:QB.subject, quote_date:QB.quoteDate, expiry_date:QB.expiryDate,
   notes:QB.notes, terms:QB.terms, discount_value:QB.discVal, discount_type:QB.discType,
-  line_items:QB.items.map(it=>({name:it.name,description:it.description,qty:it.qty,rate:it.rate,cost:it.cost,tax:it.tax||'vat'})) }; }
+  line_items:QB.items.map(it=>({name:it.name,description:it.description,qty:it.qty,rate:it.rate,cost:it.cost,actual_cost:it.acost,tax:it.tax||'vat'})) }; }
 function qbReqOk(){
   if(!QB.customerId && !QB.customerName){ QB.msg='Choose a customer.'; QB.err=true; render(); return false; }
   if(!String(QB.subject||'').trim()){ QB.msg='Subject is required.'; QB.err=true; render(); return false; }
@@ -3171,11 +3173,12 @@ function mqPreviewHtml(q){
   const showProfit=ME.admin;
   const rows=its.map(it=>{
     const amt=(it.amount!=null?it.amount:(it.qty*it.rate));
-    const lp=(it.profit!=null?it.profit:(amt-(it.qty*(it.cost||0))));
+    const ec=((it.actual_cost>0)?it.actual_cost:(it.cost||0));
+    const lp=(it.profit!=null?it.profit:(amt-(it.qty*ec)));
     return `<div class="row" style="gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)">
       <div style="flex:1;min-width:0"><div style="font-size:11.5px;font-weight:600;text-transform:uppercase">${qesc(it.name||'')}</div>
         ${it.description?`<div class="muted" style="font-size:10.5px">${qesc(it.description)}</div>`:''}</div>
-      <div class="muted" style="font-size:11px;white-space:nowrap">${fmt1(it.qty)} × ${fmtn(it.rate)}${(it.tax==='none')?' · no tax':''}${showProfit&&(it.cost>0)?` · cost ${fmtn(it.cost)}`:''}</div>
+      <div class="muted" style="font-size:11px;white-space:nowrap">${fmt1(it.qty)} × ${fmtn(it.rate)}${(it.tax==='none')?' · no tax':''}${showProfit&&(ec>0)?` · cost ${fmtn(ec)}${(it.actual_cost>0)?' (actual)':''}`:''}</div>
       <div style="white-space:nowrap;min-width:84px;text-align:right">
         <div style="font-weight:600;font-size:11.5px">${fmtn(amt)}</div>
         ${showProfit?`<div style="font-size:10px;color:${lp<0?'var(--bad)':'var(--good)'}">+${fmtn(lp)}</div>`:''}
@@ -3357,7 +3360,7 @@ function mqEdit(id){ fetch('api/quotes.php',{method:'POST',credentials:'same-ori
     QB.id=q.id; QB.zohoId=q.zoho_estimate_id||''; QB.status=q.status||'local_draft';
     QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
     QB.reference=q.reference||''; QB.subject=q.subject||''; QB.quoteDate=q.quote_date||today(); QB.expiryDate=q.expiry_date||'';
-    QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,cost:0,tax:'vat'}];
+    QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,acost:it.actual_cost||0,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}];
     QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; qbOpen();
   }).catch(e=>alert(''+e)); }
 function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was pushed, it stays in Zoho.)'))return;
