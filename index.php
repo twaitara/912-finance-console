@@ -674,6 +674,23 @@ if (empty($_SESSION['auth'])):
     .wrap{box-shadow:none!important;border:none!important;max-width:none!important}
     .pane{padding:0!important}
   }
+
+  /* ---- Global refresh button ---- */
+  #globalRefreshBtn{
+    position:fixed;bottom:20px;right:20px;z-index:999;
+    width:42px;height:42px;border-radius:50%;
+    background:var(--orange);color:#fff;border:none;
+    font-size:20px;line-height:1;cursor:pointer;
+    box-shadow:0 3px 12px rgba(0,0,0,.22);
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .15s,box-shadow .15s;
+    font-family:inherit;
+  }
+  #globalRefreshBtn:hover{transform:scale(1.1);box-shadow:0 5px 18px rgba(0,0,0,.28)}
+  #globalRefreshBtn:active{transform:scale(.95)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #globalRefreshBtn.spinning{animation:spin .6s linear}
+  @media print{#globalRefreshBtn{display:none}}
 </style></head>
 <body>
 <div class="wrap">
@@ -769,6 +786,7 @@ if (empty($_SESSION['auth'])):
 
   <div class="pane" id="pane"></div>
 </div>
+<button id="globalRefreshBtn" onclick="tabRefresh()" title="Refresh this page" aria-label="Refresh">↻</button>
 
 <div id="qbModal" class="qbmodal" onclick="if(event.target===this)qbClose()">
   <div class="qbm-card">
@@ -995,6 +1013,33 @@ function applyPerms(){
     document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>{ const k=(g.textContent||'').trim(); Object.keys(grpTips).forEach(key=>{if(k.includes(key)) g.title=grpTips[key];}); });
     const cal=document.querySelector('a.logout[href*="connect_calendar"]'); if(cal) cal.title='Connect your calendar so task reminders land in it';
     const so=document.querySelector('a.logout[href="?logout=1"]'); if(so) so.title='Sign out of the app';
+  }
+}
+
+function tabRefresh(){
+  const btn=document.getElementById('globalRefreshBtn');
+  if(btn){btn.classList.add('spinning');setTimeout(()=>btn.classList.remove('spinning'),1100);}
+  switch(TAB){
+    case 'report':    REPORT.loaded=false;REPORT.loading=false;REPORT.error=null;render();loadReport();break;
+    case 'etr':       ETR.loaded=false;ETR.loading=false;ETR.data=null;render();etrLoad();break;
+    case 'invrep':    INVR.loaded=false;INVR.loading=false;INVR.data=null;render();invrLoad();break;
+    case 'quotes':    QUOT.loaded=false;QUOT.loading=false;QUOT.data=null;render();quotLoad();break;
+    case 'emails':    EMAIL.loaded=false;EMAIL.loadingClients=false;EMAIL.clients=[];render();emailLoadClients();break;
+    case 'todo':      TASK.loaded=false;TASK.loading=false;TASK.tasks=[];render();todoLoad();break;
+    case 'loans':     LOANS=[];render();loadLoans();break;
+    case 'myquotes':  MQ.loaded=false;MQ.loading=false;MQ.quotes=[];render();mqLoad();break;
+    case 'jobcards':  render();loadJobCards();break;
+    case 'clientaccess': render();if(ME.admin)qbAssignLoad();break;
+    case 'activity':  render();if(ME.admin)loadActivity();break;
+    case 'settings':  render();if(ME.admin)usersLoad();break;
+    case 'payments':
+      PAY.loaded=false;PAY.loading=false;PAY.accsLoaded=false;
+      PAY.clients=[];PAY.accounts=[];PAY.invoices=[];PAY.sel={};
+      PAY.picked=false;PAY.clientId='';PAY.clientName='';PAY.q='';
+      PAY.msg='';PAY.done=null;
+      render();payLoadClients();payLoadAccounts();break;
+    case 'dash':      loadTasks();checkBackup();loadQuotes();render();break;
+    default:          render();
   }
 }
 
