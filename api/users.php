@@ -9,6 +9,7 @@ if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) {
 }
 require __DIR__ . '/../db.php';
 require_once __DIR__ . '/../users_store.php';
+require_once __DIR__ . '/../activity_store.php';
 
 $action = $_GET['action'] ?? 'list';
 $pdo = db();
@@ -93,6 +94,7 @@ try {
         if ((int)$exists->fetchColumn() > 0) throw new Exception('That username already exists.');
         $st = $pdo->prepare("INSERT INTO app_users (username,pass_hash,email,tabs,is_admin) VALUES (?,?,?,?,?)");
         $st->execute([$u, password_hash($p, PASSWORD_DEFAULT), $email, $tabs, $isAdmin]);
+        activity_log_session($pdo, 'created user', $u . ($isAdmin?' (admin)':''));
         echo json_encode(users_payload($pdo)); exit;
     }
 
@@ -121,13 +123,17 @@ try {
     if ($action === 'set_disabled') {   // quickly disable/enable a login without deleting
         $id = (int)($in['id'] ?? 0); if (!$id) throw new Exception('No user.');
         $dis = !empty($in['disabled']) ? 1 : 0;
+        $nm = $pdo->query("SELECT username FROM app_users WHERE id=" . (int)$id)->fetchColumn();
         $pdo->prepare("UPDATE app_users SET disabled=? WHERE id=?")->execute([$dis, $id]);
+        activity_log_session($pdo, $dis ? 'disabled user' : 'enabled user', (string)$nm);
         echo json_encode(users_payload($pdo)); exit;
     }
 
     if ($action === 'delete') {
         $id = (int)($in['id'] ?? 0); if (!$id) throw new Exception('No user.');
+        $nm = $pdo->query("SELECT username FROM app_users WHERE id=" . (int)$id)->fetchColumn();
         $pdo->prepare("DELETE FROM app_users WHERE id=?")->execute([$id]);
+        activity_log_session($pdo, 'deleted user', (string)$nm);
         echo json_encode(users_payload($pdo)); exit;
     }
 

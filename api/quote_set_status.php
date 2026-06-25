@@ -42,6 +42,8 @@ try {
     }
 
     $pdo->prepare("UPDATE quotes SET status=?, last_synced_at=NOW() WHERE id=?")->execute([$status, $id]);
+    require_once __DIR__ . '/../activity_store.php';
+    activity_log_session($pdo, 'changed quote status', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' → ' . $status);
     echo json_encode(['ok'=>true, 'status'=>$status, 'note'=>$note]);
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);

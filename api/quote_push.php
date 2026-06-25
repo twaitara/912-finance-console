@@ -104,6 +104,8 @@ try {
     $pdo->prepare("UPDATE quotes SET zoho_estimate_id=?, zoho_estimate_number=?, status=?, last_synced_at=NOW() WHERE id=?")
         ->execute([$estId, $estNo, $status, $id]);
 
+    require_once __DIR__ . '/../activity_store.php';
+    activity_log($pdo, $me, 'pushed quote', $estNo . ' for ' . ($q['customer_name'] ?? '') . ' — ' . $status);
     echo json_encode(['ok'=>true, 'estimate_number'=>$estNo, 'status'=>$status, 'note'=>$submitNote]);
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);

@@ -35,6 +35,7 @@ function users_all_tabs() {
         'todo'     => 'To-Do',
         'settings' => 'Settings',
         'clientaccess' => 'Client Access',
+        'activity' => 'Activity',
         'audrey'   => 'Audrey Reports',
         'taskboard'=> 'Task Board',
     ];

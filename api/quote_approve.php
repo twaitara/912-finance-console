@@ -30,6 +30,8 @@ try {
     $status = (string)($d['estimate']['status'] ?? 'approved');
 
     $pdo->prepare("UPDATE quotes SET status=?, last_synced_at=NOW() WHERE id=?")->execute([$status, $id]);
+    require_once __DIR__ . '/../activity_store.php';
+    activity_log_session($pdo, 'approved quote', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' for ' . ($q['customer_name'] ?? ''));
     echo json_encode(['ok'=>true, 'status'=>$status, 'number'=>$q['zoho_estimate_number']]);
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);

@@ -94,6 +94,8 @@ try {
     $pdo->prepare("UPDATE quotes SET zoho_invoice_id=?, zoho_invoice_number=?, status='invoiced', last_synced_at=NOW() WHERE id=?")
         ->execute([$invId, $invNo, $id]);
 
+    require_once __DIR__ . '/../activity_store.php';
+    activity_log($pdo, $me, 'generated job card', $invNo . ' for ' . ($q['customer_name'] ?? '') . ' (from ' . ($q['zoho_estimate_number'] ?: ('#'.$id)) . ')');
     echo json_encode(['ok'=>true, 'invoice_number'=>$invNo]);
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);

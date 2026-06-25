@@ -57,6 +57,8 @@ try {
     // Zoho moves it to "sent" after emailing
     $pdo->prepare("UPDATE quotes SET status='sent', last_synced_at=NOW() WHERE id=?")->execute([$id]);
 
+    require_once __DIR__ . '/../activity_store.php';
+    activity_log($pdo, $me, 'sent quote to customer', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' → ' . $email);
     echo json_encode(['ok'=>true, 'email'=>$email, 'number'=>$q['zoho_estimate_number']]);
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);

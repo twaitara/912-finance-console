@@ -139,6 +139,8 @@ try {
     if ($action === 'delete') {
         $row = $own($in['id'] ?? 0);
         $pdo->prepare("DELETE FROM quotes WHERE id=?")->execute([(int)$row['id']]);
+        require_once __DIR__ . '/../activity_store.php';
+        activity_log($pdo, $me, 'removed quote', ($row['zoho_estimate_number'] ?: ('#'.$row['id'])) . ' · ' . ($row['customer_name'] ?? ''));
         echo json_encode(['ok'=>true]); exit;
     }
 
@@ -179,6 +181,8 @@ try {
                 ->execute([$me, $_SESSION['email'] ?? '', $custId, $custNm, $ref, $subj, $qdate, $edate, $cur, $itemsJson, $notes, $terms, $sub, $tax, $discVal, $discType, $discAmt, $costTotal, $profit, $total]);
             $id = (int)$pdo->lastInsertId();
         }
+        require_once __DIR__ . '/../activity_store.php';
+        activity_log($pdo, $me, empty($in['id']) ? 'created quote' : 'edited quote', $custNm . ' (' . $cur . ' ' . number_format($total, 0) . ')');
         $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([$id]);
         echo json_encode(['ok'=>true, 'quote'=>quote_out($st->fetch(PDO::FETCH_ASSOC))]);
         exit;

@@ -11,6 +11,7 @@ if (isset($_POST['app_password'])) {
     $un = trim($_POST['app_user'] ?? '');
     if (hash_equals($cfg['app_password'], $pw)) {
         $_SESSION['auth'] = true; $_SESSION['user'] = 'admin'; $_SESSION['is_admin'] = 1; $_SESSION['tabs'] = '*';
+        try { require_once __DIR__ . '/db.php'; require_once __DIR__ . '/activity_store.php'; activity_log(db(), 'admin', 'logged in', 'master'); } catch (Exception $e) {}
     } else {
         $row = false;
         try { require_once __DIR__ . '/db.php'; $row = user_authenticate(db(), $un, $pw); } catch (Exception $e) { $row = false; }
@@ -20,6 +21,7 @@ if (isset($_POST['app_password'])) {
             $_SESSION['email'] = $row['email'] ?? '';
             $_SESSION['is_admin'] = (int)$row['is_admin'] ? 1 : 0;
             $_SESSION['tabs'] = (int)$row['is_admin'] ? '*' : (string)($row['tabs'] ?? '');
+            try { require_once __DIR__ . '/activity_store.php'; activity_log(db(), $row['username'], 'logged in', (int)$row['is_admin'] ? 'admin' : 'staff'); } catch (Exception $e) {}
         } else {
             $loginError = 'Wrong username or password.';
         }
@@ -507,6 +509,8 @@ if (empty($_SESSION['auth'])):
       <div class="submenu">
         <button data-tab="settings">App Settings</button>
         <button data-tab="clientaccess">Client Access</button>
+        <button data-tab="activity">Activity Log</button>
+        <button data-ext="api/manual.php">Technician Manual</button>
       </div>
     </div>
   </div>
@@ -594,6 +598,8 @@ const fmt = n => CFG.cur + ' ' + Math.round(n||0).toLocaleString('en-KE');
 const fmtn = n => Math.round(n||0).toLocaleString('en-KE');
 const fmt1 = n => (n||0).toLocaleString('en-KE',{maximumFractionDigits:1});
 const today = () => new Date().toISOString().slice(0,10);
+/* helpful tooltips for staff (technicians) only — admins don't need them */
+const tip = t => ME.admin ? '' : (' title="'+String(t).replace(/"/g,'&quot;')+'"');
 const days = (a,b) => Math.max(0, Math.round((new Date(b)-new Date(a))/86400000));
 const dailyRate = CFG.rate/365;
 
@@ -711,13 +717,25 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users'||t==='clientaccess') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
   document.querySelectorAll('.tabs button[data-tab]').forEach(b=>{ b.style.display = tabAllowed(b.dataset.tab)?'':'none'; });
   document.querySelectorAll('.tabs button[data-ext]').forEach(b=>{ const k=b.dataset.ext==='audrey.php'?'audrey':(b.dataset.ext==='tasks_board.php'?'taskboard':''); b.style.display = tabAllowed(k)?'':'none'; });
   document.querySelectorAll('.tabs .navgroup').forEach(g=>{ const any=[...g.querySelectorAll('.submenu button')].some(x=>x.style.display!=='none'); g.style.display = any?'':'none'; });
+  if(!ME.admin){
+    const navTips={dash:'Your home — a quick view of your quotes and tasks',
+      newquote:'Start a new quote for a customer',
+      myquotes:'See and manage the quotes you have created',
+      jobcards:'View the job cards you have generated',
+      todo:'Your tasks and to-do list'};
+    document.querySelectorAll('.tabs button[data-tab]').forEach(b=>{ const t=navTips[b.dataset.tab]; if(t) b.title=t; });
+    const grpTips={'Create':'Make quotes and job cards','Tasks':'Your tasks'};
+    document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>{ const k=(g.textContent||'').trim().replace(/[▾\s]+$/,''); if(grpTips[k]) g.title=grpTips[k]; });
+    const cal=document.querySelector('a.logout[href*="connect_calendar"]'); if(cal) cal.title='Connect your calendar so task reminders land in it';
+    const so=document.querySelector('a.logout[href="?logout=1"]'); if(so) so.title='Sign out of the app';
+  }
 }
 
 function render(){
@@ -739,6 +757,7 @@ function render(){
   if(TAB==='myquotes') p.innerHTML = vMyQuotes();
   if(TAB==='jobcards') p.innerHTML = vJobCards();
   if(TAB==='clientaccess') p.innerHTML = vClientAccess();
+  if(TAB==='activity') p.innerHTML = vActivity();
   // the capital "Fund deployed" bar belongs only to the dashboard + working-capital tabs
   const WC_TABS={dash:1,deploy:1,ledger:1,loans:1,growth:1};
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display=(ME.admin && WC_TABS[TAB])?'':'none';
@@ -2943,6 +2962,7 @@ function navActivate(b){
   if(TAB==='myquotes'){ render(); mqLoad(); return; }
   if(TAB==='clientaccess'){ render(); if(ME.admin && !QB.assignLoaded) qbAssignLoad(); return; }
   if(TAB==='jobcards'){ render(); loadJobCards(); return; }
+  if(TAB==='activity'){ render(); if(ME.admin) loadActivity(); return; }
   if(TAB==='settings'){ render(); if(ME.admin && !USERS.loaded) usersLoad(); return; }
   render();
 }
@@ -3037,7 +3057,7 @@ function vNewQuote(){
          <div class="wchip" style="background:#EEF2FE;border-color:#C7D5F5"><b>${qesc(QB.customerName)}</b>
            <span style="cursor:pointer;color:var(--bad);font-weight:700;margin-left:6px" onclick="qbClearCust()">✕</span></div>
          <span class="pill" style="background:#E7F6EC;color:#0F7A34">⦿ ${qesc(cur)}</span></div>`
-    : `<input type="text" id="qbCustSearch" placeholder="Search customer name (from Zoho)…" oninput="qbSearch(this.value)" autocomplete="off" style="margin-bottom:0">
+    : `<input type="text" id="qbCustSearch" ${tip('Type the client name, then pick them from the list')} placeholder="Search customer name (from Zoho)…" oninput="qbSearch(this.value)" autocomplete="off" style="margin-bottom:0">
        <div id="qbCustResults"></div>`;
 
   return `
@@ -3062,7 +3082,7 @@ function vNewQuote(){
       <div class="qbc-cost">Unit cost</div>${ME.admin?`<div class="qbc-acost">Actual cost</div>`:''}<div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
     </div>
     ${rows}
-    <button class="btn sec" style="width:auto;padding:7px 12px;font-size:12px;margin-top:10px" onclick="qbAddRow()">⊕ Add new row</button>
+    <button class="btn sec" style="width:auto;padding:7px 12px;font-size:12px;margin-top:10px" ${tip('Add another item line to this quote')} onclick="qbAddRow()">⊕ Add new row</button>
   </div>
 
   <div class="qbsplit">
@@ -3080,8 +3100,8 @@ function vNewQuote(){
     ? `<div class="warn" style="background:#FFF4D6;color:#9A6700;margin-bottom:10px;font-size:11.5px">Editing a quote that's already in Zoho. Saving updates it there${(QB.status==='approved'||QB.status==='sent'||QB.status==='accepted')?'.':' and re-submits it for approval.'}</div>
        <button class="btn" style="width:100%" onclick="qbSaveUpdate()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save changes & re-submit to Zoho →'}</button>`
     : `<div class="row" style="gap:8px">
-        <button class="btn sec" style="flex:1" onclick="qbSave()" ${QB.busy?'disabled':''}>Save draft</button>
-        <button class="btn" style="flex:1" onclick="qbSaveAndPush()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save & push to Zoho →'}</button>
+        <button class="btn sec" style="flex:1" ${tip('Save without sending — you can finish it later')} onclick="qbSave()" ${QB.busy?'disabled':''}>Save draft</button>
+        <button class="btn" style="flex:1" ${tip('Save and send to Zoho so an admin can approve it')} onclick="qbSaveAndPush()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save & push to Zoho →'}</button>
       </div>
       <div class="muted" style="font-size:11px;margin-top:8px">Pushing creates a Zoho estimate and submits it for approval. You'll see Approved/Declined under <b>My Quotes</b>.</div>`}`;
 }
@@ -3303,16 +3323,16 @@ function mqListHtml(){
         </div>
       </div>
       <div class="qact">
-        <button class="btn sec qb" onclick="mqTogglePreview(${q.id})">${isOpen?'▴ Hide':'▾ Preview'}</button>
+        <button class="btn sec qb" ${tip('See the items and totals on this quote')} onclick="mqTogglePreview(${q.id})">${isOpen?'▴ Hide':'▾ Preview'}</button>
         ${(ME.admin && q.status==='pending_approval')?`<button class="btn qb" style="background:var(--good);box-shadow:none" onclick="mqApprove(${q.id})" ${busy?'disabled':''}>${busy?'Approving…':'✓ Approve'}</button>
         <button class="btn sec qb" style="color:var(--bad);border-color:#F4C7C0" onclick="mqDecline(${q.id})" ${busy?'disabled':''}>✕ Decline</button>`:''}
-        ${canSend?`<button class="btn qb" onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
-        ${canJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Job Card'}</button>`:''}
-        ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px">🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
-        ${pushed?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
-        ${mqEditable(q)?`<button class="btn sec qb" onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
-        ${!pushed?`<button class="btn qb" onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
-        ${pushed?`<button class="btn sec qb" onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
+        ${canSend?`<button class="btn qb" ${tip('Email this quote to the customer (PDF attached)')} onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
+        ${canJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job complete? This creates the invoice and opens the job card to print')} onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Job Card'}</button>`:''}
+        ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
+        ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
+        ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
+        ${!pushed?`<button class="btn qb" ${tip('Send this quote to Zoho for approval')} onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
+        ${pushed?`<button class="btn sec qb" ${tip('Check the latest approval status from Zoho')} onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
         ${ME.admin?`<select class="qb" title="Change status" onchange="mqSetStatus(${q.id},this.value)" style="width:auto;font-size:11.5px;padding:6px 8px;margin-bottom:0;border-radius:9px">
           ${[['draft','Draft'],['pending_approval','Pending'],['approved','Approved'],['declined','Declined'],['sent','Sent'],['accepted','Accepted'],['invoiced','Invoiced'],['expired','Expired']].map(s=>`<option value="${s[0]}" ${q.status===s[0]?'selected':''}>${s[1]}</option>`).join('')}
         </select>`:''}
@@ -3359,7 +3379,7 @@ function vMyQuotes(){
   return `<h2>My quotes</h2>
     ${MQ.msg?`<div class="${MQ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(MQ.msg)}</div>`:''}
     <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="mqSearch" type="text" autocomplete="off" placeholder="🔍 Search quote # or client…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
+      <input id="mqSearch" type="text" autocomplete="off" ${tip('Find a quote by its number or the client name')} placeholder="🔍 Search quote # or client…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
       <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
     </div>
@@ -3472,7 +3492,7 @@ function vJobCards(){
             <div style="margin-top:5px">${quoteBadge('invoiced')}</div></div>
         </div>
         <div class="qact">
-          <button class="btn qb" style="background:var(--blue);box-shadow:none" onclick="window.open('api/job_card.php?id=${q.id}','_blank')">🧾 ${ME.admin?'Open / print':'View'} job card</button>
+          <button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Open the printable job card / delivery note')} onclick="window.open('api/job_card.php?id=${q.id}','_blank')">🧾 ${ME.admin?'Open / print':'View'} job card</button>
           ${ME.admin?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ Invoice PDF</button>`:''}
         </div>
       </div>`;}).join('')}`;
@@ -3480,6 +3500,34 @@ function vJobCards(){
 function loadJobCards(){ MQ.loading=true;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=mqNormalize(j.quotes||[]); MQ.loaded=true; if(TAB==='jobcards') render(); } }).catch(()=>{ MQ.loading=false; });
+}
+
+/* ---- Activity log (admin) ---- */
+let ACT={ log:[], loaded:false, loading:false, q:'' };
+function vActivity(){
+  if(!ME.admin) return `<div class="card muted" style="text-align:center">Admins only.</div>`;
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const rows=(ACT.log||[]).map(e=>`<tr>
+      <td class="l" style="white-space:nowrap">${esc((e.created_at||'').replace('T',' ').slice(0,16))}</td>
+      <td class="l"><b>${esc(e.username)}</b></td>
+      <td class="l">${esc(e.action)}</td>
+      <td class="l">${esc(e.detail)}</td></tr>`).join('');
+  return `<h2>Activity log</h2>
+    <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <input type="text" id="actSearch" autocomplete="off" placeholder="🔍 Search user, action or detail…" value="${esc(ACT.q)}" oninput="ACT.q=this.value" onkeydown="if(event.key==='Enter')loadActivity()" style="flex:1;min-width:200px;margin-bottom:0">
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="loadActivity()">${ACT.loading?'Loading…':'↻ Refresh'}</button>
+    </div>
+    ${!ACT.loaded?`<div class="card muted" style="text-align:center;padding:20px">Loading…</div>`
+      : (ACT.log.length? `<div class="rptwrap"><table class="rpt">
+          <thead><tr><th class="l">When</th><th class="l">User</th><th class="l">Action</th><th class="l">Detail</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+          <div class="muted" style="font-size:11px;margin-top:8px">Showing the latest ${ACT.log.length} events.</div>`
+        : `<div class="card muted" style="text-align:center;padding:22px">No activity recorded yet.</div>`)}`;
+}
+function loadActivity(){ ACT.loading=true; if(TAB==='activity')render();
+  fetch('api/activity.php?limit=400&q='+encodeURIComponent(ACT.q||''),{credentials:'same-origin'})
+  .then(r=>r.json()).then(j=>{ ACT.loading=false; if(j.ok){ ACT.log=j.log||[]; ACT.loaded=true; } if(TAB==='activity')render(); })
+  .catch(()=>{ ACT.loading=false; if(TAB==='activity')render(); });
 }
 
 /* programmatic tab switch (used after push / edit) */

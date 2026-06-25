@@ -9,6 +9,7 @@ deployment:
     - /bin/cp mail.php $DEPLOYPATH
     - /bin/cp settings_store.php $DEPLOYPATH
     - /bin/cp users_store.php $DEPLOYPATH
+    - /bin/cp activity_store.php $DEPLOYPATH
     - /bin/cp tasks_board.php $DEPLOYPATH
     - /bin/cp workdrive.php $DEPLOYPATH
     - /bin/cp -R api $DEPLOYPATH
