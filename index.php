@@ -1101,11 +1101,12 @@ function vDashPaid(){
   if(DPAID.loading) return `<div class="card" style="padding:14px 16px;margin-bottom:10px"><div class="muted" style="font-size:11.5px">Loading recent payments…</div></div>`;
   if(!d) return '';
   const wht=Math.max(0,Math.round(d.gross-d.net));
-  const rows=(d.rows||[]).map(r=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--line);gap:10px">
-      <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.customer}</span>
-      <span style="font-size:10px;color:var(--mute);white-space:nowrap">${r.date}</span>
-      <span style="font-size:11.5px;font-weight:700;color:var(--good);white-space:nowrap">KES ${Math.round(r.amount).toLocaleString('en-KE')}</span>
+  const rows=(d.rows||[]).map((r,i)=>`
+    <div style="display:grid;grid-template-columns:24px 1fr auto auto;align-items:center;gap:6px 10px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <span style="font-size:10px;color:var(--mute);text-align:right">${i+1}</span>
+      <span style="font-size:11.5px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.customer}</span>
+      <span style="font-size:10.5px;color:var(--mute);white-space:nowrap">${r.date}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--good);white-space:nowrap">KES ${Math.round(r.amount).toLocaleString('en-KE')}</span>
     </div>`).join('');
   return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
     <div style="background:var(--grad-orange);padding:14px 16px 12px">
@@ -1131,10 +1132,10 @@ function vDashPaid(){
         </div>
       </div>
     </div>
-    ${rows?`<div style="padding:8px 16px 12px">
-      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">Most recent</div>
-      ${rows}
-    </div>`:''}
+    ${rows?`<div style="padding:8px 16px 4px">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:2px">${d.count} payments — newest first</div>
+    </div>
+    <div style="padding:0 16px 12px;max-height:420px;overflow-y:auto">${rows}</div>`:''}
   </div>`;
 }
 

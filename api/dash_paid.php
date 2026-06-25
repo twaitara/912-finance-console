@@ -50,14 +50,15 @@ do {
     $page++;
 } while ($more && $page <= 3);
 
-// ── Recent payment rows for widget list ───────────────────────────────────
-$rows = array_slice(array_map(fn($p) => [
-    'customer' => (string)($p['customer_name'] ?? ''),
-    'amount'   => (float)($p['amount']         ?? 0),
-    'date'     => (string)($p['date']           ?? ''),
+// ── All payment rows, newest first ────────────────────────────────────────
+usort($payments, fn($a, $b) => strcmp($b['date'] ?? '', $a['date'] ?? ''));
+$rows = array_map(fn($p) => [
+    'customer' => (string)($p['customer_name']  ?? ''),
+    'amount'   => (float)($p['amount']          ?? 0),
+    'date'     => (string)($p['date']            ?? ''),
     'number'   => (string)($p['payment_number'] ?? ''),
     'mode'     => (string)($p['payment_mode']   ?? ''),
-], array_reverse($payments)), 0, 8);
+], $payments);
 
 echo json_encode([
     'ok'       => true,
