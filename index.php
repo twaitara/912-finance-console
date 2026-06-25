@@ -876,6 +876,7 @@ function vDash(){
   if(!ME.admin) return vDashLite();
   const s = summary(), r = rows(), overdue = r.filter(x=>x.overdue);
   const openTasks=(TASK.tasks||[]).filter(t=>t.status!=='done').length;
+  const invoiced=(MQ.quotes||[]).filter(q=>q.status==='invoiced'||q.zoho_invoice_number);
   return `
   <div class="dsh-hero">
     <div class="ey">Net profit so far · excl. VAT</div>
@@ -964,6 +965,20 @@ function vDash(){
   </div>
   </div>
   </div>
+
+  <div class="sect"><b>Quotes invoiced</b><span class="ln"></span>${invoiced.length?`<span class="pill" style="background:#EEF2FE;color:var(--blue)">${invoiced.length}</span>`:''}
+    <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="navTo('myquotes')">View all →</button></div>
+  ${invoiced.length? `<div class="rptwrap" style="margin-bottom:10px"><table class="rpt">
+      <thead><tr><th class="l">Customer</th><th class="l">Invoice</th><th class="l">By</th><th class="l">Date</th><th>Total</th></tr></thead>
+      <tbody>${invoiced.map(q=>`<tr style="cursor:pointer" onclick="navTo('myquotes')">
+        <td class="l">${qesc(q.customer_name||'')}</td>
+        <td class="l" style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number||q.zoho_estimate_number||'—')}</td>
+        <td class="l">${qesc(q.created_by||'')}</td>
+        <td class="l">${qesc((q.quote_date||String(q.created_at||'').slice(0,10))||'')}</td>
+        <td>${qesc(q.currency||'KES')} ${fmtn(q.total)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr class="tot"><td class="l" colspan="4">Total invoiced (${invoiced.length})</td><td>${fmtn(invoiced.reduce((a,q)=>a+(+q.total||0),0))}</td></tr></tfoot>
+    </table></div>`
+    : `<div class="card muted" style="text-align:center;padding:16px">No quotes converted to invoices yet.</div>`}
 
   <div class="sect"><b>Chase list</b><span class="ln"></span>${overdue.length?`<span class="pill" style="background:#FDECEA;color:var(--bad)">${overdue.length} overdue</span>`:''}</div>
   ${overdue.length? overdue.map(x=>`<div class="card" style="border-left:4px solid var(--bad)">
@@ -3221,6 +3236,7 @@ function mqListHtml(){
     const canJob=pushed && ['approved','sent','accepted','invoiced'].includes(q.status);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
+                 q.zoho_invoice_number?`<span style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number)}</span>`:null,
                  ME.admin?('by '+qesc(q.created_by)):null,
                  `${q.line_items.length} item${q.line_items.length===1?'':'s'}`,
                  date?date:null ].filter(Boolean).join(' · ');
@@ -3426,7 +3442,8 @@ document.addEventListener('click', function(e){
 
 applyPerms();
 if(ME.admin){ loadDeployments(); loadLoans(); loadCacheMeta(); loadBackupStatus(); }
-else { render(); loadDashQuotes(); }
+else { render(); }
 loadDashTasks();
+loadDashQuotes();
 </script>
 </body></html>
