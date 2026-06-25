@@ -212,7 +212,7 @@ if (empty($_SESSION['auth'])):
     <div style="display:flex;align-items:center;gap:10px">
       <div class="b">912</div>
       <div><div style="color:#fff;font-weight:600;font-size:15px">912 FINANCE CONSOLE</div>
-      <div style="color:#9AA7B8;font-size:11px">LIVE FROM ZOHO BOOKS</div></div>
+      <div style="color:#9AA7B8;font-size:11px">LIVE FROM ZOHO BOOKS ✓</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
       <div style="display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);padding:4px 10px 4px 5px;border-radius:20px">
