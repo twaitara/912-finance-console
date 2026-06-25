@@ -3180,6 +3180,8 @@ function mqListHtml(){
       </div>
       <div class="qact">
         <button class="btn sec qb" onclick="mqTogglePreview(${q.id})">${isOpen?'▴ Hide':'▾ Preview'}</button>
+        ${(ME.admin && q.status==='pending_approval')?`<button class="btn qb" style="background:var(--good);box-shadow:none" onclick="mqApprove(${q.id})" ${busy?'disabled':''}>${busy?'Approving…':'✓ Approve'}</button>
+        <button class="btn sec qb" style="color:var(--bad);border-color:#F4C7C0" onclick="mqDecline(${q.id})" ${busy?'disabled':''}>✕ Decline</button>`:''}
         ${canSend?`<button class="btn qb" onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
         ${pushed?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
@@ -3251,6 +3253,20 @@ function mqSend(id){ MQ.busyId=id; MQ.msg=''; render();
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
 function mqPdf(id){ window.open('api/quote_pdf.php?id='+id,'_blank'); }
+function mqApprove(id){ MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_approve.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q)q.status=j.status||'approved'; MQ.msg='Quote '+(j.number||'')+' approved ✓'; MQ.err=false; }
+    else { MQ.msg=j.error||'Approve failed.'; MQ.err=true; } render();
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
+function mqDecline(id){ if(!confirm('Decline this quote? It will be marked Declined.'))return; MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_decline.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q)q.status='declined'; MQ.msg='Quote '+(j.number||'')+' declined.'+(j.zohoUpdated?'':' (Not reflected in Zoho — decline it there too if needed.)'); MQ.err=!j.zohoUpdated; }
+    else { MQ.msg=j.error||'Decline failed.'; MQ.err=true; } render();
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
 function mqLoad(){ MQ.loading=true;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='myquotes'){ render(); if(MQ.quotes.some(q=>q.zoho_estimate_id)) mqSync(true); } } })
