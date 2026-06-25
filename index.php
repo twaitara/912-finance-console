@@ -32,21 +32,48 @@ if (empty($_SESSION['auth'])):
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>912 FINANCE CONSOLE</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  body{font-family:Poppins,system-ui,sans-serif;background:#15202B;display:grid;place-items:center;height:100vh;margin:0}
-  .card{background:#fff;padding:28px;border-radius:16px;width:280px;text-align:center}
-  .b{width:30px;height:30px;border-radius:8px;background:#F56F00;color:#fff;display:grid;place-items:center;font-weight:700;margin:0 auto 14px}
-  input{width:100%;box-sizing:border-box;padding:11px;border:1px solid #E6EAF0;border-radius:9px;margin-bottom:10px;font-size:14px}
-  button{width:100%;padding:11px;background:#F56F00;color:#fff;border:none;border-radius:9px;font-weight:600;cursor:pointer}
-  .err{color:#D64933;font-size:12px;margin-bottom:8px}
+  *{box-sizing:border-box}
+  body{font-family:Poppins,system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;color:#15202B;
+       background:radial-gradient(1100px 700px at 18% -10%,#22344A 0%,transparent 55%),
+                  radial-gradient(900px 600px at 110% 120%,rgba(245,111,0,.22) 0%,transparent 55%),
+                  linear-gradient(135deg,#1B2A3A 0%,#15202B 55%,#0E1822 100%);
+       overflow:hidden}
+  /* soft floating glow accents */
+  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(8px);pointer-events:none;z-index:0}
+  body::before{width:260px;height:260px;left:-70px;top:-60px;background:radial-gradient(circle,rgba(245,111,0,.20),transparent 68%)}
+  body::after{width:340px;height:340px;right:-110px;bottom:-120px;background:radial-gradient(circle,rgba(35,80,197,.20),transparent 68%)}
+  .card{position:relative;z-index:1;background:rgba(255,255,255,.96);padding:34px 30px 30px;border-radius:22px;width:320px;text-align:center;
+        box-shadow:0 30px 70px rgba(8,16,24,.55),0 2px 0 rgba(255,255,255,.5) inset;border:1px solid rgba(255,255,255,.5);
+        animation:rise .5s cubic-bezier(.22,.61,.36,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+  .b{width:54px;height:54px;border-radius:16px;background:linear-gradient(140deg,#FF8A1E,#F56F00 65%);color:#fff;display:grid;place-items:center;
+     font-weight:800;font-size:18px;margin:0 auto 16px;box-shadow:0 12px 26px rgba(245,111,0,.42),0 0 0 6px rgba(245,111,0,.10)}
+  .ttl{font-weight:700;font-size:16px;letter-spacing:.2px}
+  .sub{font-size:11px;color:#64748B;margin:4px 0 20px;letter-spacing:.6px;text-transform:uppercase}
+  .fld{position:relative;margin-bottom:12px}
+  input{width:100%;padding:13px 14px;border:1px solid #E6EAF0;border-radius:12px;font-size:14px;font-family:inherit;background:#FBFCFE;
+        transition:border-color .15s,box-shadow .15s,background .15s}
+  input:focus{outline:none;border-color:#F56F00;background:#fff;box-shadow:0 0 0 4px rgba(245,111,0,.15)}
+  input::placeholder{color:#94A3B8}
+  button{width:100%;padding:13px;background:linear-gradient(140deg,#FF8A1E,#F56F00 70%);color:#fff;border:none;border-radius:12px;font-weight:700;font-size:14px;
+         font-family:inherit;cursor:pointer;margin-top:4px;box-shadow:0 12px 24px rgba(245,111,0,.34);transition:transform .12s,box-shadow .2s,filter .15s}
+  button:hover{filter:brightness(1.04);box-shadow:0 16px 30px rgba(245,111,0,.42)}
+  button:active{transform:scale(.98)}
+  .err{color:#D64933;background:#FDECEA;font-size:12px;font-weight:600;margin-bottom:12px;padding:9px 11px;border-radius:10px}
+  .foot{margin-top:18px;font-size:10.5px;color:#94A3B8;letter-spacing:.4px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style></head>
-<body><form class="card" method="post">
+<body><form class="card" method="post" autocomplete="off">
   <div class="b">912</div>
-  <div style="font-weight:600;margin-bottom:14px">912 FINANCE CONSOLE</div>
+  <div class="ttl">912 FINANCE CONSOLE</div>
+  <div class="sub">Live from Zoho Books</div>
   <?php if(!empty($loginError)) echo '<div class="err">'.$loginError.'</div>'; ?>
-  <input type="text" name="app_user" placeholder="Username (blank = admin)">
-  <input type="password" name="app_password" placeholder="Password" autofocus>
-  <button type="submit">Open</button>
+  <div class="fld"><input type="text" name="app_user" placeholder="Username (blank = admin)"></div>
+  <div class="fld"><input type="password" name="app_password" placeholder="Password" autofocus></div>
+  <button type="submit">Open console →</button>
+  <div class="foot">Secure access · 912 Finance</div>
 </form></body></html>
 <?php exit; endif; ?>
 <!DOCTYPE html>
@@ -205,14 +232,154 @@ if (empty($_SESSION['auth'])):
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation:none!important;transition:none!important}
   }
+
+  /* ============================================================
+     ✨ UI REFRESH LAYER — depth, polish & craft.
+     Same palette (orange/blue/ink + existing tints), elevated.
+     ============================================================ */
+  :root{
+    --ink-2:#1E2D3D; --ink-3:#27384A;
+    --orange-50:#FFF4EB; --blue-50:#EEF2FE;
+    --sh-sm:0 1px 2px rgba(21,32,43,.06),0 1px 3px rgba(21,32,43,.05);
+    --sh-md:0 4px 10px rgba(21,32,43,.07),0 2px 4px rgba(21,32,43,.05);
+    --sh-lg:0 14px 34px rgba(21,32,43,.12);
+    --grad-orange:linear-gradient(140deg,#FF8A1E 0%,#F56F00 70%);
+  }
+  html{scroll-behavior:smooth}
+  body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+       background:
+         radial-gradient(900px 500px at 100% -5%,rgba(35,80,197,.05),transparent 60%),
+         radial-gradient(800px 500px at -5% 8%,rgba(245,111,0,.045),transparent 55%),
+         var(--bg)}
+  ::selection{background:rgba(245,111,0,.22)}
+  /* tidy, unobtrusive scrollbars */
+  *{scrollbar-width:thin;scrollbar-color:#C8D2DF transparent}
+  *::-webkit-scrollbar{width:10px;height:10px}
+  *::-webkit-scrollbar-thumb{background:#CBD5E1;border:3px solid var(--bg);border-radius:20px}
+  *::-webkit-scrollbar-thumb:hover{background:#9FB0C3}
+
+  /* ---- Framed app shell ---- */
+  @media (min-width:820px){
+    .wrap{box-shadow:0 30px 80px rgba(14,24,34,.20);border-color:rgba(21,32,43,.06)}
+  }
+
+  /* ---- Header: layered dark glass with a warm hairline ---- */
+  header{background:
+      radial-gradient(600px 200px at 0% -40%,rgba(245,111,0,.16),transparent 60%),
+      linear-gradient(100deg,var(--ink-3) 0%,var(--ink) 60%,#0E1822 100%);
+    box-shadow:inset 0 -1px 0 rgba(255,255,255,.05),0 1px 0 rgba(245,111,0,.5);
+    position:relative}
+  header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;
+    background:linear-gradient(90deg,var(--orange),rgba(245,111,0,0) 60%)}
+  header .b{background:var(--grad-orange);box-shadow:0 6px 16px rgba(245,111,0,.40),0 0 0 4px rgba(245,111,0,.10)}
+  /* live status pill with pulsing dot */
+  .livepill{display:inline-flex;align-items:center;gap:6px;margin-top:3px;color:#CBD6E3;font-size:10px;font-weight:600;
+    letter-spacing:.5px;background:rgba(91,214,138,.10);border:1px solid rgba(91,214,138,.28);
+    padding:2px 9px 2px 7px;border-radius:30px}
+  .livedot{width:7px;height:7px;border-radius:50%;background:#5BD68A;box-shadow:0 0 0 0 rgba(91,214,138,.6);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,214,138,.55)}70%{box-shadow:0 0 0 7px rgba(91,214,138,0)}100%{box-shadow:0 0 0 0 rgba(91,214,138,0)}}
+  a.logout[href*="connect_calendar"]{background:var(--grad-orange)!important;box-shadow:0 6px 16px rgba(245,111,0,.32);transition:transform .12s,box-shadow .2s,filter .15s}
+  a.logout[href*="connect_calendar"]:hover{filter:brightness(1.05);box-shadow:0 9px 20px rgba(245,111,0,.42)}
+  a.logout[href="?logout=1"]{padding:5px 10px;border-radius:8px;transition:background .15s,color .15s}
+  a.logout[href="?logout=1"]:hover{background:rgba(255,255,255,.08);color:#fff}
+
+  /* ---- Fund meter: premium capital bar ---- */
+  .fundbar{background:linear-gradient(180deg,#fff,#FCFDFE);box-shadow:var(--sh-sm)}
+  .meter{height:14px;background:#EAEEF4;box-shadow:inset 0 1px 3px rgba(21,32,43,.12);padding:0}
+  .meter>div{background:var(--grad-orange);border-radius:8px;position:relative;overflow:hidden;
+    box-shadow:0 1px 4px rgba(245,111,0,.45)}
+  .meter>div::after{content:"";position:absolute;inset:0;border-radius:8px;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);
+    transform:translateX(-100%);animation:shimmer 2.4s ease-in-out infinite}
+  @keyframes shimmer{0%{transform:translateX(-100%)}60%,100%{transform:translateX(220%)}}
+  #pctOut{font-weight:700;color:var(--ink)}
+
+  /* ---- Navigation: modern segmented pills + refined dropdowns ---- */
+  .tabs{gap:6px;padding:9px 10px;background:rgba(255,255,255,.86);backdrop-filter:saturate(140%) blur(8px);
+    -webkit-backdrop-filter:saturate(140%) blur(8px);position:sticky;top:0;z-index:50;box-shadow:var(--sh-sm)}
+  .tabs button{border:1px solid transparent;background:#F1F4F8;color:var(--mute);text-transform:none;letter-spacing:.2px;
+    font-size:11.5px;font-weight:600;padding:7px 13px;border-radius:9px;box-shadow:none}
+  .tabs button:hover{background:#E9EEF5;color:var(--ink);filter:none;transform:translateY(-1px);box-shadow:var(--sh-sm)}
+  .tabs > button.active,.tabs button.active{background:var(--ink);color:#fff;border-color:transparent;
+    box-shadow:0 6px 16px rgba(21,32,43,.26)}
+  .navgroup .grp{background:#F1F4F8;color:var(--ink)}
+  .navgroup.open .grp{background:var(--ink);color:#fff;box-shadow:0 6px 16px rgba(21,32,43,.22)}
+  .navgroup .car{opacity:.7}
+  .submenu{border-radius:12px;padding:7px;box-shadow:0 16px 40px rgba(21,32,43,.20);border-color:rgba(21,32,43,.07);
+    animation:menuIn .16s cubic-bezier(.22,.61,.36,1) both}
+  @keyframes menuIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+  .submenu button{background:#fff;color:var(--ink);border:1px solid transparent;padding:8px 11px;border-radius:8px}
+  .submenu button:hover{background:var(--orange-50);color:var(--orange);transform:none;box-shadow:none}
+
+  /* ---- Section headings ---- */
+  .sect b{position:relative}
+  h2{position:relative;padding-left:11px}
+  h2::before{content:"";position:absolute;left:0;top:1px;bottom:1px;width:3px;border-radius:3px;background:var(--grad-orange)}
+
+  /* ---- Cards: softer depth, hairline borders ---- */
+  .card{border-radius:14px;border-color:rgba(21,32,43,.07);box-shadow:var(--sh-sm)}
+  .pane{padding:18px}
+  @media (min-width:820px){.pane{padding:24px 28px}}
+
+  /* ---- KPI tiles: glossier, deeper accent rail ---- */
+  .kpi{border-radius:16px;box-shadow:var(--sh-md);transition:transform .2s ease,box-shadow .2s ease}
+  .kpi:hover{transform:translateY(-3px);box-shadow:var(--sh-lg)}
+  .kpi::before{width:5px;border-radius:0 4px 4px 0}
+  .kpi::after{content:"";position:absolute;right:-30px;top:-30px;width:90px;height:90px;border-radius:50%;
+    background:radial-gradient(circle,var(--accent,var(--orange)),transparent 70%);opacity:.06}
+
+  /* ---- Hero: richer shadow ---- */
+  .dsh-hero{box-shadow:0 18px 44px rgba(14,24,34,.26)}
+
+  /* ---- Buttons: gradient primary, refined secondary ---- */
+  .btn{background:var(--grad-orange);border-radius:11px;box-shadow:0 6px 16px rgba(245,111,0,.26)}
+  .btn:hover{box-shadow:0 10px 22px rgba(245,111,0,.34)}
+  .btn.sec{background:#fff;border-color:rgba(21,32,43,.10);box-shadow:var(--sh-sm)}
+  .btn.sec:hover{background:#FAFBFD;box-shadow:var(--sh-md)}
+  .btn:disabled{opacity:.55;cursor:default;box-shadow:none;filter:none}
+
+  /* ---- Inputs: comfier, brand focus ---- */
+  input,select,textarea{border-radius:11px;background:#FBFCFE}
+  input:hover,select:hover,textarea:hover{border-color:#CBD5E1}
+  input:focus,select:focus,textarea:focus{background:#fff;box-shadow:0 0 0 3px rgba(245,111,0,.16)}
+
+  /* ---- Chips / pills ---- */
+  .wchip{border-radius:30px;box-shadow:var(--sh-sm);transition:transform .15s,box-shadow .15s}
+  .wchip:hover{transform:translateY(-1px);box-shadow:var(--sh-md)}
+  .pill{box-shadow:var(--sh-sm)}
+
+  /* ---- Link tiles ---- */
+  .linktile{border-radius:16px;box-shadow:var(--sh-sm)}
+  .linktile:hover{box-shadow:var(--sh-lg)}
+  .linktile .ic{box-shadow:var(--sh-sm)}
+
+  /* ---- Tool accordions ---- */
+  .tool details{border-radius:16px;box-shadow:var(--sh-sm);transition:box-shadow .2s}
+  .tool details[open]{box-shadow:var(--sh-md)}
+  .tool summary{transition:background .15s}
+  .tool summary:hover{background:#FAFBFD}
+
+  /* ---- Report table: crisper header & rows ---- */
+  .rptwrap{border-radius:12px;box-shadow:var(--sh-sm)}
+  table.rpt th{background:linear-gradient(180deg,#F4F7FB,#EDF1F7);border-bottom:1px solid var(--line)}
+  table.rpt tr.tot td{background:#F4F7FB}
+
+  /* ---- Invoice / list rows ---- */
+  .invrow{transition:background .15s,padding-left .15s,box-shadow .15s}
+
+  /* ---- Segmented control ---- */
+  .seg{box-shadow:var(--sh-sm)}
+
+  /* ---- Pane entrance: a touch smoother ---- */
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 </style></head>
 <body>
 <div class="wrap">
   <header>
     <div style="display:flex;align-items:center;gap:10px">
       <div class="b">912</div>
-      <div><div style="color:#fff;font-weight:600;font-size:15px">912 FINANCE CONSOLE</div>
-      <div style="color:#9AA7B8;font-size:11px">LIVE FROM ZOHO BOOKS ✓</div></div>
+      <div><div style="color:#fff;font-weight:600;font-size:15px;letter-spacing:.2px">912 FINANCE CONSOLE</div>
+      <div class="livepill"><span class="livedot"></span>LIVE FROM ZOHO BOOKS</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
       <div style="display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);padding:4px 10px 4px 5px;border-radius:20px">
