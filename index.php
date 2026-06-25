@@ -3218,6 +3218,7 @@ function mqListHtml(){
     const pushed=!!q.zoho_estimate_id; const isOpen=!!MQ.open[q.id]; const busy=MQ.busyId===q.id;
     const acc=quoteAccent(q.status);
     const canSend=pushed && ['approved','sent','accepted'].includes(q.status);
+    const canJob=pushed && ['approved','sent','accepted','invoiced'].includes(q.status);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
                  ME.admin?('by '+qesc(q.created_by)):null,
@@ -3240,6 +3241,7 @@ function mqListHtml(){
         ${(ME.admin && q.status==='pending_approval')?`<button class="btn qb" style="background:var(--good);box-shadow:none" onclick="mqApprove(${q.id})" ${busy?'disabled':''}>${busy?'Approving…':'✓ Approve'}</button>
         <button class="btn sec qb" style="color:var(--bad);border-color:#F4C7C0" onclick="mqDecline(${q.id})" ${busy?'disabled':''}>✕ Decline</button>`:''}
         ${canSend?`<button class="btn qb" onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
+        ${canJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Job Card'}</button>`:''}
         ${pushed?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
         ${!pushed?`<button class="btn qb" onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
@@ -3313,6 +3315,15 @@ function mqSend(id){ MQ.busyId=id; MQ.msg=''; render();
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
 function mqPdf(id){ window.open('api/quote_pdf.php?id='+id,'_blank'); }
+function mqJobCard(id){ MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q){ q.status='invoiced'; q.zoho_invoice_number=j.invoice_number; }
+      MQ.msg='Job card ready — invoice '+(j.invoice_number||'')+(j.already?' (already invoiced).':' created in Zoho.'); MQ.err=false;
+      window.open('api/job_card.php?id='+id,'_blank'); render(); }
+    else { MQ.msg=j.error||'Could not generate job card.'; MQ.err=true; render(); }
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
 function mqSetStatus(id,status){ MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_set_status.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
@@ -3371,8 +3382,9 @@ function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was p
 function vJobCards(){ return `<h2>Job cards</h2>
   <div class="card" style="text-align:center;padding:26px">
     <div style="font-size:30px;margin-bottom:6px">🧾</div>
-    <b style="font-size:14px">Job cards are coming next</b>
-    <div class="muted" style="margin-top:6px;max-width:420px;margin-left:auto;margin-right:auto">This will use the same builder + Zoho engine as quotes, so jobs can be raised and tracked here too.</div>
+    <b style="font-size:14px">Generate job cards from an approved quote</b>
+    <div class="muted" style="margin-top:6px;max-width:460px;margin-left:auto;margin-right:auto">Open <b>My Quotes</b>, find an approved quote and tap <b>🧾 Job Card</b>. The quote is turned into a Zoho invoice and a printable Delivery Note / Job Card (no prices) opens for the customer to sign.</div>
+    <button class="btn" style="width:auto;padding:8px 16px;font-size:12px;margin-top:14px" onclick="navTo('myquotes')">Go to My Quotes →</button>
   </div>`; }
 
 /* programmatic tab switch (used after push / edit) */
