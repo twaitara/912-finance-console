@@ -4,6 +4,10 @@ session_start();
 if (empty($_SESSION['auth'])) { http_response_code(401); echo 'Not signed in.'; exit; }
 $cfg = require __DIR__ . '/../config.php';
 $co = htmlspecialchars($cfg['business_name'] ?? 'Nine One Two Holdings', ENT_QUOTES);
+$scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host    = $_SERVER['HTTP_HOST'] ?? 'nineonetwo.online';
+$appUrl  = $scheme . '://' . $host . rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/WORKINGCAPITAL/api/x')), '/\\') . '/';
+$appUrl  = htmlspecialchars($appUrl, ENT_QUOTES);
 header('Content-Type: text/html; charset=utf-8');
 ?><!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Technician Manual — <?php echo $co; ?></title>
@@ -33,7 +37,13 @@ header('Content-Type: text/html; charset=utf-8');
   <div class="bar"><span>Technician Manual</span><button onclick="window.print()">Save as PDF / Print</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
     <div class="head"><div class="logo">912</div>
-      <div><h1>Technician User Manual</h1><div class="sub"><?php echo $co; ?> · 912 Finance Console</div></div></div>
+      <div><h1>Technician Manual</h1><div class="sub"><?php echo $co; ?> · 912 Finance Console</div></div></div>
+
+    <div class="note" style="border-left-color:#F56F00;background:#FFF6EE">
+      <b>Open the system here:</b> <a href="<?php echo $appUrl; ?>" style="color:#A24E00;font-weight:700"><?php echo $appUrl; ?></a><br>
+      It works on your <b>phone</b> and on a <b>computer</b> — just open the link in any web browser (Chrome, Safari, etc.). You can save it to your home screen for quick access.
+    </div>
+
     <p>This short guide shows you how to raise quotes, get them approved, send them to clients, and generate a job card when a job is done. If anything is unclear, ask the admin.</p>
 
     <h2>1. Signing in</h2>

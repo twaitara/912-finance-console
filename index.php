@@ -1860,7 +1860,7 @@ function etrDupBodyHtml(){
           <span style="display:flex;gap:6px;flex:0 0 auto">${prevBtn}${openBtn}</span></div>${prev}</div>`;
     }).join('');
     return `<div class="card" style="border-left:4px solid var(--bad);margin-top:10px">
-      <b style="font-size:13px;color:var(--bad)">Invoice ${esc(g.number)} — ${g.count} files</b>${files}</div>`;
+      <b style="font-size:13px;color:var(--bad)">${esc(g.number)} — ${g.count} files</b>${files}</div>`;
   }).join('');
   return meta+blocks;
 }

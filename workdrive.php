@@ -185,6 +185,8 @@ function wd_list_folder_files($folderId) {
                 'name' => $a['name'],
                 'id'   => $row['id'] ?? '',
                 'link' => $a['Permalink'] ?? ($a['permalink'] ?? ($a['download_url'] ?? '')),
+                'created'  => (string)($a['created_time'] ?? ($a['created_time_in_millis'] ?? '')),
+                'modified' => (string)($a['modified_time'] ?? ($a['modified_time_in_millis'] ?? '')),
             ];
         }
         $got = count($rows); $offset += $limit; $guard++;
