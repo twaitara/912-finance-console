@@ -250,7 +250,7 @@ if (empty($_SESSION['auth'])):
     </div>
 
     <div class="navgroup">
-      <button class="grp">Account Efficiency <span class="car">▾</span></button>
+      <button class="grp">Accounts Efficiency <span class="car">▾</span></button>
       <div class="submenu">
         <button data-tab="report">Profit Report</button>
         <button data-tab="etr">ETR Check</button>
