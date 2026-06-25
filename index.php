@@ -93,6 +93,22 @@ if (empty($_SESSION['auth'])):
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
+<script>
+(function(){
+  document.addEventListener('contextmenu',function(e){e.preventDefault();});
+  document.addEventListener('keydown',function(e){
+    if(e.key==='F12'){e.preventDefault();}
+    if(e.ctrlKey&&e.shiftKey&&['I','i','J','j','C','c','K','k'].includes(e.key)){e.preventDefault();}
+    if(e.ctrlKey&&['U','u'].includes(e.key)){e.preventDefault();}
+    if(e.ctrlKey&&e.shiftKey&&e.key==='F'){e.preventDefault();}
+  });
+  setInterval(function(){
+    var t=new Date();
+    debugger;
+    if(new Date()-t>100){document.body.innerHTML='';}
+  },3000);
+})();
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
