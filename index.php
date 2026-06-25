@@ -2934,7 +2934,8 @@ const STATUS_GROUPS = [
   {key:'approved', label:'Approved', set:['approved','accepted']},
   {key:'pending',  label:'Pending',  set:['pending_approval','draft','local_draft']},
   {key:'declined', label:'Declined', set:['declined','rejected']},
-  {key:'sent',     label:'Sent',     set:['sent','invoiced']},
+  {key:'sent',     label:'Sent',     set:['sent']},
+  {key:'invoiced', label:'Invoiced', set:['invoiced']},
 ];
 function mqStatusSet(){ const s=new Set(); MQ.statuses.forEach(k=>{ const g=STATUS_GROUPS.find(x=>x.key===k); if(g) g.set.forEach(v=>s.add(v)); }); return s; }
 const MQ_PER_PAGE = 50;
