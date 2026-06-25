@@ -476,7 +476,13 @@ if (empty($_SESSION['auth'])):
       </div>
     </div>
 
-    <button data-tab="settings">Settings</button>
+    <div class="navgroup">
+      <button class="grp">Settings <span class="car">▾</span></button>
+      <div class="submenu">
+        <button data-tab="settings">App Settings</button>
+        <button data-tab="clientaccess">Client Access</button>
+      </div>
+    </div>
   </div>
 
   <div class="pane" id="pane"></div>
@@ -654,7 +660,7 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
@@ -681,6 +687,7 @@ function render(){
   if(TAB==='newquote') p.innerHTML = vNewQuote();
   if(TAB==='myquotes') p.innerHTML = vMyQuotes();
   if(TAB==='jobcards') p.innerHTML = vJobCards();
+  if(TAB==='clientaccess') p.innerHTML = vClientAccess();
   // the capital "Fund deployed" bar belongs only to the dashboard + working-capital tabs
   const WC_TABS={dash:1,deploy:1,ledger:1,loans:1,growth:1};
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display=(ME.admin && WC_TABS[TAB])?'':'none';
@@ -2857,8 +2864,9 @@ function navActivate(b){
   if(TAB==='emails' && !EMAIL.loaded && !EMAIL.loadingClients){ render(); emailLoadClients(); return; }
   if(TAB==='todo' && !TASK.loaded && !TASK.loading){ render(); todoLoad(); return; }
   if(TAB==='loans'){ render(); loadLoans(); return; }
-  if(TAB==='newquote'){ render(); if(ME.admin && !QB.assignLoaded) qbAssignLoad(); return; }
+  if(TAB==='newquote'){ render(); return; }
   if(TAB==='myquotes'){ render(); mqLoad(); return; }
+  if(TAB==='clientaccess'){ render(); if(ME.admin && !QB.assignLoaded) qbAssignLoad(); return; }
   if(TAB==='settings'){ render(); if(ME.admin && !USERS.loaded) usersLoad(); return; }
   render();
 }
@@ -2933,7 +2941,6 @@ function vNewQuote(){
        <div id="qbCustResults"></div>`;
 
   return `
-  ${ME.admin?qbAssignPanel():''}
   <h2>${QB.id?'Edit quote':'New quote'}</h2>
 
   <div class="card" style="background:#FAFBFD">
@@ -3050,33 +3057,35 @@ function qbPush(id){ QB.busy=true; QB.msg='Pushing to Zoho…'; QB.err=false; re
 }
 
 /* ---- admin: customer → users assignment panel ---- */
-function qbAssignPanel(){
+/* ---- Client Access tab (Settings → Client Access): assign clients to users ---- */
+function vClientAccess(){
+  if(!ME.admin) return `<div class="card muted" style="text-align:center">Admins only.</div>`;
   const list = QB.assignments.length
-    ? QB.assignments.map(a=>`<div class="invrow" style="cursor:default"><div><div style="font-size:12.5px;font-weight:600">${qesc(a.name||a.id)}</div>
-        <div class="muted">${(a.users||[]).map(qesc).join(', ')||'no users'}</div></div>
-        <button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="qbAEdit('${qesc(a.id)}','${qesc(a.name||'').replace(/'/g,'&#39;')}')">Edit</button></div>`).join('')
-    : `<div class="muted" style="font-size:11px;padding:8px">No customers assigned yet.</div>`;
-  const editor = QB.aCust ? `<div class="card" style="background:#FAFBFD;margin-top:8px">
-      <div class="row" style="margin-bottom:8px"><b style="font-size:12px">${qesc(QB.aCust.name)}</b>
-        <span style="cursor:pointer;color:var(--bad);font-weight:700" onclick="QB.aCust=null;render()">✕</span></div>
-      <div class="muted" style="font-size:11px;margin-bottom:6px">Tick the app users who can raise quotes for this customer:</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${QB.users.map(u=>`<label style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:11.5px">
-        <input type="checkbox" ${QB.aUsers.includes(u)?'checked':''} onchange="qbAToggle('${qesc(u)}',this.checked)">${qesc(u)}</label>`).join('')||'<span class="muted" style="font-size:11px">No app users yet.</span>'}</div>
-      <button class="btn" style="margin-top:10px;width:auto;padding:7px 14px;font-size:12px" onclick="qbASave()">Save access (${QB.aUsers.length})</button>
+    ? QB.assignments.map(a=>`<div class="invrow" style="cursor:default"><div style="min-width:0"><div style="font-size:13px;font-weight:600">${qesc(a.name||a.id)}</div>
+        <div class="muted">${(a.users||[]).length? (a.users||[]).map(u=>`<span class="pill" style="background:#EEF2FE;color:var(--blue);margin-right:4px">${qesc(u)}</span>`).join('') : 'no users assigned'}</div></div>
+        <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="qbAEdit('${qesc(a.id)}','${qesc(a.name||'').replace(/'/g,'&#39;')}')">Edit</button></div>`).join('')
+    : `<div class="muted" style="font-size:12px;padding:14px;text-align:center">No clients assigned yet. Search a client above to begin.</div>`;
+  const editor = QB.aCust ? `<div class="card" style="background:#FAFBFD;margin-top:10px">
+      <div class="row" style="margin-bottom:8px"><b style="font-size:13px">${qesc(QB.aCust.name)}</b>
+        <span style="cursor:pointer;color:var(--bad);font-weight:700" onclick="QB.aCust=null;render()" title="Close">✕</span></div>
+      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Tick the users this client belongs to (a client can go to as many users as you like):</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px">${QB.users.map(u=>`<label style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:5px 11px;font-size:12px;cursor:pointer">
+        <input type="checkbox" ${QB.aUsers.includes(u)?'checked':''} onchange="qbAToggle('${qesc(u)}',this.checked)">${qesc(u)}</label>`).join('')||'<span class="muted" style="font-size:11px">No app users yet — add users in Settings → App Settings.</span>'}</div>
+      <button class="btn" style="margin-top:12px;width:auto;padding:8px 16px;font-size:12px" onclick="qbASave()">Save (${QB.aUsers.length} user${QB.aUsers.length===1?'':'s'})</button>
     </div>` : '';
-  return `<div class="tool" style="margin-bottom:14px"><details ${QB.assignOpen?'open':''} ontoggle="QB.assignOpen=this.open">
-    <summary>Customer access <span class="cv">assign Zoho customers to staff</span></summary>
-    <div class="body">
-      <div class="muted" style="font-size:11px;margin-bottom:8px">Decide which staff can raise quotes for which customers. A customer can go to as many users as you like.</div>
-      <input type="text" id="qbAssignSearch" placeholder="Search a Zoho customer to assign…" oninput="qbASearch(this.value)" autocomplete="off">
+  return `<h2>Client access</h2>
+    <div class="muted" style="margin:-6px 0 12px">Assign clients to your users. Use this to keep track of who owns which client. ${QB.assignLoaded?'':'<span style="color:var(--blue)">Loading…</span>'}</div>
+    <div class="card">
+      <label>Find a client</label>
+      <input type="text" id="qbAssignSearch" placeholder="🔍 Search a Zoho client by name…" oninput="qbASearch(this.value)" autocomplete="off" style="margin-bottom:0">
       <div id="qbAssignResults"></div>
       ${editor}
-      <div class="muted" style="font-size:11px;margin:12px 0 4px">Current assignments</div>
-      ${list}
-    </div></details></div>`;
+    </div>
+    <div class="sect"><b>Current assignments</b><span class="ln"></span>${QB.assignments.length?`<span class="pill" style="background:#F1F4F8;color:var(--ink)">${QB.assignments.length}</span>`:''}</div>
+    ${list}`;
 }
 function qbAssignLoad(){ fetch('api/customer_assign.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
-  .then(r=>r.json()).then(j=>{ if(j.ok){ QB.assignments=j.assignments||[]; QB.users=j.users||[]; QB.assignLoaded=true; if(TAB==='newquote') render(); } }).catch(()=>{}); }
+  .then(r=>r.json()).then(j=>{ if(j.ok){ QB.assignments=j.assignments||[]; QB.users=j.users||[]; QB.assignLoaded=true; if(TAB==='clientaccess') render(); } }).catch(()=>{}); }
 function qbASearch(v){ clearTimeout(_qbAssignT); const box=document.getElementById('qbAssignResults');
   if((v||'').trim().length<2){ if(box) box.innerHTML=''; return; }
   _qbAssignT=setTimeout(()=>{ fetch('api/customers.php?q='+encodeURIComponent(v),{credentials:'same-origin'})

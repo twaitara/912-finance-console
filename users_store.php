@@ -33,6 +33,7 @@ function users_all_tabs() {
         'emails'   => 'Emails',
         'todo'     => 'To-Do',
         'settings' => 'Settings',
+        'clientaccess' => 'Client Access',
         'audrey'   => 'Audrey Reports',
         'taskboard'=> 'Task Board',
     ];
