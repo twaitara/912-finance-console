@@ -574,6 +574,21 @@ if (empty($_SESSION['auth'])):
   /* micro-buttons inside tables must never inherit Fitts min-height */
   table.rpt .btn{min-height:unset!important;padding:3px 9px!important;font-size:10.5px!important;border-radius:6px!important;width:auto!important;line-height:1.5!important;box-shadow:none!important}
 
+  /* ---- Email tab: scoped compact overrides ---- */
+  .em-compact h2{font-size:13px;margin:0 0 8px}
+  .em-compact label{font-size:10.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;margin:8px 0 3px}
+  .em-compact input,.em-compact select{min-height:unset!important;padding:7px 10px!important;font-size:12px!important;margin-bottom:6px!important}
+  .em-compact textarea{min-height:unset!important;padding:7px 10px!important;font-size:12px!important;margin-bottom:6px!important}
+  .em-compact .card{padding:10px 13px}
+  .em-compact .val{font-size:13px}
+  .em-compact .rptwrap{max-height:280px;overflow-y:auto}
+  .em-compact table.rpt{font-size:11px}
+  .em-compact table.rpt th{font-size:9px;padding:5px 8px!important}
+  .em-compact table.rpt td{padding:5px 8px!important}
+  .em-compact table.rpt .btn{min-height:unset!important;padding:2px 8px!important;font-size:10px!important;border-radius:5px!important;width:auto!important;line-height:1.4!important;box-shadow:none!important}
+  .em-compact .uqsearch,.em-compact #emUnpaidSearch{margin-bottom:6px!important}
+  .em-compact .btn.sec[style]{min-height:unset!important}
+
   /* ---- Cards: elevated depth (Gestalt Figure-Ground) ---- */
   .card{padding:18px 20px;border-radius:16px;
     border:1px solid var(--border-soft);background:#fff;
@@ -646,6 +661,9 @@ if (empty($_SESSION['auth'])):
     .btn{min-height:48px;font-size:14px}
     table.rpt .btn{min-height:unset!important;font-size:10.5px!important;padding:3px 9px!important}
     input,select{min-height:48px;font-size:15px}
+    .em-compact input,.em-compact select,.em-compact textarea{min-height:unset!important;padding:7px 10px!important;font-size:12px!important}
+    .em-compact .btn{min-height:unset!important}
+    .em-compact table.rpt .btn{min-height:unset!important;padding:2px 8px!important;font-size:10px!important}
     .card{padding:14px 16px;border-radius:14px}
     h2{font-size:13.5px}
   }
@@ -2703,15 +2721,15 @@ function vEmail(){
     body = `<div class="card muted" style="text-align:center">Pick a client to build their statement.</div>`;
   }
 
-  return `
+  return `<div class="em-compact">
   <h2>Email a client</h2>
   ${EMAIL.msg && !EMAIL.data && !EMAIL.clientId ? `<div class="warn">${EMAIL.msg}</div>`:''}
-  ${(EMAIL.clients||[]).some(c=>c.unpaid)?`<input id="emUnpaidSearch" type="text" autocomplete="off" placeholder="🔍 Quick search clients below…" value="${(EMAIL.unpaidQ||'').replace(/"/g,'&quot;')}" oninput="emailUnpaidSearch(this.value)" style="margin-bottom:10px">`:''}
+  ${(EMAIL.clients||[]).some(c=>c.unpaid)?`<input id="emUnpaidSearch" type="text" autocomplete="off" placeholder="🔍 Quick search clients below…" value="${(EMAIL.unpaidQ||'').replace(/"/g,'&quot;')}" oninput="emailUnpaidSearch(this.value)">`:''}
   <div id="emUnpaidBox">${emUnpaidTableHtml()}</div>
   <label>Search a client</label>
   <input id="emClientSearch" type="text" autocomplete="off" placeholder="Search client name or email…" value="${(EMAIL.clientSearch||'').replace(/"/g,'&quot;')}" oninput="emailClientSearch(this.value)">
   <div id="emClientList">${emClientListHtml()}</div>
-  ${body}`;
+  ${body}</div>`;
 }
 
 function emailBulkToggle(id){ EMAIL.bulkSel[id]=!EMAIL.bulkSel[id]; render(); }
