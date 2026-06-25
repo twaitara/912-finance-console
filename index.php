@@ -440,6 +440,7 @@ if (empty($_SESSION['auth'])):
         </span>
       </div>
       <a class="logout" href="connect_calendar.php" target="_blank" rel="noopener" style="color:#fff;background:rgba(245,111,0,.9);border:1px solid rgba(255,255,255,.18);padding:5px 11px;border-radius:8px;font-weight:600">📅 Authenticate calendar</a>
+      <a class="logout" href="#" onclick="pwOpen();return false;" title="Change your password">🔑 Password</a>
       <a class="logout" href="?logout=1">Sign out</a>
     </div>
   </header>
@@ -518,6 +519,23 @@ if (empty($_SESSION['auth'])):
     <div class="qbm-head"><b id="qbModalTitle">New quote</b>
       <button class="qbm-x" onclick="qbClose()" aria-label="Close" title="Close">✕</button></div>
     <div class="qbm-body" id="qbModalBody"></div>
+  </div>
+</div>
+
+<div id="pwModal" class="qbmodal" onclick="if(event.target===this)pwClose()">
+  <div class="qbm-card" style="max-width:420px">
+    <div class="qbm-head"><b>Change password</b>
+      <button class="qbm-x" onclick="pwClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body">
+      <label>Current password</label>
+      <input type="password" id="pwCur" autocomplete="current-password" placeholder="Your current password">
+      <label>New password</label>
+      <input type="password" id="pwNew" autocomplete="new-password" placeholder="At least 6 characters">
+      <label>Confirm new password</label>
+      <input type="password" id="pwNew2" autocomplete="new-password" placeholder="Re-type the new password">
+      <div id="pwMsg" style="margin-bottom:10px"></div>
+      <button class="btn" id="pwBtn" onclick="pwSave()">Update password</button>
+    </div>
   </div>
 </div>
 
@@ -3097,6 +3115,25 @@ function qbOpen(){ QB.modalOpen=true; const m=document.getElementById('qbModal')
   document.body.style.overflow='hidden'; }
 function qbOpenNew(){ QB=Object.assign(qbBlank(), {assignOpen:QB.assignOpen,assignLoaded:QB.assignLoaded,assignments:QB.assignments,users:QB.users,aCust:null,aUsers:[]}); qbOpen(); }
 function qbClose(){ QB.modalOpen=false; const m=document.getElementById('qbModal'); if(m) m.classList.remove('open'); document.body.style.overflow=''; }
+/* ---- change-my-password modal ---- */
+function pwOpen(){ ['pwCur','pwNew','pwNew2'].forEach(i=>{const e=document.getElementById(i); if(e)e.value='';});
+  const msg=document.getElementById('pwMsg'); if(msg)msg.innerHTML=''; const m=document.getElementById('pwModal'); if(m) m.classList.add('open'); document.body.style.overflow='hidden';
+  const c=document.getElementById('pwCur'); if(c) setTimeout(()=>c.focus(),50); }
+function pwClose(){ const m=document.getElementById('pwModal'); if(m) m.classList.remove('open'); document.body.style.overflow=''; }
+function pwMsg(html,err){ const e=document.getElementById('pwMsg'); if(e) e.innerHTML=`<div class="${err?'warn':'ok'}" style="font-size:12px">${html}</div>`; }
+function pwSave(){
+  const cur=(document.getElementById('pwCur')||{}).value||'';
+  const nw=(document.getElementById('pwNew')||{}).value||'';
+  const nw2=(document.getElementById('pwNew2')||{}).value||'';
+  if(nw.length<6){ pwMsg('New password must be at least 6 characters.',true); return; }
+  if(nw!==nw2){ pwMsg('The new passwords do not match.',true); return; }
+  const btn=document.getElementById('pwBtn'); if(btn){ btn.disabled=true; btn.textContent='Updating…'; }
+  fetch('api/my_password.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({current:cur,new:nw})})
+  .then(r=>r.json()).then(j=>{ if(btn){ btn.disabled=false; btn.textContent='Update password'; }
+    if(j.ok){ pwMsg('Password updated ✓',false); setTimeout(pwClose,1200); }
+    else pwMsg(j.error||'Could not update password.',true);
+  }).catch(e=>{ if(btn){ btn.disabled=false; btn.textContent='Update password'; } pwMsg('Error: '+e,true); });
+}
 function qbSearch(v){ clearTimeout(_qbSearchT); const box=document.getElementById('qbCustResults');
   if((v||'').trim().length<2){ if(box) box.innerHTML=''; return; }
   _qbSearchT=setTimeout(()=>{ fetch('api/customers.php?q='+encodeURIComponent(v),{credentials:'same-origin'})
@@ -3461,7 +3498,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && QB.modalOpen) qbClose(); });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); } });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){
