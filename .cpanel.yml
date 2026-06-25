@@ -1,6 +1,6 @@
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/tonyketter/public_html/WORKINGCAPITAL
+    - export DEPLOYPATH=/home4/tonyketter/public_html/WORKINGCAPITAL
     - /bin/cp index.php $DEPLOYPATH
     - /bin/cp audrey.php $DEPLOYPATH
     - /bin/cp calendar_oauth.php $DEPLOYPATH
