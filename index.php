@@ -2887,7 +2887,7 @@ function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
-let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{}, users:[], statuses:[] };
+let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{}, users:[], statuses:[], q:'' };
 const STATUS_GROUPS = [
   {key:'approved', label:'Approved', set:['approved','accepted']},
   {key:'pending',  label:'Pending',  set:['pending_approval','draft','local_draft']},
@@ -3144,19 +3144,19 @@ function mqPreviewHtml(q){
     ${q.notes?`<div class="muted" style="font-size:11px;margin-top:6px">📝 ${qesc(q.notes)}</div>`:''}
   </div>`;
 }
-function vMyQuotes(){
+function mqListHtml(){
   const all=MQ.quotes||[];
-  // month options from the data (newest first)
-  const monthKeys=[...new Set(all.map(mqMonthKey).filter(k=>k&&k.length>=7))].sort().reverse();
-  // distinct creators (for the multi-select "who created" filter — admins only)
-  const creators=[...new Set(all.map(q=>q.created_by).filter(Boolean))].sort();
   let filtered = all;
   if(MQ.month!=='all') filtered=filtered.filter(q=>mqMonthKey(q)===MQ.month);
   if(MQ.users.length) filtered=filtered.filter(q=>MQ.users.includes(q.created_by));
   if(MQ.statuses.length){ const ss=mqStatusSet(); filtered=filtered.filter(q=>ss.has(q.status)); }
+  const qq=(MQ.q||'').trim().toLowerCase();
+  if(qq) filtered=filtered.filter(q=>((q.zoho_estimate_number||'')+' '+(q.customer_name||'')).toLowerCase().includes(qq));
   const pages=Math.max(1,Math.ceil(filtered.length/MQ_PER_PAGE));
   if(MQ.page>pages) MQ.page=pages; if(MQ.page<1) MQ.page=1;
   const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
+
+  const count=`<div class="muted" style="margin-bottom:10px;font-size:12px">${MQ.syncing?'Checking Zoho…':(filtered.length+' quote'+(filtered.length===1?'':'s')+(MQ.month==='all'?'':' · '+mqMonthLabel(MQ.month))+(qq?(' · matching “'+qesc(MQ.q)+'”'):''))}</div>`;
 
   const cards = slice.length ? slice.map(q=>{
     const pushed=!!q.zoho_estimate_id; const isOpen=!!MQ.open[q.id]; const busy=MQ.busyId===q.id;
@@ -3191,6 +3191,21 @@ function vMyQuotes(){
     </div>`; }).join('')
     : `<div class="card muted" style="text-align:center;padding:22px">${all.length?'No quotes match the filters.':'No quotes yet. Make one under <b>New Quote</b>.'}</div>`;
 
+  const pages2=pages;
+  const pager = pages2>1 ? `<div class="row" style="justify-content:center;gap:8px;margin-top:14px">
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqGoPage(${MQ.page-1})" ${MQ.page<=1?'disabled':''}>‹ Prev</button>
+      <span class="muted" style="font-size:12px">Page ${MQ.page} of ${pages2}</span>
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqGoPage(${MQ.page+1})" ${MQ.page>=pages2?'disabled':''}>Next ›</button>
+    </div>` : '';
+  return count + cards + pager;
+}
+function mqSearch(v){ MQ.q=v; MQ.page=1; const b=document.getElementById('mqListBox'); if(b) b.innerHTML=mqListHtml(); }
+
+function vMyQuotes(){
+  const all=MQ.quotes||[];
+  const monthKeys=[...new Set(all.map(mqMonthKey).filter(k=>k&&k.length>=7))].sort().reverse();
+  const creators=[...new Set(all.map(q=>q.created_by).filter(Boolean))].sort();
+
   const statusFilter = `
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:${(ME.admin && creators.length>1)?'8px':'12px'}">
       <span class="muted" style="font-size:11px">Status:</span>
@@ -3209,23 +3224,17 @@ function vMyQuotes(){
       <option value="all" ${MQ.month==='all'?'selected':''}>All months</option>
       ${monthKeys.map(k=>`<option value="${k}" ${MQ.month===k?'selected':''}>${mqMonthLabel(k)}</option>`).join('')}
     </select>`;
-  const pager = pages>1 ? `<div class="row" style="justify-content:center;gap:8px;margin-top:14px">
-      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqGoPage(${MQ.page-1})" ${MQ.page<=1?'disabled':''}>‹ Prev</button>
-      <span class="muted" style="font-size:12px">Page ${MQ.page} of ${pages}</span>
-      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqGoPage(${MQ.page+1})" ${MQ.page>=pages?'disabled':''}>Next ›</button>
-    </div>` : '';
 
   return `<h2>My quotes</h2>
     ${MQ.msg?`<div class="${MQ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(MQ.msg)}</div>`:''}
-    <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
-      <span class="muted">${MQ.syncing?'Checking Zoho…':(filtered.length+' quote'+(filtered.length===1?'':'s')+(MQ.month==='all'?'':' · '+mqMonthLabel(MQ.month)))}</span>
-      <span style="display:inline-flex;gap:8px;align-items:center;margin-left:auto">${monthSel}
+    <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="mqSearch" type="text" autocomplete="off" placeholder="🔍 Search quote # or client…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
+      <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
     </div>
     ${statusFilter}
     ${userFilter}
-    ${cards}
-    ${pager}`;
+    <div id="mqListBox">${mqListHtml()}</div>`;
 }
 function mqTogglePreview(id){ MQ.open[id]=!MQ.open[id]; render(); }
 function mqSetMonth(v){ MQ.month=v; MQ.page=1; render(); }
