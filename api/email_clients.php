@@ -39,7 +39,7 @@ function ec_apply_sent($clients){
 try {
     $cacheDir = __DIR__ . '/../data';
     if (!is_dir($cacheDir)) @mkdir($cacheDir, 0775, true);
-    $cacheFile = $cacheDir . '/email_clients_v4.json';
+    $cacheFile = $cacheDir . '/email_clients_v5.json';
     $force = isset($_GET['refresh']) && $_GET['refresh'] == '1';
 
     if (!$force && is_file($cacheFile) && (time() - filemtime($cacheFile) < 21600)) {
@@ -84,12 +84,19 @@ try {
                 $id  = $inv['customer_id'] ?? '';
                 if ($bal > 0 && $id !== '') {
                     // convert foreign-currency balances to KES using the invoice's own rate
-                    $cur  = $inv['currency_code'] ?? 'KES';
+                    $cur     = $inv['currency_code'] ?? 'KES';
+                    $foreign = strtoupper($cur) !== 'KES';
                     $rate = (float)($inv['exchange_rate'] ?? 1); if ($rate <= 0) $rate = 1;
-                    $balKes = (strtoupper($cur) !== 'KES') ? $bal * $rate : $bal;
-                    if (!isset($unpaidAgg[$id])) $unpaidAgg[$id] = ['count'=>0, 'total'=>0.0];
+                    $balKes = $foreign ? $bal * $rate : $bal;
+                    if (!isset($unpaidAgg[$id])) $unpaidAgg[$id] = ['count'=>0, 'total'=>0.0, 'usd'=>false, 'usdCount'=>0, 'usdTotal'=>0.0, 'cur'=>''];
                     $unpaidAgg[$id]['count']++;
                     $unpaidAgg[$id]['total'] += $balKes;
+                    if ($foreign) {   // flag clients holding foreign-currency (e.g. USD) invoices
+                        $unpaidAgg[$id]['usd']      = true;
+                        $unpaidAgg[$id]['usdCount']++;
+                        $unpaidAgg[$id]['usdTotal'] += $bal;
+                        $unpaidAgg[$id]['cur']       = strtoupper($cur);
+                    }
                 }
             }
             $more = $iv['page_context']['has_more_page'] ?? false;
@@ -102,6 +109,10 @@ try {
         $cl['unpaid']      = $a ? true : false;
         $cl['unpaidCount'] = $a['count'] ?? 0;
         $cl['unpaidTotal'] = $a['total'] ?? 0;
+        $cl['hasUsd']      = $a['usd'] ?? false;
+        $cl['usdCount']    = $a['usdCount'] ?? 0;
+        $cl['usdTotal']    = $a['usdTotal'] ?? 0;
+        $cl['usdCur']      = $a['cur'] ?? 'USD';
     }
     unset($cl);
 

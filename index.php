@@ -2398,9 +2398,11 @@ function emUnpaidTableHtml(){
     else if(sent) tag=`<span style="color:#D64933;font-weight:700">SENT</span> <a onclick="event.stopPropagation();emailUnmarkSent('${c.id}')" style="color:var(--blue);cursor:pointer;font-size:10px">undo</a>`;
     else tag=`<span style="color:var(--orange);font-weight:600;cursor:pointer" onclick="emailSelectClient('${c.id}')">Build →</span>
                  &nbsp;<button class="btn sec" style="width:auto;padding:3px 8px;font-size:10px" title="Mark sent — strikes the row in red for 2 weeks and drops it to the bottom" onclick="event.stopPropagation();emailMarkSent('${c.id}','${(c.name||'').replace(/'/g,"")}')">Sent ✓</button>`;
-    return `<tr>
+    const usd=!!c.hasUsd;
+    const usdBadge = usd ? `<span class="pill" title="${c.usdCount||0} ${c.usdCur||'USD'} invoice${(c.usdCount===1)?'':'s'} · $${fmtn(c.usdTotal||0)}" style="background:#EEF2FE;color:var(--blue);margin-right:7px;vertical-align:middle">${c.usdCur||'USD'}</span>` : '';
+    return `<tr${usd?' style="box-shadow:inset 4px 0 0 var(--blue);background:#F4F7FE"':''}>
       <td class="l" onclick="event.stopPropagation()"><input type="checkbox" ${on?'checked':''} onclick="emailBulkToggle('${c.id}')"></td>
-      <td class="l" style="cursor:pointer;${ss}" onclick="emailSelectClient('${c.id}')">${c.name||'(no name)'}</td>
+      <td class="l" style="cursor:pointer;${ss}" onclick="emailSelectClient('${c.id}')">${usdBadge}${c.name||'(no name)'}</td>
       <td style="cursor:pointer;${ss}" onclick="emailSelectClient('${c.id}')">${c.unpaidCount||0}</td>
       <td style="cursor:pointer;${ss}" onclick="emailSelectClient('${c.id}')">${fmt(c.unpaidTotal||0)}</td>
       <td class="l">${tag}</td></tr>`; }).join('');
