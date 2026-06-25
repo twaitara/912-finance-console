@@ -681,6 +681,9 @@ function render(){
   if(TAB==='newquote') p.innerHTML = vNewQuote();
   if(TAB==='myquotes') p.innerHTML = vMyQuotes();
   if(TAB==='jobcards') p.innerHTML = vJobCards();
+  // the capital "Fund deployed" bar belongs only to the dashboard + working-capital tabs
+  const WC_TABS={dash:1,deploy:1,ledger:1,loans:1,growth:1};
+  const fb=document.querySelector('.fundbar'); if(fb) fb.style.display=(ME.admin && WC_TABS[TAB])?'':'none';
   paintFund();
 }
 
