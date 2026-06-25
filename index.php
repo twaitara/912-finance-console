@@ -163,6 +163,9 @@ if (empty($_SESSION['auth'])):
   .wcgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
   .wcgrid>.card{margin-bottom:0}
   @media (max-width:680px){ .wcgrid{grid-template-columns:1fr} }
+  .dashtkgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+  @media (max-width:1100px){ .dashtkgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  @media (max-width:680px){ .dashtkgrid{grid-template-columns:1fr} }
   .invrow{padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;justify-content:space-between}
   .invrow:hover{background:#FFF4EB}
   .warn{background:#FDECEA;color:var(--bad);font-size:11.5px;padding:8px 10px;border-radius:8px;margin-bottom:10px}
@@ -880,19 +883,17 @@ function dashTeamHtml(){
     + (unassigned?`<span class="wchip" style="background:#FFF4EB;border-color:#F7C99A;cursor:pointer" onclick="gotoTodo()"><span class="avatar" style="width:22px;height:22px;font-size:9px;background:#F56F00">!</span><b>Unassigned</b> · ${unassigned} — assign</span>`:'');
   // assigned task list (compact)
   const assigned=open.filter(t=>(t.assignees||[]).length);
-  const list = assigned.length? assigned.slice(0,8).map(t=>{
-    const av=(t.assignees||[]).map(a=>dshAvatar(a.name||a.email,22)).join('');
-    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
-      <div style="display:flex;margin-right:2px">${av}</div>
-      <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.title)}</div>
-        <div class="muted" style="font-size:10.5px">${(t.assignees||[]).map(a=>esc(a.name||a.email)).join(', ')}</div></div>
-    </div>`; }).join('') : `<div class="muted" style="font-size:11.5px;padding:6px 0">No tasks assigned to anyone yet${unassigned?` — you have ${unassigned} waiting.`:''}.</div>`;
+  const list = assigned.length? `<div class="dashtkgrid">${assigned.map(t=>{
+    const av=(t.assignees||[]).map(a=>dshAvatar(a.name||a.email,20)).join('');
+    return `<div style="background:#F7F9FC;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+      <div style="display:flex;gap:4px;margin-bottom:6px">${av}</div>
+      <div style="font-weight:600;font-size:11.5px;line-height:1.35;color:var(--ink)">${esc(t.title)}</div>
+      <div class="muted" style="font-size:10px;margin-top:4px">${(t.assignees||[]).map(a=>esc(a.name||a.email)).join(', ')}</div>
+    </div>`; }).join('')}</div>` : `<div class="muted" style="font-size:11.5px;padding:6px 0">No tasks assigned to anyone yet${unassigned?` — you have ${unassigned} waiting.`:''}.</div>`;
   return `<div class="sect"><b>Team &amp; tasks</b><span class="ln"></span>
       <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="gotoTodo()">Open To-Do →</button></div>
-    <div class="card">
-      <div class="wbar" style="margin-bottom:${people.length||unassigned?'12px':'0'}">${chips||'<span class="muted" style="font-size:11.5px">Nobody assigned yet.</span>'}</div>
-      ${list}
-    </div>`;
+    <div class="wbar" style="margin-bottom:${people.length||unassigned?'10px':'0'}">${chips||'<span class="muted" style="font-size:11.5px">Nobody assigned yet.</span>'}</div>
+    ${list}`;
 }
 function vDashLite(){
   const showQuotes = tabAllowed('myquotes') || tabAllowed('newquote');
