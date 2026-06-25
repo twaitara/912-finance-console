@@ -8,6 +8,9 @@ $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' 
 $host    = $_SERVER['HTTP_HOST'] ?? 'nineonetwo.online';
 $appUrl  = $scheme . '://' . $host . rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/WORKINGCAPITAL/api/x')), '/\\') . '/';
 $appUrl  = htmlspecialchars($appUrl, ENT_QUOTES);
+$logoUrl = trim((string)($cfg['company_logo_url'] ?? ''));
+if ($logoUrl === '') { foreach (['logo.png','logo.jpg','logo.jpeg','logo.webp','logo.svg','logo.gif'] as $cand) { if (is_file(__DIR__ . '/../' . $cand)) { $logoUrl = '../' . $cand; break; } } }
+$logoUrl = htmlspecialchars($logoUrl, ENT_QUOTES);
 header('Content-Type: text/html; charset=utf-8');
 ?><!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Technician Manual — <?php echo $co; ?></title>
@@ -18,6 +21,7 @@ header('Content-Type: text/html; charset=utf-8');
   .sheet{background:#fff;max-width:820px;margin:18px auto;border:1px solid #C9D2DD;border-radius:6px;padding:34px 40px}
   .head{display:flex;align-items:center;gap:14px;border-bottom:3px solid #F56F00;padding-bottom:16px;margin-bottom:8px}
   .logo{width:54px;height:54px;border-radius:14px;background:#F56F00;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;flex:0 0 auto}
+  .logo-img{height:58px;width:auto;max-width:180px;object-fit:contain;flex:0 0 auto}
   h1{font-size:23px;margin:0}
   .sub{color:#5a6b7b;font-size:13px;margin-top:2px}
   h2{font-size:16px;color:#F56F00;margin:26px 0 8px;border-bottom:1px solid #E6EAF0;padding-bottom:5px}
@@ -36,7 +40,7 @@ header('Content-Type: text/html; charset=utf-8');
 <body>
   <div class="bar"><span>Technician Manual</span><button onclick="window.print()">Save as PDF / Print</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
-    <div class="head"><div class="logo">912</div>
+    <div class="head"><?php echo $logoUrl !== '' ? '<img class="logo-img" src="'.$logoUrl.'" alt="'.$co.'">' : '<div class="logo">912</div>'; ?>
       <div><h1>Technician Manual</h1><div class="sub"><?php echo $co; ?> · 912 Finance Console</div></div></div>
 
     <div class="note" style="border-left-color:#F56F00;background:#FFF6EE">

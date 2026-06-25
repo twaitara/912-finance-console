@@ -30,6 +30,14 @@ try {
     $coPin  = $cfg['company_pin']      ?? 'P051475285Q';
     $coAddr = $cfg['company_address']  ?? "(UN Crescent Road)\nGate No 80 Gigiri\nNairobi Nairobi 7928\nKenya";
 
+    // logo: a configured URL wins; else auto-detect a logo file dropped in the app root; else the 912 badge
+    $logoUrl = trim((string)($cfg['company_logo_url'] ?? ''));
+    if ($logoUrl === '') {
+        foreach (['logo.png','logo.jpg','logo.jpeg','logo.webp','logo.svg','logo.gif'] as $cand) {
+            if (is_file(__DIR__ . '/../' . $cand)) { $logoUrl = '../' . $cand; break; }
+        }
+    }
+
     // customer KRA PIN — pull from the Zoho contact (tax_reg_no or a PIN custom field)
     $custPin = '';
     if (!empty($q['zoho_customer_id'])) {
@@ -66,6 +74,7 @@ try {
   .pad{padding:26px 30px}
   .top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:1px solid #C9D2DD;padding:26px 30px}
   .logo{width:52px;height:52px;border-radius:50%;background:#F56F00;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex:0 0 auto;margin-right:14px}
+  .logo-img{height:60px;width:auto;max-width:180px;object-fit:contain;flex:0 0 auto;margin-right:16px}
   .co{display:flex}
   .co .name{font-weight:700;font-size:17px}
   .co .meta{font-size:11.5px;color:#3f4d5c;line-height:1.5;margin-top:3px}
@@ -95,7 +104,7 @@ try {
   <div class="bar"><span>Job Card <?php echo jc_esc($docNo); ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
     <div class="top">
-      <div class="co"><div class="logo">912</div>
+      <div class="co"><?php echo $logoUrl !== '' ? '<img class="logo-img" src="'.jc_esc($logoUrl).'" alt="'.jc_esc($coName).'">' : '<div class="logo">912</div>'; ?>
         <div><div class="name"><?php echo jc_esc($coName); ?></div>
           <div class="meta">KRA PIN: <?php echo jc_esc($coPin); ?><br><?php echo $addrHtml; ?></div></div>
       </div>
