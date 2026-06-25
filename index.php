@@ -280,6 +280,7 @@ if (empty($_SESSION['auth'])):
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,214,138,.55)}70%{box-shadow:0 0 0 7px rgba(91,214,138,0)}100%{box-shadow:0 0 0 0 rgba(91,214,138,0)}}
   a.logout[href*="connect_calendar"]{background:var(--grad-orange)!important;box-shadow:0 6px 16px rgba(245,111,0,.32);transition:transform .12s,box-shadow .2s,filter .15s}
   a.logout[href*="connect_calendar"]:hover{filter:brightness(1.05);box-shadow:0 9px 20px rgba(245,111,0,.42)}
+  @media (max-width:680px){ a.logout[href*="connect_calendar"]{display:none} }   /* hide calendar auth on mobile */
   a.logout[href="?logout=1"]{padding:5px 10px;border-radius:8px;transition:background .15s,color .15s}
   a.logout[href="?logout=1"]:hover{background:rgba(255,255,255,.08);color:#fff}
 
