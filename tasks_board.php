@@ -68,6 +68,30 @@
   .meta{font-size:10px;color:var(--mute);margin-top:5px}
   .empty{text-align:center;color:var(--mute);padding:34px;background:#fff;border:1px solid var(--line);border-radius:14px}
   .foot{color:#AEB9C7;font-size:10px;text-align:center;margin:22px 0;font-style:italic}
+  /* compact, scannable, expandable task rows (matches the in-app To-Do) */
+  .tkgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start}
+  @media (max-width:980px){ .tkgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  @media (max-width:640px){ .tkgrid{grid-template-columns:1fr} }
+  .tkcard{background:#fff;border:1px solid var(--line);border-radius:13px;overflow:hidden;box-shadow:0 1px 2px rgba(21,32,43,.06);transition:box-shadow .18s,border-color .18s}
+  .tkcard:hover{box-shadow:0 8px 20px rgba(21,32,43,.1)}
+  .tkcard.open{border-color:#CBD5E1}
+  .tkcard.done{opacity:.62}
+  .tk-row{display:flex;align-items:center;gap:11px;padding:11px 13px;cursor:pointer}
+  .tk-check{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:2px solid #CBD5E1;display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;background:#fff;transition:background .15s,border-color .15s}
+  .tk-check:hover{border-color:var(--good)}
+  .tk-check.on{background:var(--good);border-color:var(--good)}
+  .tk-main{flex:1;min-width:0}
+  .tk-title{font-weight:600;font-size:13px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tk-title.done{text-decoration:line-through;color:var(--mute)}
+  .tk-sub{display:flex;align-items:center;gap:7px;margin-top:3px;flex-wrap:wrap}
+  .tk-tag{background:#FFF4EB;color:var(--orange);border:1px solid #F7D9BC;border-radius:20px;padding:1px 9px;font-size:10.5px;font-weight:600;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tk-people{display:flex;align-items:center;flex:0 0 auto}
+  .tk-people .av{margin-left:-7px;box-shadow:0 0 0 2px #fff}
+  .tk-people .av:first-child{margin-left:0}
+  .tk-more{margin-left:-7px;width:24px;height:24px;border-radius:50%;background:#E6EAF0;color:var(--mute);display:grid;place-items:center;font-size:10px;font-weight:700;box-shadow:0 0 0 2px #fff}
+  .tk-caret{flex:0 0 auto;color:#9AA7B8;font-size:11px}
+  .tk-body{padding:0 13px 13px;border-top:1px solid var(--line);background:#FBFCFE}
+  .tk-body .flab:first-child{margin-top:11px}
 </style></head>
 <body>
   <div class="top"><div class="b">912</div>
@@ -109,7 +133,8 @@
   </div>
 
 <script>
-let TB = { tasks:[], q:'', person:'', group:'person', from:'', to:'' };
+let TB = { tasks:[], q:'', person:'', group:'person', from:'', to:'', open:{} };
+function boardToggleCard(id){ TB.open[id]=!TB.open[id]; paint(); }
 function setGroup(g){ TB.group=g; const p=document.getElementById('gPerson'),d=document.getElementById('gDate'); if(p&&d){p.classList.toggle('on',g==='person');d.classList.toggle('on',g==='date');} paint(); }
 function ymdLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function preset(p){
@@ -240,8 +265,8 @@ function paint(){
       : '';
     const cards = visible.map(taskCard).join('');
     document.getElementById('board').innerHTML = heading
-      ? `<div class="person" style="padding-bottom:10px">${heading}<div style="padding:10px 10px 0">${cards}</div></div>`
-      : cards;
+      ? `<div class="person" style="padding-bottom:10px">${heading}<div class="tkgrid" style="padding:10px">${cards}</div></div>`
+      : `<div class="tkgrid">${cards}</div>`;
   }
 }
 
@@ -266,39 +291,51 @@ function renderByDate(visible){
     return `<div class="person" style="padding-bottom:10px">
       <div class="phead" style="border-radius:14px 14px 0 0"><div class="nm">🗓️ ${esc(dateLabel(k))}</div>
         <span class="pcount">${open} open · ${done} done</span></div>
-      <div style="padding:10px 10px 0">${items.map(taskCard).join('')}</div>
+      <div class="tkgrid" style="padding:10px">${items.map(taskCard).join('')}</div>
     </div>`;
   }).join('');
 }
 
 function taskCard(t){
   const d=t.status==='done';
+  const isOpen=!!TB.open[t.id];
   const real=(t.assignees||[]);
+  const avatars = real.length
+    ? real.slice(0,4).map(a=>av(a.name||a.email,24)).join('') + (real.length>4?`<span class="tk-more">+${real.length-4}</span>`:'')
+    : '';
+  const head = `<div class="tk-row" onclick="boardToggleCard(${t.id})">
+      <span class="tk-check ${d?'on':''}" title="${d?'Mark not done':'Mark done'}" onclick="event.stopPropagation();toggle(${t.id},${d?'false':'true'})">${d?'✓':''}</span>
+      <div class="tk-main">
+        <div class="tk-title ${d?'done':''}">${esc(t.title)}</div>
+        <div class="tk-sub">${t.subject?`<span class="tk-tag">${esc(t.subject)}</span>`:''}${real.length?'':'<span style="font-size:10.5px;color:var(--bad);font-weight:600">Unassigned</span>'}</div>
+      </div>
+      <div class="tk-people">${avatars}</div>
+      <span class="tk-caret">${isOpen?'▴':'▾'}</span>
+    </div>`;
+  if(!isOpen) return `<div class="tkcard ${d?'done':''}">${head}</div>`;
+
   const chips = real.length
     ? real.map(a=>{ const n=a.name||a.email; return `<span class="achip">${av(n,18)}<span>${esc(n)}</span><b onclick="boardUnassign(${t.id},'${(a.name||'').replace(/'/g,'')}','${(a.email||'').replace(/'/g,'')}')">✕</b></span>`; }).join('')
-    : `<span class="muted" style="font-size:11px;color:var(--bad)">Unassigned</span>`;
-  return `<div class="task" style="background:#fff;border:1px solid var(--line);border-radius:14px;margin-bottom:10px">
-    <div class="trow">
-      <div class="ttl ${d?'done':''}">${esc(t.title)}</div>
-      <div class="seg">
-        <button class="notdone ${!d?'on':''}" onclick="toggle(${t.id},false)">Not done</button>
-        <button class="done ${d?'on':''}" onclick="toggle(${t.id},true)">Done</button>
-      </div>
+    : `<span style="font-size:11px;color:var(--bad)">No one assigned yet.</span>`;
+  const body = `<div class="tk-body">
+    <div class="seg" style="margin-top:11px">
+      <button class="notdone ${!d?'on':''}" onclick="toggle(${t.id},false)">Not done</button>
+      <button class="done ${d?'on':''}" onclick="toggle(${t.id},true)">Done</button>
     </div>
-    <input type="text" placeholder="Subject / short label…" value="${esc(t.subject||'')}" oninput="subj(${t.id},this.value)" style="margin-top:8px;font-size:12px;font-weight:600;color:var(--orange);border-color:#F1D6BD">
+    <div class="flab">Subject</div>
+    <input type="text" placeholder="Subject / short label…" value="${esc(t.subject||'')}" oninput="subj(${t.id},this.value)" style="font-size:12px;font-weight:600;color:var(--orange);border-color:#F1D6BD">
     <div class="saved" id="sj${t.id}"></div>
-
     <div class="flab">Assigned to</div>
     <div class="achips">${chips}</div>
     <div style="display:flex;gap:6px;margin-top:6px">
       <input type="text" list="peopleList" id="ai${t.id}" placeholder="Add a person…" style="flex:1;font-size:12px" onkeydown="if(event.key==='Enter'){boardAssignFrom(${t.id});}">
       <button class="addbtn" onclick="boardAssignFrom(${t.id})">+ Assign</button>
     </div>
-
     <div class="flab">Notes</div>
     <textarea placeholder="Add a note…" oninput="note(${t.id},this.value)">${esc(t.notes||'')}</textarea>
     <div class="saved" id="sv${t.id}"></div>
   </div>`;
+  return `<div class="tkcard open ${d?'done':''}">${head}${body}</div>`;
 }
 load();
 </script>
