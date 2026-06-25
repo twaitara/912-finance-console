@@ -427,6 +427,15 @@ if (empty($_SESSION['auth'])):
     </div>
 
     <div class="navgroup">
+      <button class="grp">Create <span class="car">▾</span></button>
+      <div class="submenu">
+        <button data-tab="newquote">New Quote</button>
+        <button data-tab="myquotes">My Quotes</button>
+        <button data-tab="jobcards">Job Cards</button>
+      </div>
+    </div>
+
+    <div class="navgroup">
       <button class="grp">Tasks <span class="car">▾</span></button>
       <div class="submenu">
         <button data-tab="todo">To-Do</button>
@@ -644,6 +653,9 @@ function render(){
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
+  if(TAB==='newquote') p.innerHTML = vNewQuote();
+  if(TAB==='myquotes') p.innerHTML = vMyQuotes();
+  if(TAB==='jobcards') p.innerHTML = vJobCards();
   paintFund();
 }
 
@@ -2773,9 +2785,240 @@ function navActivate(b){
   if(TAB==='emails' && !EMAIL.loaded && !EMAIL.loadingClients){ render(); emailLoadClients(); return; }
   if(TAB==='todo' && !TASK.loaded && !TASK.loading){ render(); todoLoad(); return; }
   if(TAB==='loans'){ render(); loadLoans(); return; }
+  if(TAB==='newquote'){ render(); if(ME.admin && !QB.assignLoaded) qbAssignLoad(); return; }
+  if(TAB==='myquotes'){ render(); mqLoad(); return; }
   if(TAB==='settings'){ render(); if(ME.admin && !USERS.loaded) usersLoad(); return; }
   render();
 }
+
+/* ===================== Quotes → Zoho (Create group) ===================== */
+let QB = { id:0, customerId:'', customerName:'', currency:'KES',
+           items:[{name:'',description:'',qty:1,rate:0}], notes:'',
+           results:[], msg:'', err:false, busy:false,
+           assignOpen:false, assignLoaded:false, assignments:[], users:[],
+           aCust:null, aUsers:[] };
+let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0 };
+const qesc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+let _qbSearchT=null, _qbAssignT=null;
+
+function qbSub(){ return QB.items.reduce((s,it)=>s + (parseFloat(it.qty)||0)*(parseFloat(it.rate)||0), 0); }
+function qbTax(){ return qbSub()*(CFG.vat||0.16); }
+function qbTotal(){ return qbSub()+qbTax(); }
+
+function quoteBadge(status){
+  const map={
+    local_draft:['Draft (local)','#64748B','#F1F4F8'],
+    draft:['Draft in Zoho','#64748B','#F1F4F8'],
+    pending_approval:['Pending approval','#9A6700','#FFF4D6'],
+    approved:['Approved ✓','#0F7A34','#E7F6EC'],
+    declined:['Declined','#D64933','#FDECEA'],
+    rejected:['Declined','#D64933','#FDECEA'],
+    sent:['Sent','#2350C5','#EEF2FE'],
+    accepted:['Accepted ✓','#0F7A34','#E7F6EC'],
+    invoiced:['Invoiced','#2350C5','#EEF2FE'],
+    expired:['Expired','#64748B','#F1F4F8']
+  };
+  const m=map[status]||[status||'—','#64748B','#F1F4F8'];
+  return `<span class="pill" style="color:${m[1]};background:${m[2]}">${m[0]}</span>`;
+}
+
+/* ---- New Quote (builder) ---- */
+function vNewQuote(){
+  const cur=QB.currency||'KES';
+  const rows=QB.items.map((it,i)=>`
+    <div class="row" style="gap:6px;align-items:flex-start;margin-bottom:6px">
+      <div style="flex:1;min-width:0">
+        <input type="text" placeholder="Item & description" value="${qesc(it.name)}" oninput="qbItem(${i},'name',this.value)" style="margin-bottom:4px">
+        <input type="text" placeholder="Notes (optional)" value="${qesc(it.description)}" oninput="qbItem(${i},'description',this.value)" style="margin-bottom:0;font-size:11px">
+      </div>
+      <input type="number" step="0.01" min="0" placeholder="Qty" value="${qesc(it.qty)}" oninput="qbItem(${i},'qty',this.value)" style="width:64px;margin-bottom:0">
+      <input type="number" step="0.01" min="0" placeholder="Rate" value="${qesc(it.rate)}" oninput="qbItem(${i},'rate',this.value)" style="width:84px;margin-bottom:0">
+      <div style="width:92px;text-align:right;font-weight:600;font-size:13px;padding-top:9px" id="qbAmt${i}">${fmtn((parseFloat(it.qty)||0)*(parseFloat(it.rate)||0))}</div>
+      <button class="btn sec" style="width:auto;padding:8px 9px;font-size:12px" onclick="qbDelRow(${i})" title="Remove">✕</button>
+    </div>`).join('');
+
+  const custBlock = QB.customerId
+    ? `<div class="wchip" style="background:#EEF2FE;border-color:#C7D5F5"><b>${qesc(QB.customerName)}</b> · linked to Zoho
+         <span style="cursor:pointer;color:var(--bad);font-weight:700;margin-left:6px" onclick="qbClearCust()">✕</span></div>`
+    : `<input type="text" id="qbCustSearch" placeholder="Search customer name (from Zoho)…" oninput="qbSearch(this.value)" autocomplete="off">
+       <div id="qbCustResults"></div>`;
+
+  return `
+  ${ME.admin?qbAssignPanel():''}
+  <h2>New quote</h2>
+  ${QB.id?`<div class="muted" style="margin:-6px 0 12px">Editing local draft #${QB.id}.</div>`:''}
+  <div class="card">
+    <label>Customer</label>
+    ${custBlock}
+  </div>
+  <div class="card">
+    <div class="row" style="margin-bottom:8px"><b style="font-size:13px">Line items</b>
+      <span class="muted" style="font-size:11px">Qty × Rate</span></div>
+    ${rows}
+    <button class="btn sec" style="width:auto;padding:7px 12px;font-size:12px;margin-top:4px" onclick="qbAddRow()">+ Add line</button>
+    <label style="margin-top:14px">Notes (appears on the quote)</label>
+    <textarea oninput="QB.notes=this.value" style="min-height:54px;font-size:12px">${qesc(QB.notes)}</textarea>
+  </div>
+  <div class="card" id="qbTotals">${qbTotalsHtml()}</div>
+  ${QB.msg?`<div class="${QB.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(QB.msg)}</div>`:''}
+  <div class="row" style="gap:8px">
+    <button class="btn sec" style="flex:1" onclick="qbSave()" ${QB.busy?'disabled':''}>Save draft</button>
+    <button class="btn" style="flex:1" onclick="qbSaveAndPush()" ${QB.busy?'disabled':''}>${QB.busy?'Working…':'Save & push to Zoho →'}</button>
+  </div>
+  <div class="muted" style="font-size:11px;margin-top:8px">Pushing creates a Zoho estimate and submits it for approval. You'll see Approved/Declined under <b>My Quotes</b>.</div>`;
+}
+function qbTotalsHtml(){
+  const cur=QB.currency||'KES';
+  return `<div class="row"><span class="muted">Sub total</span><b>${cur} ${fmtn(qbSub())}</b></div>
+    <div class="row" style="margin-top:6px"><span class="muted">VAT (${Math.round((CFG.vat||0.16)*100)}%)</span><b>${cur} ${fmtn(qbTax())}</b></div>
+    <div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><b>Total</b><b style="color:var(--orange);font-size:16px">${cur} ${fmtn(qbTotal())}</b></div>`;
+}
+function qbItem(i,field,val){ if(!QB.items[i])return; QB.items[i][field]=val;
+  const a=document.getElementById('qbAmt'+i); if(a) a.textContent=fmtn((parseFloat(QB.items[i].qty)||0)*(parseFloat(QB.items[i].rate)||0));
+  const t=document.getElementById('qbTotals'); if(t) t.innerHTML=qbTotalsHtml(); }
+function qbAddRow(){ QB.items.push({name:'',description:'',qty:1,rate:0}); render(); }
+function qbDelRow(i){ QB.items.splice(i,1); if(!QB.items.length) QB.items.push({name:'',description:'',qty:1,rate:0}); render(); }
+function qbClearCust(){ QB.customerId=''; QB.customerName=''; render(); }
+function qbSearch(v){ clearTimeout(_qbSearchT); const box=document.getElementById('qbCustResults');
+  if((v||'').trim().length<2){ if(box) box.innerHTML=''; return; }
+  _qbSearchT=setTimeout(()=>{ fetch('api/customers.php?q='+encodeURIComponent(v),{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{ const b=document.getElementById('qbCustResults'); if(!b)return;
+      if(!j.ok){ b.innerHTML=`<div class="warn" style="margin-top:8px;font-size:11px">${qesc(j.error||'Search failed')}</div>`; return; }
+      if(!(j.customers||[]).length){ b.innerHTML=`<div class="muted" style="font-size:11px;padding:8px">No customers match${ME.admin?'':' that are assigned to you'}.</div>`; return; }
+      b.innerHTML=`<div style="border:1px solid var(--line);border-radius:9px;margin-top:6px;overflow:hidden">`+
+        j.customers.map(c=>`<div class="invrow" onclick="qbPick('${qesc(c.id)}','${qesc(c.name).replace(/'/g,'&#39;')}','${qesc(c.currency||'KES')}')">
+          <div style="font-size:12.5px;font-weight:600">${qesc(c.name)}</div><div class="muted">${qesc(c.currency||'KES')} · pick ›</div></div>`).join('')+`</div>`;
+    }).catch(e=>{ const b=document.getElementById('qbCustResults'); if(b) b.innerHTML=`<div class="warn" style="font-size:11px">${e}</div>`; }); },300);
+}
+function qbPick(id,name,cur){ QB.customerId=id; QB.customerName=name; QB.currency=cur||'KES'; render(); }
+function qbPayload(){ return { id:QB.id||undefined, zoho_customer_id:QB.customerId, customer_name:QB.customerName,
+  currency:QB.currency, notes:QB.notes, line_items:QB.items.map(it=>({name:it.name,description:it.description,qty:it.qty,rate:it.rate})) }; }
+function qbSave(cb){ QB.busy=true; QB.msg=''; render();
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:'save'},qbPayload()))})
+  .then(r=>r.json()).then(j=>{ QB.busy=false;
+    if(j.ok){ QB.id=j.quote.id; QB.msg='Saved draft #'+j.quote.id+'.'; QB.err=false; MQ.loaded=false; if(cb){cb();return;} render(); }
+    else { QB.msg=j.error||'Save failed.'; QB.err=true; render(); }
+  }).catch(e=>{ QB.busy=false; QB.msg='Error: '+e; QB.err=true; render(); });
+}
+function qbSaveAndPush(){ qbSave(()=>qbPush(QB.id)); }
+function qbPush(id){ QB.busy=true; QB.msg='Pushing to Zoho…'; QB.err=false; render();
+  fetch('api/quote_push.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ QB.busy=false;
+    if(j.ok){ QB={ id:0, customerId:'', customerName:'', currency:'KES', items:[{name:'',description:'',qty:1,rate:0}], notes:'', msg:'', err:false, busy:false, assignOpen:QB.assignOpen, assignLoaded:QB.assignLoaded, assignments:QB.assignments, users:QB.users, aCust:null, aUsers:[] };
+      MQ.loaded=false; MQ.msg='Quote pushed to Zoho as '+(j.estimate_number||'estimate')+' — '+(j.status==='pending_approval'?'awaiting approval.':'status: '+j.status+'.')+(j.note?' '+j.note:''); MQ.err=!!j.note;
+      navTo('myquotes');
+    } else { QB.msg=j.error||'Push failed.'; QB.err=true; render(); }
+  }).catch(e=>{ QB.busy=false; QB.msg='Error: '+e; QB.err=true; render(); });
+}
+
+/* ---- admin: customer → users assignment panel ---- */
+function qbAssignPanel(){
+  const list = QB.assignments.length
+    ? QB.assignments.map(a=>`<div class="invrow" style="cursor:default"><div><div style="font-size:12.5px;font-weight:600">${qesc(a.name||a.id)}</div>
+        <div class="muted">${(a.users||[]).map(qesc).join(', ')||'no users'}</div></div>
+        <button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="qbAEdit('${qesc(a.id)}','${qesc(a.name||'').replace(/'/g,'&#39;')}')">Edit</button></div>`).join('')
+    : `<div class="muted" style="font-size:11px;padding:8px">No customers assigned yet.</div>`;
+  const editor = QB.aCust ? `<div class="card" style="background:#FAFBFD;margin-top:8px">
+      <div class="row" style="margin-bottom:8px"><b style="font-size:12px">${qesc(QB.aCust.name)}</b>
+        <span style="cursor:pointer;color:var(--bad);font-weight:700" onclick="QB.aCust=null;render()">✕</span></div>
+      <div class="muted" style="font-size:11px;margin-bottom:6px">Tick the app users who can raise quotes for this customer:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${QB.users.map(u=>`<label style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:11.5px">
+        <input type="checkbox" ${QB.aUsers.includes(u)?'checked':''} onchange="qbAToggle('${qesc(u)}',this.checked)">${qesc(u)}</label>`).join('')||'<span class="muted" style="font-size:11px">No app users yet.</span>'}</div>
+      <button class="btn" style="margin-top:10px;width:auto;padding:7px 14px;font-size:12px" onclick="qbASave()">Save access (${QB.aUsers.length})</button>
+    </div>` : '';
+  return `<div class="tool" style="margin-bottom:14px"><details ${QB.assignOpen?'open':''} ontoggle="QB.assignOpen=this.open">
+    <summary>Customer access <span class="cv">assign Zoho customers to staff</span></summary>
+    <div class="body">
+      <div class="muted" style="font-size:11px;margin-bottom:8px">Decide which staff can raise quotes for which customers. A customer can go to as many users as you like.</div>
+      <input type="text" id="qbAssignSearch" placeholder="Search a Zoho customer to assign…" oninput="qbASearch(this.value)" autocomplete="off">
+      <div id="qbAssignResults"></div>
+      ${editor}
+      <div class="muted" style="font-size:11px;margin:12px 0 4px">Current assignments</div>
+      ${list}
+    </div></details></div>`;
+}
+function qbAssignLoad(){ fetch('api/customer_assign.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ QB.assignments=j.assignments||[]; QB.users=j.users||[]; QB.assignLoaded=true; if(TAB==='newquote') render(); } }).catch(()=>{}); }
+function qbASearch(v){ clearTimeout(_qbAssignT); const box=document.getElementById('qbAssignResults');
+  if((v||'').trim().length<2){ if(box) box.innerHTML=''; return; }
+  _qbAssignT=setTimeout(()=>{ fetch('api/customers.php?q='+encodeURIComponent(v),{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{ const b=document.getElementById('qbAssignResults'); if(!b)return;
+      if(!j.ok||!(j.customers||[]).length){ b.innerHTML=`<div class="muted" style="font-size:11px;padding:8px">No match.</div>`; return; }
+      b.innerHTML=`<div style="border:1px solid var(--line);border-radius:9px;margin-top:6px;overflow:hidden">`+
+        j.customers.map(c=>`<div class="invrow" onclick="qbAEdit('${qesc(c.id)}','${qesc(c.name).replace(/'/g,'&#39;')}')">
+          <div style="font-size:12.5px;font-weight:600">${qesc(c.name)}</div><div class="muted">assign ›</div></div>`).join('')+`</div>`;
+    }).catch(()=>{}); },300);
+}
+function qbAEdit(id,name){ const ex=QB.assignments.find(a=>a.id===id); QB.aCust={id,name}; QB.aUsers=ex?(ex.users||[]).slice():[]; const b=document.getElementById('qbAssignResults'); if(b)b.innerHTML=''; render(); }
+function qbAToggle(u,on){ if(on){ if(!QB.aUsers.includes(u)) QB.aUsers.push(u); } else { QB.aUsers=QB.aUsers.filter(x=>x!==u); } }
+function qbASave(){ if(!QB.aCust)return; fetch('api/customer_assign.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'set',zoho_customer_id:QB.aCust.id,customer_name:QB.aCust.name,usernames:QB.aUsers})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ QB.aCust=null; qbAssignLoad(); } else { alert(j.error||'Save failed'); } }).catch(e=>alert(''+e)); }
+
+/* ---- My Quotes ---- */
+function vMyQuotes(){
+  const qs=MQ.quotes||[];
+  const cards = qs.length ? qs.map(q=>{
+    const pushed=!!q.zoho_estimate_id;
+    return `<div class="card">
+      <div class="row" style="align-items:flex-start"><div>
+        <b style="font-size:13.5px">${qesc(q.customer_name||'(no customer)')}</b>
+        <div class="muted" style="margin-top:2px">${pushed?('Zoho '+qesc(q.zoho_estimate_number||'')+' · '):''}${ME.admin?('by '+qesc(q.created_by)+' · '):''}${q.line_items.length} item${q.line_items.length===1?'':'s'}</div>
+      </div><div style="text-align:right"><b style="color:var(--orange)">${qesc(q.currency||'KES')} ${fmtn(q.total)}</b>
+        <div style="margin-top:4px">${quoteBadge(q.status)}</div></div></div>
+      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+        ${!pushed?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqEdit(${q.id})">Edit</button>
+          <button class="btn" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqPush(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Pushing…':'Push to Zoho →'}</button>`:''}
+        ${pushed?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSyncOne(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Checking…':'↻ Check status'}</button>`:''}
+        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqDelete(${q.id})">Remove</button>
+      </div>
+    </div>`; }).join('') : `<div class="card muted" style="text-align:center;padding:22px">No quotes yet. Make one under <b>New Quote</b>.</div>`;
+  return `<h2>My quotes</h2>
+    ${MQ.msg?`<div class="${MQ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(MQ.msg)}</div>`:''}
+    <div class="row" style="margin-bottom:12px"><span class="muted">${MQ.syncing?'Checking Zoho…':(qs.length+' quote'+(qs.length===1?'':'s'))}</span>
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></div>
+    ${cards}`;
+}
+function mqLoad(){ MQ.loading=true;
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
+  .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='myquotes'){ render(); if(MQ.quotes.some(q=>q.zoho_estimate_id)) mqSync(true); } } })
+  .catch(()=>{ MQ.loading=false; });
+}
+function mqSync(silent){ if(MQ.syncing)return; MQ.syncing=true; if(!silent) MQ.msg=''; if(TAB==='myquotes')render();
+  fetch('api/quote_sync.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+  .then(r=>r.json()).then(j=>{ MQ.syncing=false;
+    if(j.ok){ (j.quotes||[]).forEach(u=>{ const q=MQ.quotes.find(x=>x.id===u.id); if(q) q.status=u.status; }); }
+    if(TAB==='myquotes')render();
+  }).catch(()=>{ MQ.syncing=false; if(TAB==='myquotes')render(); });
+}
+function mqSyncOne(id){ MQ.busyId=id; render();
+  fetch('api/quote_sync.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0; if(j.ok&&j.quotes&&j.quotes[0]){ const q=MQ.quotes.find(x=>x.id===id); if(q)q.status=j.quotes[0].status; } render(); })
+  .catch(()=>{ MQ.busyId=0; render(); });
+}
+function mqPush(id){ MQ.busyId=id; render();
+  fetch('api/quote_push.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0; if(j.ok){ MQ.msg='Pushed as '+(j.estimate_number||'estimate')+' — '+(j.status==='pending_approval'?'awaiting approval.':'status: '+j.status+'.')+(j.note?' '+j.note:''); MQ.err=!!j.note; MQ.loaded=false; mqLoad(); } else { MQ.msg=j.error||'Push failed.'; MQ.err=true; render(); } })
+  .catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
+function mqEdit(id){ fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',id})})
+  .then(r=>r.json()).then(j=>{ if(!j.ok){ alert(j.error||'Could not load'); return; } const q=j.quote;
+    QB.id=q.id; QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
+    QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0}];
+    QB.notes=q.notes||''; QB.msg=''; QB.err=false; navTo('newquote');
+  }).catch(e=>alert(''+e)); }
+function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was pushed, it stays in Zoho.)'))return;
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=MQ.quotes.filter(q=>q.id!==id); render(); } else alert(j.error||'Delete failed'); }).catch(e=>alert(''+e)); }
+
+function vJobCards(){ return `<h2>Job cards</h2>
+  <div class="card" style="text-align:center;padding:26px">
+    <div style="font-size:30px;margin-bottom:6px">🧾</div>
+    <b style="font-size:14px">Job cards are coming next</b>
+    <div class="muted" style="margin-top:6px;max-width:420px;margin-left:auto;margin-right:auto">This will use the same builder + Zoho engine as quotes, so jobs can be raised and tracked here too.</div>
+  </div>`; }
+
+/* programmatic tab switch (used after push / edit) */
+function navTo(tab){ const b=document.querySelector('.tabs button[data-tab="'+tab+'"]'); if(b){ navActivate(b); } else { TAB=tab; render(); } }
 
 /* direct tabs + submenu tabs */
 document.querySelectorAll('.tabs button[data-tab]').forEach(b=>b.onclick=()=>navActivate(b));
