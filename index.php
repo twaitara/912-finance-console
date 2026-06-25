@@ -3226,7 +3226,7 @@ function vPayments(){
 
 /* ================= Bulk Mark Paid ================= */
 let BULK = {
-  loaded:false, loading:false, invoices:[], sel:{}, wht:{},
+  loaded:false, loading:false, invoices:[], sel:{}, wht:{}, q:'',
   date:(()=>{ const d=new Date(); return d.toISOString().slice(0,10); })(),
   mode:'bankremittance', ref:'',
   processing:false, done:[], msg:'', err:false
@@ -3247,9 +3247,14 @@ function bulkLoad(){
       BULK.loading=false; BULK.loaded=true;
       BULK.invoices=j.ok?(j.invoices||[]):[];
       BULK.sel={}; BULK.wht={};
-      BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=true; BULK.wht[iv.id]={r5:false,r2:false,r7:false}; });
+      BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=false; BULK.wht[iv.id]={r5:false,r2:false,r7:false}; });
       if(TAB==='bulkpay') render();
     }).catch(e=>{ BULK.loading=false; BULK.msg='Error: '+e; BULK.err=true; if(TAB==='bulkpay') render(); });
+}
+
+function bulkToggleClient(custId, on){
+  BULK.invoices.filter(iv=>iv.customer_id===custId).forEach(iv=>{ BULK.sel[iv.id]=on; });
+  render();
 }
 
 function bulkToggleAll(on){
@@ -3257,8 +3262,12 @@ function bulkToggleAll(on){
   render();
 }
 
-function bulkToggleClient(custId, on){
-  BULK.invoices.filter(iv=>iv.customer_id===custId).forEach(iv=>{ BULK.sel[iv.id]=on; });
+function bulkToggleVisible(on){
+  const q=(BULK.q||'').toLowerCase().trim();
+  const visible=q
+    ? (BULK.invoices||[]).filter(iv=>iv.customer_name.toLowerCase().includes(q)||iv.number.toLowerCase().includes(q))
+    : BULK.invoices;
+  visible.forEach(iv=>{ BULK.sel[iv.id]=on; });
   render();
 }
 
@@ -3295,19 +3304,23 @@ async function bulkProcess(){
   const okClients=new Set(Object.keys(byClient).filter((_,i)=>BULK.done[i]?.ok));
   BULK.invoices=BULK.invoices.filter(iv=>!BULK.sel[iv.id]||!okClients.has(iv.customer_id));
   BULK.sel={}; BULK.wht={};
-  BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=true; BULK.wht[iv.id]={r5:false,r2:false,r7:false}; });
+  BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=false; BULK.wht[iv.id]={r5:false,r2:false,r7:false}; });
   BULK.processing=false;
   render();
 }
 
 function vBulkPay(){
   const today=new Date().toISOString().slice(0,10);
-  const selInvs=(BULK.invoices||[]).filter(iv=>BULK.sel[iv.id]);
+  const q=(BULK.q||'').toLowerCase().trim();
+  const visible=q
+    ? (BULK.invoices||[]).filter(iv=>iv.customer_name.toLowerCase().includes(q)||iv.number.toLowerCase().includes(q))
+    : (BULK.invoices||[]);
+  const selInvs=visible.filter(iv=>BULK.sel[iv.id]);
   const selClientSet=new Set(selInvs.map(iv=>iv.customer_id));
   const selClients=selClientSet.size;
   const totGross=selInvs.reduce((s,iv)=>s+bulkIvNet(iv).gross,0);
   const totDeduct=selInvs.reduce((s,iv)=>s+bulkIvNet(iv).deduct,0);
-  const totNet=selInvs.reduce((s,iv)=>s+bulkIvNet(iv).net,0);
+  const totNet=totGross-totDeduct;
 
   let tableHtml='';
   if(BULK.loading){
@@ -3315,64 +3328,64 @@ function vBulkPay(){
   } else if(BULK.loaded && !BULK.invoices.length){
     tableHtml=`<div class="ok" style="padding:12px;border-radius:8px">🎉 No unpaid invoices — all clear!</div>`;
   } else if(BULK.invoices.length){
-    const sorted=[...BULK.invoices].sort((a,b)=>a.customer_name.localeCompare(b.customer_name)||a.date.localeCompare(b.date));
+    const sorted=[...visible].sort((a,b)=>a.customer_name.localeCompare(b.customer_name)||a.date.localeCompare(b.date));
     let lastCust='';
     const rows=sorted.map(iv=>{
       const on=!!BULK.sel[iv.id];
       const overdue=iv.due_date&&iv.due_date<today;
       const newCust=iv.customer_id!==lastCust;
       if(newCust) lastCust=iv.customer_id;
-      const clientInvs=BULK.invoices.filter(x=>x.customer_id===iv.customer_id);
-      const clientAllOn=clientInvs.every(x=>BULK.sel[x.id]);
+      const clientInvs=visible.filter(x=>x.customer_id===iv.customer_id);
+      const clientAllOn=clientInvs.length>0&&clientInvs.every(x=>BULK.sel[x.id]);
       const w=BULK.wht[iv.id]||{};
       const {gross,deduct,net}=bulkIvNet(iv);
-      const whtCell=`<td style="padding:4px 6px;white-space:nowrap">
-        <label style="font-size:9.5px;display:block;cursor:pointer;color:${w.r5?'var(--orange)':'var(--mute)'}"><input type="checkbox" ${w.r5?'checked':''} onchange="BULK.wht['${iv.id}'].r5=this.checked;render()"> 5%</label>
-        <label style="font-size:9.5px;display:block;cursor:pointer;color:${w.r2?'var(--orange)':'var(--mute)'}"><input type="checkbox" ${w.r2?'checked':''} onchange="BULK.wht['${iv.id}'].r2=this.checked;render()"> 2%</label>
-        <label style="font-size:9.5px;display:block;cursor:pointer;color:${w.r7?'var(--orange)':'var(--mute)'}"><input type="checkbox" ${w.r7?'checked':''} onchange="BULK.wht['${iv.id}'].r7=this.checked;render()"> 7%</label>
-      </td>`;
-      const deductCell=deduct>0?`<td style="padding:4px 6px;text-align:right;font-size:10.5px;color:var(--bad);white-space:nowrap">−${deduct.toLocaleString('en-KE')}</td>`:`<td style="padding:4px 6px;text-align:right;color:var(--mute);font-size:10px">—</td>`;
-      const netCell=`<td style="padding:4px 6px;text-align:right;font-weight:700;font-size:11.5px;white-space:nowrap;color:${deduct>0?'var(--good)':'var(--bad)'}">${net.toLocaleString('en-KE')}</td>`;
-      const clientHdr=newCust?`<tr style="background:#F7F8FB;border-top:2px solid var(--line)">
-          <td style="padding:6px 8px"><input type="checkbox" ${clientAllOn?'checked':''} onchange="bulkToggleClient('${iv.customer_id}',this.checked)"></td>
-          <td class="l cl" colspan="5" style="padding:6px 8px;font-size:11.5px">${iv.customer_name}</td>
-          <td style="padding:6px 8px;text-align:right;font-size:10.5px;color:var(--mute)">${clientInvs.length} inv</td>
-        </tr>`:'';
-      return clientHdr+`<tr style="${on?'background:#F0FDF4':''}">
-        <td style="padding:4px 4px 4px 20px"><input type="checkbox" ${on?'checked':''} onchange="BULK.sel['${iv.id}']=this.checked;render()"></td>
-        <td class="l" style="padding:4px 6px;font-size:11px;font-weight:600;white-space:nowrap">${iv.number}<br><span style="font-weight:400;color:var(--mute);font-size:9.5px">${iv.date}${overdue?' <b style=color:var(--bad)>overdue</b>':''}</span></td>
-        <td style="padding:4px 6px;text-align:right;font-size:11px;white-space:nowrap">${gross.toLocaleString('en-KE')}</td>
-        ${whtCell}${deductCell}${netCell}
+      const clientHdr=newCust?`<tr style="background:#F4F6FA;border-top:2px solid var(--line)">
+        <td style="padding:5px 8px"><input type="checkbox" title="Select all" ${clientAllOn?'checked':''} onchange="bulkToggleClient('${iv.customer_id}',this.checked)"></td>
+        <td class="l cl" colspan="5" style="padding:5px 8px;font-size:11.5px">${iv.customer_name} <span style="font-weight:400;color:var(--mute);font-size:10px">(${clientInvs.length})</span></td>
+      </tr>`:'';
+      return clientHdr+`<tr style="${on?'background:#F0FDF4;':''}cursor:default">
+        <td style="padding:4px 8px 4px 22px"><input type="checkbox" ${on?'checked':''} onchange="BULK.sel['${iv.id}']=this.checked;render()"></td>
+        <td class="l" style="padding:4px 8px;font-size:11px;font-weight:600">${iv.number}
+          <span style="display:block;font-weight:400;font-size:9.5px;color:${overdue?'var(--bad)':'var(--mute)'}">${iv.date}${overdue?' · overdue':''}</span></td>
+        <td style="padding:4px 8px;text-align:right;font-size:11px">${gross.toLocaleString('en-KE')}</td>
+        <td style="padding:4px 8px;white-space:nowrap;text-align:center">
+          <label style="font-size:9.5px;cursor:pointer;margin-right:6px;color:${w.r5?'var(--orange)':'var(--mute)'}"><input type="checkbox" ${w.r5?'checked':''} onchange="BULK.wht['${iv.id}'].r5=this.checked;render()"> 5%</label><label style="font-size:9.5px;cursor:pointer;margin-right:6px;color:${w.r2?'var(--orange)':'var(--mute)'}"><input type="checkbox" ${w.r2?'checked':''} onchange="BULK.wht['${iv.id}'].r2=this.checked;render()"> 2%</label><label style="font-size:9.5px;cursor:pointer;color:${w.r7?'var(--orange)':'var(--mute)'}"><input type="checkbox" ${w.r7?'checked':''} onchange="BULK.wht['${iv.id}'].r7=this.checked;render()"> 7%</label>
+        </td>
+        <td style="padding:4px 8px;text-align:right;font-size:10.5px;color:var(--bad)">${deduct>0?'−'+deduct.toLocaleString('en-KE'):'—'}</td>
+        <td style="padding:4px 8px;text-align:right;font-weight:700;font-size:11px;color:${deduct>0?'var(--good)':'inherit'}">${net.toLocaleString('en-KE')}</td>
       </tr>`;
     }).join('');
-    const allOn=BULK.invoices.every(iv=>BULK.sel[iv.id]);
-    tableHtml=`<div class="rptwrap" style="margin-bottom:10px;max-height:400px;overflow-y:auto">
-      <table class="rpt" style="font-size:11px">
+    const allVisOn=visible.length>0&&visible.every(iv=>BULK.sel[iv.id]);
+    tableHtml=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <input id="bulkQ" type="text" autocomplete="off" placeholder="🔍 Search client or invoice number…" value="${(BULK.q||'').replace(/"/g,'&quot;')}" oninput="BULK.q=this.value;render()" style="flex:1;margin-bottom:0;min-height:unset!important;padding:7px 10px!important;font-size:12px!important">
+      ${q?`<button class="btn sec" onclick="BULK.q='';render()" style="white-space:nowrap;padding:5px 10px;font-size:11px;min-height:unset">✕ Clear</button>`:''}
+      <span style="font-size:10.5px;color:var(--mute);white-space:nowrap">${visible.length} of ${BULK.invoices.length}</span>
+    </div>
+    <div class="rptwrap" style="margin-bottom:10px;max-height:420px;overflow-y:auto">
+      <table class="rpt" style="font-size:11px;width:100%">
         <thead><tr>
-          <th style="padding:5px 6px"><input type="checkbox" ${allOn?'checked':''} onchange="bulkToggleAll(this.checked)"></th>
-          <th class="l" style="padding:5px 6px">Invoice</th>
-          <th style="padding:5px 6px;text-align:right">Gross</th>
-          <th style="padding:5px 6px;text-align:center">WHT</th>
-          <th style="padding:5px 6px;text-align:right">Deduct</th>
-          <th style="padding:5px 6px;text-align:right">Net</th>
-          <th style="padding:5px 6px"></th>
+          <th style="padding:5px 8px;width:28px"><input type="checkbox" title="Select all visible" ${allVisOn?'checked':''} onchange="bulkToggleVisible(this.checked)"></th>
+          <th class="l" style="padding:5px 8px">Invoice · Date</th>
+          <th style="padding:5px 8px;text-align:right">Gross</th>
+          <th style="padding:5px 8px;text-align:center">WHT</th>
+          <th style="padding:5px 8px;text-align:right">Deduct</th>
+          <th style="padding:5px 8px;text-align:right">Net</th>
         </tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot>
+        ${selInvs.length?`<tfoot>
           <tr class="tot">
-            <td colspan="2" style="padding:5px 6px;text-align:right">${selInvs.length} invoice${selInvs.length!==1?'s':''} · ${selClients} client${selClients!==1?'s':''}</td>
-            <td style="padding:5px 6px;text-align:right">${totGross.toLocaleString('en-KE')}</td>
+            <td colspan="2" style="padding:5px 8px;text-align:right;font-size:10.5px">${selInvs.length} invoice${selInvs.length!==1?'s':''} · ${selClients} client${selClients!==1?'s':''}</td>
+            <td style="padding:5px 8px;text-align:right">${totGross.toLocaleString('en-KE')}</td>
             <td></td>
-            <td style="padding:5px 6px;text-align:right;color:var(--bad)">${totDeduct>0?'−'+totDeduct.toLocaleString('en-KE'):'—'}</td>
-            <td style="padding:5px 6px;text-align:right;color:var(--good);font-size:12px">${totNet.toLocaleString('en-KE')}</td>
-            <td></td>
+            <td style="padding:5px 8px;text-align:right;color:var(--bad)">${totDeduct>0?'−'+totDeduct.toLocaleString('en-KE'):'—'}</td>
+            <td style="padding:5px 8px;text-align:right;font-size:12px;font-weight:700;color:var(--good)">${totNet.toLocaleString('en-KE')}</td>
           </tr>
-          ${totDeduct>0?`<tr><td colspan="7" style="padding:4px 6px 6px;text-align:right">
-            <span style="font-size:11px;background:#FFF4EB;color:var(--orange);border:1.5px solid #F7C99A;border-radius:7px;padding:4px 12px;font-weight:700">
-              Expected to receive: KES ${totNet.toLocaleString('en-KE')} &nbsp;(WHT −KES ${totDeduct.toLocaleString('en-KE')})
+          ${totDeduct>0?`<tr><td colspan="6" style="padding:3px 8px 7px;text-align:right">
+            <span style="font-size:11px;background:#FFF4EB;color:var(--orange);border:1.5px solid #F7C99A;border-radius:7px;padding:4px 13px;font-weight:700">
+              Expected to receive: KES ${totNet.toLocaleString('en-KE')} &nbsp;·&nbsp; WHT −KES ${totDeduct.toLocaleString('en-KE')}
             </span>
           </td></tr>`:''}
-        </tfoot>
+        </tfoot>`:''}
       </table>
     </div>`;
   }
@@ -3411,9 +3424,9 @@ function vBulkPay(){
       <div><label>Reference # (optional)</label><input type="text" placeholder="e.g. MPESA ref, batch #" value="${BULK.ref}" oninput="BULK.ref=this.value" style="margin-bottom:0"></div>
     </div>
     <button class="btn" onclick="bulkProcess()" style="margin-top:12px;width:100%" ${canProcess?'':'disabled'}>
-      ${BULK.processing?'⏳ Processing payments in Zoho…':`⚡ Process ${selInvs.length} Invoice${selInvs.length!==1?'s':''} for ${selClients} Client${selClients!==1?'s':''} — receive KES ${totNet.toLocaleString('en-KE')}${totDeduct>0?' (after WHT)':''}`}
+      ${BULK.processing?'⏳ Processing payments in Zoho…':`⚡ Process ${selInvs.length} Invoice${selInvs.length!==1?'s':''} for ${selClients} Client${selClients!==1?'s':''} — KES ${totNet.toLocaleString('en-KE')}${totDeduct>0?' (after WHT)':''}`}
     </button>
-    <div class="muted" style="font-size:10.5px;margin-top:6px">One payment per client posted to Zoho Books. Net amount (after WHT) used as payment amount per invoice.</div>
+    <div class="muted" style="font-size:10.5px;margin-top:6px">One payment per client posted to Zoho Books. Net amount (after WHT) applied per invoice.</div>
   </div>`:''}
   </div>`;
 }
