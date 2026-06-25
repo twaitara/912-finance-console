@@ -70,7 +70,7 @@ if (empty($_SESSION['auth'])):
   <div class="ttl">912 FINANCE CONSOLE</div>
   <div class="sub">Live from Zoho Books</div>
   <?php if(!empty($loginError)) echo '<div class="err">'.$loginError.'</div>'; ?>
-  <div class="fld"><input type="text" name="app_user" placeholder="Username (blank = admin)"></div>
+  <div class="fld"><input type="text" name="app_user" placeholder="Username"></div>
   <div class="fld"><input type="password" name="app_password" placeholder="Password" autofocus></div>
   <button type="submit">Open console →</button>
   <div class="foot">Secure access · 912 Finance</div>
