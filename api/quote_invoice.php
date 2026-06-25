@@ -59,39 +59,34 @@ try {
         exit;
     }
 
-    // Try Zoho's native convert first; if it isn't available, build the invoice from the
-    // quote's line items (the same proven method we use to create the estimate).
-    [$d, $c] = zoho_api('POST', 'invoices/fromestimate', null, ['estimate_id' => $q['zoho_estimate_id']]);
-
+    // Build the invoice directly from the quote's line items (Zoho's fromestimate convert
+    // is not available on this org — verified live). Same proven path as estimate creation.
+    $taxId = quote_inv_vat_tax_id();
+    $items = json_decode($q['line_items'] ?: '[]', true) ?: [];
+    if (!$items) throw new Exception('Quote has no line items.');
+    $lineItems = [];
+    foreach ($items as $it) {
+        $li = [
+            'name'        => mb_strtoupper(trim((string)($it['name'] ?? 'Item')), 'UTF-8'),
+            'description' => (string)($it['description'] ?? ''),
+            'rate'        => (float)($it['rate'] ?? 0),
+            'quantity'    => (float)($it['qty'] ?? 1),
+        ];
+        if (strtolower((string)($it['tax'] ?? 'vat')) !== 'none' && $taxId !== '') $li['tax_id'] = $taxId;
+        $lineItems[] = $li;
+    }
+    $body = ['customer_id' => (string)$q['zoho_customer_id'], 'line_items' => $lineItems];
+    if (!empty($q['reference']))  $body['reference_number'] = $q['reference'];
+    if (!empty($q['notes']))      $body['notes']            = $q['notes'];
+    if (!empty($q['terms']))      $body['terms']            = $q['terms'];
+    if ((float)($q['discount_value'] ?? 0) > 0) {
+        $body['discount']               = (($q['discount_type'] ?? 'percent') === 'amount') ? (float)$q['discount_value'] : ((float)$q['discount_value'] . '%');
+        $body['discount_type']          = 'entity_level';
+        $body['is_discount_before_tax'] = true;
+    }
+    [$d, $c] = zoho_api('POST', 'invoices', $body);
     if ($c >= 400 || empty($d['invoice']['invoice_id'])) {
-        // ---- fallback: create the invoice directly ----
-        $taxId = quote_inv_vat_tax_id();
-        $items = json_decode($q['line_items'] ?: '[]', true) ?: [];
-        if (!$items) throw new Exception('Quote has no line items.');
-        $lineItems = [];
-        foreach ($items as $it) {
-            $li = [
-                'name'        => mb_strtoupper(trim((string)($it['name'] ?? 'Item')), 'UTF-8'),
-                'description' => (string)($it['description'] ?? ''),
-                'rate'        => (float)($it['rate'] ?? 0),
-                'quantity'    => (float)($it['qty'] ?? 1),
-            ];
-            if (strtolower((string)($it['tax'] ?? 'vat')) !== 'none' && $taxId !== '') $li['tax_id'] = $taxId;
-            $lineItems[] = $li;
-        }
-        $body = ['customer_id' => (string)$q['zoho_customer_id'], 'line_items' => $lineItems];
-        if (!empty($q['reference']))  $body['reference_number'] = $q['reference'];
-        if (!empty($q['notes']))      $body['notes']            = $q['notes'];
-        if (!empty($q['terms']))      $body['terms']            = $q['terms'];
-        if ((float)($q['discount_value'] ?? 0) > 0) {
-            $body['discount']               = (($q['discount_type'] ?? 'percent') === 'amount') ? (float)$q['discount_value'] : ((float)$q['discount_value'] . '%');
-            $body['discount_type']          = 'entity_level';
-            $body['is_discount_before_tax'] = true;
-        }
-        [$d, $c] = zoho_api('POST', 'invoices', $body);
-        if ($c >= 400 || empty($d['invoice']['invoice_id'])) {
-            throw new Exception($d['message'] ?? 'Zoho could not create the invoice (check scope: ZohoBooks.invoices.CREATE).');
-        }
+        throw new Exception($d['message'] ?? 'Zoho could not create the invoice (check scope: ZohoBooks.invoices.CREATE).');
     }
     $invId = (string)$d['invoice']['invoice_id'];
     $invNo = (string)($d['invoice']['invoice_number'] ?? '');
