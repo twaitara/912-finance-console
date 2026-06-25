@@ -1110,7 +1110,7 @@ function vDashPaid(){
     </div>`).join('');
   return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
     <div style="background:var(--grad-orange);padding:14px 16px 12px">
-      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:10px">Payments received · last ${d.days} days · ${d.count} payment${d.count!==1?'s':''}</div>
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:10px">Payments received · ${new Date(d.from+'T00:00:00').toLocaleString('en-KE',{month:'long',year:'numeric'})} · ${d.count} payment${d.count!==1?'s':''}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 20px">
         <div>
           <div style="font-size:9.5px;color:rgba(255,255,255,.65);margin-bottom:2px">Gross billed</div>
@@ -1133,7 +1133,7 @@ function vDashPaid(){
       </div>
     </div>
     ${rows?`<div style="padding:8px 16px 4px">
-      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:2px">${d.count} payments — newest first</div>
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:2px">${d.count} payments this month — newest first</div>
     </div>
     <div style="padding:0 16px 12px;max-height:420px;overflow-y:auto">${rows}</div>`:''}
   </div>`;

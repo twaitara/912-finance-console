@@ -5,10 +5,9 @@ if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=
 require __DIR__ . '/../zoho.php';
 header('Content-Type: application/json');
 
-$days  = (int)($_GET['days'] ?? 30);
-if ($days < 1 || $days > 365) $days = 30;
-$from  = date('Y-m-d', strtotime("-{$days} days"));
-$to    = date('Y-m-d');
+$from  = date('Y-m-01');   // first day of current month
+$to    = date('Y-m-d');    // today
+$days  = (int)date('j');   // days elapsed in month (for the label)
 
 // ── Customer payments (Net cash received) ──────────────────────────────────
 $payments = [];
