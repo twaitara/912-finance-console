@@ -2,6 +2,7 @@ deployment:
   tasks:
     - export DEPLOYPATH=/home4/tonyketter/nineonetwo.online/WORKINGCAPITAL
     - /bin/cp index.php $DEPLOYPATH
+    - /bin/cp .user.ini $DEPLOYPATH
     - /bin/cp audrey.php $DEPLOYPATH
     - /bin/cp calendar_oauth.php $DEPLOYPATH
     - /bin/cp connect_calendar.php $DEPLOYPATH

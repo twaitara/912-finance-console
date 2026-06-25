@@ -1,4 +1,15 @@
 <?php
+/* harden the session cookie before it is created (Secure only over HTTPS so HTTP isn't locked out) */
+if (session_status() === PHP_SESSION_NONE) {
+    @ini_set('session.use_strict_mode', '1');
+    @session_set_cookie_params([
+        'lifetime'  => 0,
+        'path'      => '/',
+        'httponly'  => true,
+        'samesite'  => 'Lax',
+        'secure'    => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+    ]);
+}
 session_start();
 $cfg = require __DIR__ . '/config.php';
 require_once __DIR__ . '/settings_store.php';
