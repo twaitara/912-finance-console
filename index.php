@@ -571,6 +571,8 @@ if (empty($_SESSION['auth'])):
   .btn{min-height:42px;padding:11px 20px;font-size:13px;font-weight:700;
     letter-spacing:.1px;border-radius:11px}
   .btn.sec{min-height:40px;padding:10px 15px;font-size:12.5px}
+  /* micro-buttons inside tables must never inherit Fitts min-height */
+  table.rpt .btn{min-height:unset!important;padding:3px 9px!important;font-size:10.5px!important;border-radius:6px!important;width:auto!important;line-height:1.5!important;box-shadow:none!important}
 
   /* ---- Cards: elevated depth (Gestalt Figure-Ground) ---- */
   .card{padding:18px 20px;border-radius:16px;
@@ -642,6 +644,7 @@ if (empty($_SESSION['auth'])):
     .tabs::-webkit-scrollbar{display:none}
     .tabs .navgroup{scroll-snap-align:start}
     .btn{min-height:48px;font-size:14px}
+    table.rpt .btn{min-height:unset!important;font-size:10.5px!important;padding:3px 9px!important}
     input,select{min-height:48px;font-size:15px}
     .card{padding:14px 16px;border-radius:14px}
     h2{font-size:13.5px}
@@ -2782,8 +2785,7 @@ function emUnpaidTableHtml(){
     else if(prog==='fail') tag=`<span style="color:var(--bad);font-weight:700">✗ failed</span>`;
     else if(prog==='busy') tag=`<span style="color:var(--blue)">…</span>`;
     else if(sent) tag=`<span style="color:#D64933;font-weight:700">SENT</span> <a onclick="event.stopPropagation();emailUnmarkSent('${c.id}')" style="color:var(--blue);cursor:pointer;font-size:10px">undo</a>`;
-    else tag=`<span style="color:var(--orange);font-weight:600;cursor:pointer" onclick="emailSelectClient('${c.id}')">Build →</span>
-                 &nbsp;<button class="btn sec" style="width:auto;padding:3px 8px;font-size:10px" title="Mark sent — strikes the row in red for 2 weeks and drops it to the bottom" onclick="event.stopPropagation();emailMarkSent('${c.id}','${(c.name||'').replace(/'/g,"")}')">Sent ✓</button>`;
+    else tag=`<span style="color:var(--orange);font-weight:600;cursor:pointer" onclick="emailSelectClient('${c.id}')">Build →</span>&nbsp;<button class="btn sec" style="white-space:nowrap" title="Mark as sent — strikes row red for 2 weeks" onclick="event.stopPropagation();emailMarkSent('${c.id}','${(c.name||'').replace(/'/g,"")}')">Sent ✓</button>`;
     const usd=!!c.hasUsd;
     const usdBadge = usd ? `<span class="pill" title="${c.usdCount||0} ${c.usdCur||'USD'} invoice${(c.usdCount===1)?'':'s'} · $${fmtn(c.usdTotal||0)}" style="background:#EEF2FE;color:var(--blue);margin-right:7px;vertical-align:middle">${c.usdCur||'USD'}</span>` : '';
     return `<tr${usd?' style="box-shadow:inset 4px 0 0 var(--blue);background:#F4F7FE"':''}>
