@@ -54,7 +54,7 @@ try {
     $lineItems = [];
     foreach ($items as $it) {
         $li = [
-            'name'        => (string)($it['name'] ?? 'Item'),
+            'name'        => mb_strtoupper(trim((string)($it['name'] ?? 'Item')), 'UTF-8'),   // Zoho item name always in CAPS
             'description' => (string)($it['description'] ?? ''),
             'rate'        => (float)($it['rate'] ?? 0),
             'quantity'    => (float)($it['qty'] ?? 1),

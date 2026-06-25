@@ -2823,7 +2823,11 @@ function qbBlank(){ return { id:0, customerId:'', customerName:'', currency:'KES
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
-let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0 };
+let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{} };
+const MQ_PER_PAGE = 50;
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function mqMonthKey(q){ return String(q.created_at||q.quote_date||'').slice(0,7); }   /* YYYY-MM */
+function mqMonthLabel(k){ if(!k||k.length<7) return k||'—'; const m=parseInt(k.slice(5,7),10); return (MONTHS_SHORT[m-1]||k.slice(5,7))+' '+k.slice(0,4); }
 const qesc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 let _qbSearchT=null, _qbAssignT=null;
 
@@ -3021,10 +3025,38 @@ function qbASave(){ if(!QB.aCust)return; fetch('api/customer_assign.php',{method
   .then(r=>r.json()).then(j=>{ if(j.ok){ QB.aCust=null; qbAssignLoad(); } else { alert(j.error||'Save failed'); } }).catch(e=>alert(''+e)); }
 
 /* ---- My Quotes ---- */
+function mqPreviewHtml(q){
+  const its=q.line_items||[];
+  const rows=its.map(it=>`<div class="row" style="gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)">
+      <div style="flex:1;min-width:0"><div style="font-size:11.5px;font-weight:600;text-transform:uppercase">${qesc(it.name||'')}</div>
+        ${it.description?`<div class="muted" style="font-size:10.5px">${qesc(it.description)}</div>`:''}</div>
+      <div class="muted" style="font-size:11px;white-space:nowrap">${fmt1(it.qty)} × ${fmtn(it.rate)}${(it.tax==='none')?' · no tax':''}</div>
+      <div style="font-weight:600;font-size:11.5px;white-space:nowrap;min-width:74px;text-align:right">${fmtn(it.amount!=null?it.amount:(it.qty*it.rate))}</div>
+    </div>`).join('');
+  const meta=[];
+  if(q.reference) meta.push('Ref: '+qesc(q.reference));
+  if(q.subject) meta.push('Subject: '+qesc(q.subject));
+  if(q.quote_date) meta.push('Date: '+qesc(q.quote_date));
+  if(q.expiry_date) meta.push('Expiry: '+qesc(q.expiry_date));
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+    ${meta.length?`<div class="muted" style="font-size:11px;margin-bottom:6px">${meta.join(' · ')}</div>`:''}
+    ${rows||'<div class="muted" style="font-size:11px">No line items.</div>'}
+    <div class="row" style="margin-top:8px"><span class="muted" style="font-size:11px">Sub ${fmtn(q.sub_total)}${(q.discount_amount>0)?' · disc −'+fmtn(q.discount_amount):''} · VAT ${fmtn(q.tax_amount)}</span>
+      <b style="font-size:12px">${qesc(q.currency||'KES')} ${fmtn(q.total)}</b></div>
+    ${q.notes?`<div class="muted" style="font-size:11px;margin-top:6px">📝 ${qesc(q.notes)}</div>`:''}
+  </div>`;
+}
 function vMyQuotes(){
-  const qs=MQ.quotes||[];
-  const cards = qs.length ? qs.map(q=>{
-    const pushed=!!q.zoho_estimate_id;
+  const all=MQ.quotes||[];
+  // month options from the data (newest first)
+  const monthKeys=[...new Set(all.map(mqMonthKey).filter(k=>k&&k.length>=7))].sort().reverse();
+  const filtered = MQ.month==='all' ? all : all.filter(q=>mqMonthKey(q)===MQ.month);
+  const pages=Math.max(1,Math.ceil(filtered.length/MQ_PER_PAGE));
+  if(MQ.page>pages) MQ.page=pages; if(MQ.page<1) MQ.page=1;
+  const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
+
+  const cards = slice.length ? slice.map(q=>{
+    const pushed=!!q.zoho_estimate_id; const isOpen=!!MQ.open[q.id];
     return `<div class="card">
       <div class="row" style="align-items:flex-start"><div>
         <b style="font-size:13.5px">${qesc(q.customer_name||'(no customer)')}</b>
@@ -3032,18 +3064,39 @@ function vMyQuotes(){
       </div><div style="text-align:right"><b style="color:var(--orange)">${qesc(q.currency||'KES')} ${fmtn(q.total)}</b>
         <div style="margin-top:4px">${quoteBadge(q.status)}</div></div></div>
       <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqTogglePreview(${q.id})">${isOpen?'Hide ▴':'Preview ▾'}</button>
         ${!pushed?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqEdit(${q.id})">Edit</button>
           <button class="btn" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqPush(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Pushing…':'Push to Zoho →'}</button>`:''}
         ${pushed?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSyncOne(${q.id})" ${MQ.busyId===q.id?'disabled':''}>${MQ.busyId===q.id?'Checking…':'↻ Check status'}</button>`:''}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqDelete(${q.id})">Remove</button>
       </div>
-    </div>`; }).join('') : `<div class="card muted" style="text-align:center;padding:22px">No quotes yet. Make one under <b>New Quote</b>.</div>`;
+      ${isOpen?mqPreviewHtml(q):''}
+    </div>`; }).join('')
+    : `<div class="card muted" style="text-align:center;padding:22px">${all.length?'No quotes in this month.':'No quotes yet. Make one under <b>New Quote</b>.'}</div>`;
+
+  const monthSel = `<select onchange="mqSetMonth(this.value)" style="width:auto;margin-bottom:0;font-size:12px;padding:6px 10px">
+      <option value="all" ${MQ.month==='all'?'selected':''}>All months</option>
+      ${monthKeys.map(k=>`<option value="${k}" ${MQ.month===k?'selected':''}>${mqMonthLabel(k)}</option>`).join('')}
+    </select>`;
+  const pager = pages>1 ? `<div class="row" style="justify-content:center;gap:8px;margin-top:14px">
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqGoPage(${MQ.page-1})" ${MQ.page<=1?'disabled':''}>‹ Prev</button>
+      <span class="muted" style="font-size:12px">Page ${MQ.page} of ${pages}</span>
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqGoPage(${MQ.page+1})" ${MQ.page>=pages?'disabled':''}>Next ›</button>
+    </div>` : '';
+
   return `<h2>My quotes</h2>
     ${MQ.msg?`<div class="${MQ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(MQ.msg)}</div>`:''}
-    <div class="row" style="margin-bottom:12px"><span class="muted">${MQ.syncing?'Checking Zoho…':(qs.length+' quote'+(qs.length===1?'':'s'))}</span>
-      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></div>
-    ${cards}`;
+    <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <span class="muted">${MQ.syncing?'Checking Zoho…':(filtered.length+' quote'+(filtered.length===1?'':'s')+(MQ.month==='all'?'':' · '+mqMonthLabel(MQ.month)))}</span>
+      <span style="display:inline-flex;gap:8px;align-items:center;margin-left:auto">${monthSel}
+        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
+    </div>
+    ${cards}
+    ${pager}`;
 }
+function mqTogglePreview(id){ MQ.open[id]=!MQ.open[id]; render(); }
+function mqSetMonth(v){ MQ.month=v; MQ.page=1; render(); }
+function mqGoPage(n){ MQ.page=n; render(); }
 function mqLoad(){ MQ.loading=true;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ MQ.loading=false; if(j.ok){ MQ.quotes=j.quotes||[]; MQ.loaded=true; if(TAB==='myquotes'){ render(); if(MQ.quotes.some(q=>q.zoho_estimate_id)) mqSync(true); } } })
