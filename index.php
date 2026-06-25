@@ -413,6 +413,7 @@ if (empty($_SESSION['auth'])):
     .qbhead .qbc-qty,.qbhead .qbc-rate,.qbhead .qbc-cost,.qbhead .qbc-acost,.qbhead .qbc-amt{text-align:right}
     .qbrow{grid-template-columns:1fr 52px 78px 84px 84px 96px 86px 28px;gap:9px;align-items:center;
       border:none;border-bottom:1px solid var(--line);border-radius:0;margin-bottom:0;padding:10px 12px;background:transparent}
+    .qbhead.qb-noac,.qbrow.qb-noac{grid-template-columns:1fr 56px 84px 92px 100px 92px 28px}
     .qbrow:last-of-type{border-bottom:none}
     .qbrow .qbc-item,.qbrow .qbc-amt{grid-column:auto}
     .qbrow .qbc-amt{text-align:right}
@@ -2973,7 +2974,7 @@ function vNewQuote(){
   const cur=QB.currency||'KES';
   const taxOpt=t=>`<option value="vat" ${t!=='none'?'selected':''}>VAT (${Math.round((CFG.vat||0.16)*100)}%)</option><option value="none" ${t==='none'?'selected':''}>No tax</option>`;
   const rows=QB.items.map((it,i)=>`
-    <div class="qbrow">
+    <div class="qbrow${ME.admin?'':' qb-noac'}">
       <div class="qbc-item">
         <input type="text" placeholder="Item name" value="${qesc(it.name)}" oninput="qbItem(${i},'name',this.value)" style="margin-bottom:4px;font-weight:600">
         <input type="text" placeholder="Add a description to your item" value="${qesc(it.description)}" oninput="qbItem(${i},'description',this.value)" style="margin-bottom:0;font-size:11px;color:var(--mute)">
@@ -2981,7 +2982,7 @@ function vNewQuote(){
       <div class="qbc-qty"><span class="qbc-lab">Qty</span><input type="number" step="0.01" min="0" value="${qesc(it.qty)}" oninput="qbItem(${i},'qty',this.value)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-rate"><span class="qbc-lab">Rate</span><input type="number" step="0.01" min="0" value="${qesc(it.rate)}" oninput="qbItem(${i},'rate',this.value)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-cost"><span class="qbc-lab">Unit cost</span><input type="number" step="0.01" min="0" placeholder="0" value="${qesc(it.cost)}" oninput="qbItem(${i},'cost',this.value)" title="Estimated cost per unit (internal)" style="margin-bottom:0;text-align:right"></div>
-      <div class="qbc-acost"><span class="qbc-lab">Actual cost</span><input type="number" step="0.01" min="0" placeholder="—" value="${qesc(it.acost)}" oninput="qbItem(${i},'acost',this.value)" title="Real cost per unit once known (overrides unit cost for profit)" style="margin-bottom:0;text-align:right"></div>
+      ${ME.admin?`<div class="qbc-acost"><span class="qbc-lab">Actual cost</span><input type="number" step="0.01" min="0" placeholder="—" value="${qesc(it.acost)}" oninput="qbItem(${i},'acost',this.value)" title="Real cost per unit once known (overrides unit cost for profit)" style="margin-bottom:0;text-align:right"></div>`:''}
       <div class="qbc-tax"><span class="qbc-lab">Tax</span><select onchange="qbItem(${i},'tax',this.value)" style="margin-bottom:0">${taxOpt(it.tax)}</select></div>
       <div class="qbc-amt"><span class="qbc-lab">Amount</span><div id="qbAmt${i}" style="font-weight:700;font-size:13px">${qbAmtCellHtml(it)}</div></div>
       <button class="qbc-del btn sec" onclick="qbDelRow(${i})" title="Remove">✕</button>
@@ -3012,9 +3013,9 @@ function vNewQuote(){
   </div>
 
   <div class="card">
-    <div class="qbhead">
+    <div class="qbhead${ME.admin?'':' qb-noac'}">
       <div class="qbc-item">Item details</div><div class="qbc-qty">Qty</div><div class="qbc-rate">Rate</div>
-      <div class="qbc-cost">Unit cost</div><div class="qbc-acost">Actual cost</div><div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
+      <div class="qbc-cost">Unit cost</div>${ME.admin?`<div class="qbc-acost">Actual cost</div>`:''}<div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
     </div>
     ${rows}
     <button class="btn sec" style="width:auto;padding:7px 12px;font-size:12px;margin-top:10px" onclick="qbAddRow()">⊕ Add new row</button>
