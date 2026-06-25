@@ -3315,7 +3315,10 @@ function mqSend(id){ MQ.busyId=id; MQ.msg=''; render();
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
 function mqPdf(id){ window.open('api/quote_pdf.php?id='+id,'_blank'); }
-function mqJobCard(id){ MQ.busyId=id; MQ.msg=''; render();
+function mqJobCard(id){
+  if(!confirm('Have you completed this job?\n\nGenerating the Job Card will mark the job done and create the INVOICE in Zoho. This cannot be undone.')) return;
+  if(!confirm('Please confirm once more: is the job fully complete and ready to invoice the customer?')) return;
+  MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
     if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q){ q.status='invoiced'; q.zoho_invoice_number=j.invoice_number; }
