@@ -2964,11 +2964,9 @@ function paySelTotal(){
   return (PAY.invoices||[]).filter(iv=>PAY.sel[iv.id||iv.number]).reduce((s,iv)=>s+(iv.balance||0),0);
 }
 const WHT_RATES=[
-  {key:'5',  r:0.05, label:'5% — Professional / Management / Consulting / Training / Technical'},
-  {key:'3',  r:0.03, label:'3% — Contractual services / Supply of goods / Commissions'},
-  {key:'2',  r:0.02, label:'2% — Imported goods commission'},
-  {key:'10', r:0.10, label:'10% — Dividends (resident)'},
-  {key:'15', r:0.15, label:'15% — Interest / Royalties'},
+  {key:'5',  r:0.05, label:'5% — Client generated'},
+  {key:'2',  r:0.02, label:'2% — Client generated'},
+  {key:'7',  r:0.07, label:'7% — Client generated'},
 ];
 function payWhtToggle(key){
   PAY.whtSel[key]=!PAY.whtSel[key];
