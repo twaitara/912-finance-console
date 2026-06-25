@@ -52,8 +52,11 @@ function users_clean_tabs($tabs) {
 
 function user_authenticate(PDO $pdo, $username, $password) {
     users_table($pdo);
-    $st = $pdo->prepare("SELECT * FROM app_users WHERE username=?");
-    $st->execute([trim($username)]);
+    $id = trim($username);
+    if ($id === '') return false;
+    // match by username OR email (email match needs a non-empty value); prefer an exact username
+    $st = $pdo->prepare("SELECT * FROM app_users WHERE username=? OR (email<>'' AND LOWER(email)=LOWER(?)) ORDER BY (username=?) DESC LIMIT 1");
+    $st->execute([$id, $id, $id]);
     $u = $st->fetch(PDO::FETCH_ASSOC);
     if (!$u) return false;
     if (!empty($u['disabled'])) return false;            // disabled users cannot sign in
