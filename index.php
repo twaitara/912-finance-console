@@ -554,6 +554,14 @@ if (empty($_SESSION['auth'])):
   </div>
 </div>
 
+<div id="taskModal" class="qbmodal" onclick="if(event.target===this)tmClose()">
+  <div class="qbm-card" style="max-width:540px">
+    <div class="qbm-head"><b>New task</b>
+      <button class="qbm-x" onclick="tmClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body" id="taskModalBody"></div>
+  </div>
+</div>
+
 <script>
 /* ---- Global progress bar: shows whenever the app is fetching from Zoho/server ---- */
 (function(){
@@ -2762,12 +2770,41 @@ function todoAdd(){
   })
   .catch(e=>{ TASK.msg='Error: '+e;TASK.msgErr=true; render(); });
 }
-function todoAddFromEmail(idx){
-  const m=TASK.inbox[idx]; if(!m) return;
+function todoAddFromEmail(idx){ tmOpen(idx); }
+/* ---- New-task popup (from an email row) ---- */
+let TM={open:false,title:'',notes:'',source:'',ref:'',assignee:'',busy:false,msg:'',err:false};
+function tmEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function tmBody(){
+  const users=(TASK.users||[]);
+  return `<label>Task title</label>
+    <input type="text" id="tmTitle" value="${tmEsc(TM.title)}" oninput="TM.title=this.value" placeholder="What needs doing?">
+    <label>Notes</label>
+    <textarea id="tmNotes" style="min-height:96px" oninput="TM.notes=this.value">${tmEsc(TM.notes)}</textarea>
+    <label>Assign to (optional)</label>
+    <select id="tmAssignee" onchange="TM.assignee=this.value" style="margin-bottom:0">
+      <option value="">— no one —</option>
+      ${users.map(u=>`<option value="${tmEsc(u.name)}" ${TM.assignee===u.name?'selected':''}>${tmEsc(u.name)}</option>`).join('')}
+    </select>
+    ${TM.msg?`<div class="${TM.err?'warn':'ok'}" style="margin:12px 0 0">${tmEsc(TM.msg)}</div>`:''}
+    <button class="btn" id="tmBtn" style="margin-top:14px" onclick="tmSave()" ${TM.busy?'disabled':''}>${TM.busy?'Adding…':'+ Add task'}</button>`;
+}
+function tmRender(){ const b=document.getElementById('taskModalBody'); if(b) b.innerHTML=tmBody(); }
+function tmOpen(idx){ const m=TASK.inbox[idx]; if(!m) return;
+  TM={open:true,title:m.subject||'',notes:(m.from?('From: '+m.from+'\n'):'')+(m.summary||''),source:'email',ref:m.id,assignee:'',busy:false,msg:'',err:false};
+  const mo=document.getElementById('taskModal'); if(mo) mo.classList.add('open'); document.body.style.overflow='hidden'; tmRender();
+  setTimeout(()=>{ const t=document.getElementById('tmTitle'); if(t) t.focus(); },50);
+}
+function tmClose(){ TM.open=false; const mo=document.getElementById('taskModal'); if(mo) mo.classList.remove('open'); document.body.style.overflow=''; }
+function tmSave(){
+  if(!String(TM.title||'').trim()){ TM.msg='Add a task title.'; TM.err=true; tmRender(); return; }
+  TM.busy=true; TM.msg=''; tmRender();
+  const assignees=[]; if(TM.assignee){ const u=todoUserByName(TM.assignee); if(u) assignees.push({name:u.name,email:u.email}); }
   fetch('api/tasks.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'add',title:m.subject,notes:(m.from?('From: '+m.from+'\n'):'')+(m.summary||''),source:'email',source_ref:m.id})})
-  .then(r=>r.json()).then(j=>{ if(j.ok){ todoRefreshTasks(j); TASK.msg='Added “'+m.subject+'” to your list.';TASK.msgErr=false; } else { TASK.msg=j.error||'Failed.';TASK.msgErr=true; } render(); })
-  .catch(e=>{ TASK.msg='Error: '+e;TASK.msgErr=true; render(); });
+    body:JSON.stringify({action:'add',title:TM.title,notes:TM.notes,source:TM.source,source_ref:TM.ref,assignees})})
+  .then(r=>r.json()).then(j=>{ TM.busy=false;
+    if(j.ok){ todoRefreshTasks(j); TASK.msg='Added “'+TM.title+'” to your list.'; TASK.msgErr=false; tmClose(); render(); }
+    else { TM.msg=j.error||'Failed.'; TM.err=true; tmRender(); } })
+  .catch(e=>{ TM.busy=false; TM.msg='Error: '+e; TM.err=true; tmRender(); });
 }
 function todoToggle(id,done){
   fetch('api/tasks.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'toggle',id,status:done?'done':'open'})})
@@ -3557,7 +3594,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); } });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); } });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){
