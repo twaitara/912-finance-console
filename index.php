@@ -3046,7 +3046,9 @@ function qbSearch(v){ clearTimeout(_qbSearchT); const box=document.getElementByI
           <div style="font-size:12.5px;font-weight:600">${qesc(c.name)}</div><div class="muted">${qesc(c.currency||'KES')} · pick ›</div></div>`).join('')+`</div>`;
     }).catch(e=>{ const b=document.getElementById('qbCustResults'); if(b) b.innerHTML=`<div class="warn" style="font-size:11px">${e}</div>`; }); },300);
 }
-function qbPick(id,name,cur){ QB.customerId=id; QB.customerName=name; QB.currency=cur||'KES'; render(); }
+function qbPick(id,name,cur){ cur=(cur||'KES');
+  if(!ME.admin && cur.toUpperCase()!=='KES'){ QB.msg='This customer is billed in '+cur+'. Only an admin can raise quotes in a currency other than KES.'; QB.err=true; render(); return; }
+  QB.customerId=id; QB.customerName=name; QB.currency=cur; QB.msg=''; QB.err=false; render(); }
 function qbPayload(){ return { id:QB.id||undefined, zoho_customer_id:QB.customerId, customer_name:QB.customerName,
   currency:QB.currency, reference:QB.reference, subject:QB.subject, quote_date:QB.quoteDate, expiry_date:QB.expiryDate,
   notes:QB.notes, terms:QB.terms, discount_value:QB.discVal, discount_type:QB.discType,

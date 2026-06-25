@@ -146,6 +146,7 @@ try {
         [$items, $sub, $discAmt, $tax, $total, $costTotal, $profit] = quote_price($in['line_items'] ?? [], $vat, $discVal, $discType);
         if (!$items) throw new Exception('Add at least one line item.');
         $cur   = trim((string)($in['currency'] ?? 'KES')) ?: 'KES';
+        if (!$admin && strtoupper($cur) !== 'KES') throw new Exception('Only the owner can make quotes in a currency other than KES.');
         $notes = substr(trim((string)($in['notes'] ?? '')), 0, 1000);
         $terms = substr(trim((string)($in['terms'] ?? '')), 0, 2000);
         $ref   = substr(trim((string)($in['reference'] ?? '')), 0, 80);
