@@ -1156,7 +1156,7 @@ function vDashMyQuotes(){
   const pct=totalVal>0?Math.round(invVal/totalVal*100):0;
   const barColor=pct>=50?'var(--good)':pct>=25?'var(--orange)':'var(--bad)';
   return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
-    <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin-bottom:12px">My quote performance</div>
+    <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin-bottom:12px">My conversion performance</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin-bottom:14px">
       <div>
         <div style="font-size:9.5px;color:var(--mute);margin-bottom:3px">Quotes generated</div>
