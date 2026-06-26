@@ -1147,6 +1147,7 @@ function vDashTeamQuotes(){
   const knownUsers=(USERS.list||[]).filter(u=>!u.disabled).map(u=>u.username);
   const quoteCreators=[...new Set(monthQ.map(q=>q.created_by).filter(Boolean))];
   const allNames=[...new Set([...knownUsers,...quoteCreators])].sort((a,b)=>a.localeCompare(b));
+  const shortName=n=>{const p=String(n||'').trim().split(/\s+/);return p.length>1?p[0]+' '+p[1][0].toUpperCase()+'.':p[0]||n;};
   const rows=allNames.map(name=>{
     const uq=monthQ.filter(q=>String(q.created_by||'').toLowerCase()===name.toLowerCase());
     const inv=uq.filter(q=>q.status==='invoiced'||q.zoho_invoice_number);
@@ -1156,7 +1157,7 @@ function vDashTeamQuotes(){
     const barColor=pct>=50?'var(--good)':pct>=25?'var(--orange)':'#E2E8F0';
     const isMe=name.toLowerCase()===String(ME.user||'').toLowerCase();
     return `<tr style="${isMe?'background:#FFFBF5':''}">
-      <td style="padding:8px 10px;font-size:12px;font-weight:${isMe?700:500};white-space:nowrap">${name}${isMe?' 👤':''}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:${isMe?700:500};white-space:nowrap">${shortName(name)}${isMe?' 👤':''}</td>
       <td style="padding:8px 10px;font-size:13px;font-weight:700;text-align:center">${uq.length}</td>
       <td style="padding:8px 10px;font-size:13px;font-weight:700;color:${inv.length?'var(--good)':'var(--mute)'};text-align:center">${inv.length}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--mute);text-align:right">KES ${Math.round(genVal).toLocaleString('en-KE')}</td>
@@ -4573,6 +4574,7 @@ document.addEventListener('click', function(e){
 }, true);
 
 applyPerms();
+document.title = (ME.user||'Console') + ' · 912';
 if(ME.admin){ loadDeployments(); loadLoans(); loadCacheMeta(); loadBackupStatus(); }
 else { render(); }
 loadDashTasks();
