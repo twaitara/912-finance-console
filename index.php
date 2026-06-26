@@ -705,8 +705,6 @@ if (empty($_SESSION['auth'])):
     h2{font-size:13.5px}
     .grid2,.grid3,.cardgrid{grid-template-columns:1fr!important}
     .dsh-side{grid-template-columns:1fr!important}
-    .pay-row-top{flex-wrap:wrap!important;gap:2px 8px!important}
-    .pay-row-cust{flex:1 0 100%!important}
   }
   @media(min-width:681px){
     #mobDrawer,#mobOverlay,#mobMenuBtn{display:none!important}
@@ -1506,14 +1504,16 @@ function vDash(){
     const mo=new Date(d.from+'T00:00:00').toLocaleString('en-KE',{month:'long',year:'numeric'});
     const allRows=(d.rows||[]).map(row=>{
       const invNums=(row.invoices||[]).join(', ');
-      const sub=[row.number,invNums,row.ref].filter(Boolean).join(' · ').slice(0,72);
-      return `<div class="dsh-pay-row" data-client="${(row.customer||'').toLowerCase().replace(/"/g,'')}" style="padding:5px 0;border-bottom:1px solid var(--line)">
-        <div class="pay-row-top" style="display:flex;align-items:baseline;gap:8px">
-          <span class="pay-row-cust" style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</span>
-          <span class="pay-row-meta" style="font-size:10px;color:var(--mute);white-space:nowrap;flex-shrink:0">${row.date}</span>
-          <span class="pay-row-meta" style="font-size:11.5px;font-weight:700;color:var(--good);white-space:nowrap;flex-shrink:0">KES ${Math.round(row.amount).toLocaleString('en-KE')}</span>
+      const sub=[row.number,invNums,row.ref].filter(Boolean).join(' · ');
+      return `<div class="dsh-pay-row" data-client="${(row.customer||'').toLowerCase().replace(/"/g,'')}" style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</div>
+          ${sub?`<div style="font-size:9.5px;color:var(--mute);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}
         </div>
-        ${sub?`<div style="font-size:9.5px;color:var(--mute);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}
+        <div style="flex-shrink:0;text-align:right">
+          <div style="font-size:12px;font-weight:700;color:var(--good);white-space:nowrap">KES ${Math.round(row.amount).toLocaleString('en-KE')}</div>
+          <div style="font-size:9.5px;color:var(--mute);margin-top:2px;white-space:nowrap">${row.date}</div>
+        </div>
       </div>`;
     }).join('');
     return `<div class="card" style="padding:0;overflow:hidden">
