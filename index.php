@@ -3136,7 +3136,7 @@ function sbTableHtml(){
       <td class="l" style="width:30px"><input type="checkbox" ${on?'checked':''} onclick="sbToggle('${iv.id}')"></td>
       <td class="l" style="font-weight:600">${(iv.customer_name||'(no name)')}</td>
       <td class="l" style="white-space:nowrap">${zbInvUrl(iv.id)?`<a href="${zbInvUrl(iv.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--orange);font-weight:600;text-decoration:none" title="Open ${iv.number||''} in Zoho Books">${iv.number||''} ↗</a>`:`<span style="color:var(--orange);font-weight:600">${iv.number||''}</span>`}</td>
-      <td style="color:var(--mute);white-space:nowrap">${iv.date||''}</td>
+      <td style="color:var(--mute);white-space:nowrap">${iv.date||''}${(()=>{const n=sbDaysOverdue(iv.due_date);return n>0?`<div style="color:var(--bad);font-size:9.5px;font-weight:600">${n}d overdue</div>`:'';})()}</td>
       <td>${usd?`<span class="pill" style="background:#EEF2FE;color:var(--blue)">${iv.currency}</span>`:`<span class="muted">KES</span>`}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${iv.currency||'KES'} ${fmtn(iv.balance)}</td>
     </tr>`;
@@ -3148,6 +3148,16 @@ function sbTableHtml(){
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
+}
+
+/* days overdue relative to today; null if no due date, 0/negative = not yet due */
+function sbDaysOverdue(due){ if(!due) return null; const d=new Date(due+'T00:00:00'); if(isNaN(d)) return null; const now=new Date(); now.setHours(0,0,0,0); return Math.floor((now-d)/86400000); }
+function sbOverdueCell(due){
+  const n=sbDaysOverdue(due);
+  if(n===null) return `<span style="color:#94A3B8">—</span>`;
+  if(n>0)  return `<span style="color:#D64933;font-weight:700">${n} day${n===1?'':'s'} overdue</span>`;
+  if(n===0) return `<span style="color:#D97706;font-weight:600">due today</span>`;
+  return `<span style="color:#64748B">due in ${-n} day${n===-1?'':'s'}</span>`;
 }
 
 /* Branded consolidated-statement HTML — mirrors the Emails-tab statement look. Used for both the
@@ -3164,17 +3174,19 @@ function sbPreviewHtml(sel, billName, intro){
       return `<tr style="background:${zebra}">
         <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;color:#15202B">${esc(iv.number)}</td>
         <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;color:#475569">${esc(iv.customer_name||'')}</td>
-        <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;color:#475569">${esc(iv.date||'')}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;color:#475569;white-space:nowrap">${esc(iv.date||'')}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;white-space:nowrap">${sbOverdueCell(iv.due_date)}</td>
         <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;text-align:right;color:#15202B;font-weight:600;white-space:nowrap">${cur} ${fmtn(iv.balance)}</td></tr>`; }).join('');
     return `<table style="border-collapse:collapse;width:100%;font-size:13px;margin:0 0 14px;border:1px solid #E6EAF0;border-radius:8px;overflow:hidden">
       <thead><tr style="background:#F56F00;color:#fff">
         <th style="padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Invoice</th>
         <th style="padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Company</th>
         <th style="padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Date</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Overdue</th>
         <th style="padding:10px 12px;text-align:right;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Balance</th></tr></thead>
       <tbody>${body}</tbody>
       <tfoot><tr style="background:#15202B;color:#fff">
-        <td colspan="3" style="padding:11px 12px;text-align:right;font-weight:700;letter-spacing:.3px">TOTAL OUTSTANDING (${cur})</td>
+        <td colspan="4" style="padding:11px 12px;text-align:right;font-weight:700;letter-spacing:.3px">TOTAL OUTSTANDING (${cur})</td>
         <td style="padding:11px 12px;text-align:right;font-weight:700;color:#F8B26A;white-space:nowrap">${cur} ${fmtn(due)}</td></tr></tfoot>
     </table>`;
   }).join('');
