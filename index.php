@@ -705,6 +705,7 @@ if (empty($_SESSION['auth'])):
     h2{font-size:13.5px}
     .grid2,.grid3,.cardgrid{grid-template-columns:1fr!important}
     .dsh-side{grid-template-columns:1fr!important}
+    .late-cards{grid-template-columns:1fr!important}
   }
   @media(min-width:681px){
     #mobDrawer,#mobOverlay,#mobMenuBtn{display:none!important}
@@ -781,6 +782,7 @@ if (empty($_SESSION['auth'])):
         <button data-tab="payments">💳 Record Payment</button>
         <button data-tab="bulkpay">⚡ Bulk Mark Paid</button>
         <button data-tab="stmtbuild">📑 Statement Builder</button>
+        <button data-tab="latepay">⏰ Late Payers</button>
       </div>
     </div>
 
@@ -861,6 +863,7 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-tab="payments">💳 Record Payment</button>
     <button class="mob-item mob-sub" data-tab="bulkpay">⚡ Bulk Mark Paid</button>
     <button class="mob-item mob-sub" data-tab="stmtbuild">📑 Statement Builder</button>
+    <button class="mob-item mob-sub" data-tab="latepay">⏰ Late Payers</button>
 
     <div class="mob-sect">🗂️ Quotes / Invoices</div>
     <button class="mob-item mob-sub" data-tab="qlist">📋 Quotes Browser</button>
@@ -1134,6 +1137,7 @@ function tabRefresh(){
     case 'qlist':     QLIST.loaded=false;QLIST.loading=false;QLIST.allItems=[];QLIST.page=1;render();qlistLoad();break;
     case 'ivlist':    IVLIST.loaded=false;IVLIST.loading=false;IVLIST.allItems=[];IVLIST.page=1;render();ivlistLoad();break;
     case 'stmtbuild': SB.loaded=false;SB.loading=false;SB.invoices=[];SB.result=null;SB.msg='';render();sbLoad();break;
+    case 'latepay':   LATE.loaded=false;LATE.loading=false;LATE.data=null;render();lateLoad(true);break;
     case 'emails':    EMAIL.loaded=false;EMAIL.loadingClients=false;EMAIL.clients=[];render();emailLoadClients();break;
     case 'todo':      TASK.loaded=false;TASK.loading=false;TASK.tasks=[];render();todoLoad();break;
     case 'loans':     LOANS=[];render();loadLoans();break;
@@ -1163,7 +1167,7 @@ function render(){
   const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
   const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
-  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder'};
+  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers'};
   document.title = (ME.user||'Console') + ' · ' + (_tabNames[TAB]||TAB) + ' · 912';
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -1179,6 +1183,7 @@ function render(){
   if(TAB==='payments'){ p.innerHTML = vPayments(); if(!PAY.loaded) payLoadClients(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='bulkpay'){ p.innerHTML = vBulkPay(); if(!BULK.loaded) bulkLoad(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='stmtbuild'){ p.innerHTML = vStmtBuild(); if(!SB.loaded && !SB.loading) sbLoad(); }
+  if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -3301,6 +3306,76 @@ function vStmtBuild(){
 }
 /* ================= end Statement Builder ================= */
 
+/* ================= Late Payers (consistent late payers, last 52 weeks) ================= */
+let LATE = { loaded:false, loading:false, data:null, err:'' };
+
+function lateLoad(force){
+  if(LATE.loading) return;
+  LATE.loading=true; LATE.err=''; render();
+  fetch('api/late_payers.php',{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{
+      LATE.loading=false; LATE.loaded=true;
+      if(j.ok){ LATE.data=j; } else { LATE.err=j.error||'Failed to load'; }
+      render();
+    }).catch(e=>{ LATE.loading=false; LATE.loaded=true; LATE.err='Request failed: '+e; render(); });
+}
+
+function lateCard(r, rank){
+  const medals=['🥇','🥈','🥉'];
+  const accent=['#D64933','#F56F00','#D97706'][rank]||'#64748B';
+  return `<div class="card" style="margin:0;border-top:4px solid ${accent};padding:16px 16px 14px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:22px">${medals[rank]||('#'+(rank+1))}</span>
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(r.customer_name||'(no name)')}</div>
+        <div class="muted" style="font-size:10.5px">${r.lateCount} of ${r.considered} invoices late · ${r.latePct}% of the time</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px">
+      <div><div class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Avg days late</div><div style="font-size:22px;font-weight:800;color:${accent};line-height:1.1">${r.avgDaysLate}</div></div>
+      <div><div class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Worst</div><div style="font-size:22px;font-weight:800;color:var(--ink);line-height:1.1">${r.maxDaysLate}d</div></div>
+      <div><div class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Late rate</div><div style="font-size:14px;font-weight:700;line-height:1.3">${r.latePct}%</div></div>
+      <div><div class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Open overdue</div><div style="font-size:14px;font-weight:700;color:${r.overdueValueKES>0?'var(--bad)':'var(--mute)'};line-height:1.3">${r.overdueValueKES>0?('KES '+fmtn(r.overdueValueKES)):'—'}</div></div>
+    </div>
+  </div>`;
+}
+
+function vLatePay(){
+  if(LATE.loading && !LATE.data) return `<h2>Late Payers</h2><div class="card muted">Analysing 52 weeks of invoices &amp; payments from Zoho…</div>`;
+  if(LATE.err) return `<h2>Late Payers</h2><div class="warn">${LATE.err}</div><button class="btn sec" style="width:auto;padding:6px 14px" onclick="lateLoad(true)">↺ Retry</button>`;
+  const d=LATE.data;
+  if(!d) return `<h2>Late Payers</h2><div class="card muted">No data.</div>`;
+  const top=d.top||[], all=d.all||[];
+  const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+    <h2 style="margin:0">Top 3 consistent late payers</h2>
+    <button class="btn sec" style="width:auto;padding:5px 12px;font-size:11px" onclick="lateLoad(true)">↺ Refresh</button>
+  </div>
+  <div class="muted" style="font-size:12px;margin:2px 0 14px;line-height:1.5">Based on invoices raised in the last 52 weeks (${d.from} → ${d.to}). An invoice counts as late when it was <b>paid after its due date</b>, or is <b>still unpaid past due</b>. Ranked by how often <i>and</i> how badly each client pays late.</div>`;
+
+  if(!top.length) return `${head}<div class="card" style="text-align:center;padding:24px">🎉 No consistent late payers — every client with a track record is paying on time.</div>`;
+
+  const cards=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px" class="late-cards">${top.map((r,i)=>lateCard(r,i)).join('')}</div>`;
+
+  const rest=all.length>3?`
+    <div class="sect"><b>Full ranking (${all.length})</b><span class="ln"></span></div>
+    <div class="rptwrap"><table class="rpt" style="font-size:11.5px">
+      <thead><tr><th class="l">#</th><th class="l">Client</th><th>Late / total</th><th>Late rate</th><th>Avg days</th><th>Worst</th><th style="text-align:right">Open overdue</th></tr></thead>
+      <tbody>${all.map((r,i)=>`<tr>
+        <td class="l">${i+1}</td>
+        <td class="l" style="font-weight:600">${(r.customer_name||'(no name)')}</td>
+        <td>${r.lateCount}/${r.considered}</td>
+        <td style="font-weight:700;color:${r.latePct>=66?'var(--bad)':r.latePct>=33?'var(--orange)':'var(--mute)'}">${r.latePct}%</td>
+        <td style="font-weight:700">${r.avgDaysLate}</td>
+        <td>${r.maxDaysLate}d</td>
+        <td style="text-align:right;color:${r.overdueValueKES>0?'var(--bad)':'var(--mute)'}">${r.overdueValueKES>0?('KES '+fmtn(r.overdueValueKES)):'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`:'';
+
+  return `${head}${cards}${rest}
+    <div class="muted" style="font-size:10.5px;margin-top:10px">Generated ${new Date(d.generatedAt).toLocaleString()} · only clients with ≥2 invoices and ≥2 late payments are ranked. USD overdue converted at KES ${(+d.rate).toLocaleString('en-KE',{maximumFractionDigits:2})}.</div>`;
+}
+/* ================= end Late Payers ================= */
+
 /* ================= Settings ================= */
 function vSettings(){
   const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
@@ -4585,6 +4660,7 @@ function navActivate(b){
   if(TAB==='qlist'){ render(); if(!QLIST.loaded && !QLIST.loading) qlistLoad(); return; }
   if(TAB==='ivlist'){ render(); if(!IVLIST.loaded && !IVLIST.loading) ivlistLoad(); return; }
   if(TAB==='stmtbuild'){ render(); if(!SB.loaded && !SB.loading) sbLoad(); return; }
+  if(TAB==='latepay'){ render(); if(!LATE.loaded && !LATE.loading) lateLoad(); return; }
   if(TAB==='emails' && !EMAIL.loaded && !EMAIL.loadingClients){ render(); emailLoadClients(); return; }
   if(TAB==='todo' && !TASK.loaded && !TASK.loading){ render(); todoLoad(); return; }
   if(TAB==='loans'){ render(); loadLoans(); return; }
