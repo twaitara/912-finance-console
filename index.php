@@ -3021,7 +3021,7 @@ function vIVList(){
 /* ================= end Invoice Browser ================= */
 
 /* ================= Statement Builder (consolidate unpaid → draft invoice) ================= */
-let SB = { loaded:false, loading:false, invoices:[], sel:{}, q:'', billTo:'', pushing:false, msg:'', msgErr:false, result:null };
+let SB = { loaded:false, loading:false, invoices:[], sel:{}, q:'', cur:'', billTo:'', pushing:false, msg:'', msgErr:false, result:null };
 
 function sbLoad(){
   if(SB.loading) return;
@@ -3033,6 +3033,10 @@ function sbLoad(){
       else { SB.msg=j.error||'Failed to load unpaid invoices'; SB.msgErr=true; }
       render();
     }).catch(e=>{ SB.loading=false; SB.loaded=true; SB.msg='Request failed: '+e; SB.msgErr=true; render(); });
+}
+function sbCurrencies(){
+  const seen={}; SB.invoices.forEach(iv=>{ const c=String(iv.currency||'KES').toUpperCase(); seen[c]=1; });
+  return Object.keys(seen).sort();
 }
 function sbClients(){
   // unique bill-to options = the companies that hold the selected invoices, else all companies in the list
@@ -3051,22 +3055,35 @@ function sbSyncBillTo(){
   if(!SB.billTo || !clients.some(c=>c.id===SB.billTo)){ SB.billTo = clients.length? clients[0].id : ''; }
 }
 function sbSearch(v){ SB.q=v; sbRefreshUI(); }
+function sbSetCur(c){ SB.cur=c; sbRefreshUI(); }
 function sbRefreshUI(){
+  const f=document.getElementById('sbFilterBox'); if(f) f.innerHTML=sbFilterHtml();
   const t=document.getElementById('sbTableBox'); if(t) t.innerHTML=sbTableHtml();
   const s=document.getElementById('sbActionBox'); if(s) s.innerHTML=sbActionHtml();
 }
 function sbFiltered(){
   const q=(SB.q||'').trim().toLowerCase();
   let list=SB.invoices.slice();
+  if(SB.cur) list=list.filter(iv=>String(iv.currency||'KES').toUpperCase()===SB.cur);
   if(q) list=list.filter(iv=>((iv.number||'')+' '+(iv.customer_name||'')).toLowerCase().includes(q));
   return list.sort((a,b)=>(a.customer_name||'').localeCompare(b.customer_name||'') || strcmpDesc(a.date,b.date));
 }
 function strcmpDesc(a,b){ return String(b||'').localeCompare(String(a||'')); }
 function sbSelected(){ return SB.invoices.filter(iv=>SB.sel[iv.id]); }
 
+function sbFilterHtml(){
+  const curs=sbCurrencies();
+  if(curs.length<2) return '';
+  const chip=(val,label)=>`<button class="btn${SB.cur===val?'':' sec'}" style="width:auto;flex:0 0 auto;padding:5px 12px;font-size:11px" onclick="sbSetCur('${val}')">${label}</button>`;
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px">
+    <span class="muted" style="font-size:11px;align-self:center;margin-right:2px">Currency:</span>
+    ${chip('','All')}${curs.map(c=>chip(c,c)).join('')}
+  </div>`;
+}
+
 function sbTableHtml(){
   const list=sbFiltered();
-  if(!list.length) return `<div class="muted" style="padding:16px;text-align:center">${SB.q?`No unpaid invoice matches “${qesc(SB.q)}”.`:'No unpaid invoices found.'}</div>`;
+  if(!list.length) return `<div class="muted" style="padding:16px;text-align:center">${(SB.q||SB.cur)?`No unpaid invoice matches your filter.`:'No unpaid invoices found.'}</div>`;
   const allSel = list.length && list.every(iv=>SB.sel[iv.id]);
   const rows=list.map(iv=>{
     const on=!!SB.sel[iv.id];
@@ -3089,25 +3106,68 @@ function sbTableHtml(){
   </table></div>`;
 }
 
+/* Branded consolidated-statement preview — mirrors the Emails-tab statement look */
+function sbPreviewHtml(sel, billName){
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const byCur={};
+  sel.forEach(iv=>{ const c=String(iv.currency||'KES').toUpperCase(); (byCur[c]=byCur[c]||[]).push(iv); });
+  const curKeys=Object.keys(byCur).sort();
+  const block=curKeys.map(cur=>{
+    const rows=byCur[cur]; let due=0;
+    const body=rows.map((iv,i)=>{ due+=(+iv.balance||0); const zebra=i%2?'#FAFBFD':'#FFFFFF';
+      return `<tr style="background:${zebra}">
+        <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;color:#15202B">${esc(iv.number)}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;color:#475569">${esc(iv.customer_name||'')}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;color:#475569">${esc(iv.date||'')}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #ECEFF3;text-align:right;color:#15202B;font-weight:600;white-space:nowrap">${cur} ${fmtn(iv.balance)}</td></tr>`; }).join('');
+    return `<table style="border-collapse:collapse;width:100%;font-size:13px;margin:0 0 14px;border:1px solid #E6EAF0;border-radius:8px;overflow:hidden">
+      <thead><tr style="background:#F56F00;color:#fff">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Invoice</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Company</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Date</th>
+        <th style="padding:10px 12px;text-align:right;font-size:11px;letter-spacing:.4px;text-transform:uppercase">Balance</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr style="background:#15202B;color:#fff">
+        <td colspan="3" style="padding:11px 12px;text-align:right;font-weight:700;letter-spacing:.3px">TOTAL OUTSTANDING (${cur})</td>
+        <td style="padding:11px 12px;text-align:right;font-weight:700;color:#F8B26A;white-space:nowrap">${cur} ${fmtn(due)}</td></tr></tfoot>
+    </table>`;
+  }).join('');
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#15202B">
+    <div style="background:#15202B;border-radius:10px 10px 0 0;padding:18px 22px;color:#fff">
+      <table width="100%" style="border-collapse:collapse"><tr>
+        <td style="vertical-align:middle"><span style="display:inline-block;background:#F56F00;color:#fff;font-weight:700;font-size:15px;padding:7px 10px;border-radius:8px;letter-spacing:.5px">912</span></td>
+        <td style="vertical-align:middle;text-align:right">
+          <div style="font-size:16px;font-weight:700;letter-spacing:.5px">STATEMENT OF ACCOUNT</div>
+          <div style="font-size:12px;color:#AEB9C7">${esc(billName||'')}</div>
+        </td></tr></table>
+    </div>
+    <div style="border:1px solid #E6EAF0;border-top:0;border-radius:0 0 10px 10px;padding:20px">
+      <p style="margin:0 0 14px;line-height:1.55">Consolidated statement of outstanding invoices${curKeys.length>1?` across ${curKeys.length} currencies`:''}.</p>
+      ${block}
+      <p style="margin:0;color:#64748B;font-size:12px;line-height:1.5">For any queries on this statement, please reach out to us.</p>
+    </div>
+  </div>`;
+}
+
 function sbActionHtml(){
   const sel=sbSelected();
-  if(!sel.length) return `<div class="muted" style="font-size:12px;padding:6px 2px">Tick the unpaid invoices you want to consolidate.</div>`;
-  // group selected by currency
+  if(!sel.length) return `<div class="muted" style="font-size:12px;padding:10px 2px">Tick the unpaid invoices you want to consolidate — a statement preview will appear here.</div>`;
   const byCur={};
   sel.forEach(iv=>{ const c=String(iv.currency||'KES').toUpperCase(); byCur[c]=byCur[c]||{n:0,t:0}; byCur[c].n++; byCur[c].t+=(+iv.balance||0); });
   const curKeys=Object.keys(byCur).sort();
-  const chips=curKeys.map(c=>`<span class="pill" style="background:#F1F4F8;color:var(--ink);font-size:11.5px">${c}: ${byCur[c].n} · ${c} ${fmtn(byCur[c].t)}</span>`).join(' ');
-  const clients=sbClients();
-  const opts=clients.map(c=>`<option value="${c.id}" ${c.id===SB.billTo?'selected':''}>${c.name}</option>`).join('');
   const multi = curKeys.length>1;
-  return `<div class="card" style="margin-top:4px">
+  const clients=sbClients();
+  const billName=(clients.find(c=>c.id===SB.billTo)||{}).name||'';
+  const opts=clients.map(c=>`<option value="${c.id}" ${c.id===SB.billTo?'selected':''}>${c.name}</option>`).join('');
+  return `<div class="card" style="margin-top:10px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-      <b style="font-size:12.5px">${sel.length} invoice${sel.length===1?'':'s'} selected</b>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
+      <b style="font-size:12.5px">Statement preview — ${sel.length} invoice${sel.length===1?'':'s'}</b>
+      <button class="btn sec" style="width:auto;padding:5px 12px;font-size:11px" onclick="sbDownloadPdf()">⤓ Download PDF</button>
     </div>
+    <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px">${sbPreviewHtml(sel, billName)}</div>
     ${multi?`<div class="warn" style="margin-bottom:10px">Mixed currencies selected — ${curKeys.length} separate draft invoices will be created (one per currency), all billed to the chosen client.</div>`:''}
     <label>Bill the consolidated draft to</label>
-    <select onchange="SB.billTo=this.value">${opts}</select>
+    <select onchange="SB.billTo=this.value;sbRefreshUI()">${opts}</select>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn" style="flex:1;min-width:200px" onclick="sbPush()" ${SB.pushing||!SB.billTo?'disabled':''}>
         ${SB.pushing?'Pushing to Zoho…':`📑 Push ${multi?curKeys.length+' drafts':'draft'} to Zoho Drafts`}</button>
@@ -3120,6 +3180,21 @@ function sbActionHtml(){
     </div>`:''}
     ${SB.result&&SB.result.errors&&SB.result.errors.length?`<div class="warn" style="margin-top:8px">${SB.result.errors.map(e=>`${e.currency}: ${e.error}`).join('<br>')}</div>`:''}
   </div>`;
+}
+
+function sbDownloadPdf(){
+  const sel=sbSelected(); if(!sel.length) return;
+  const clients=sbClients();
+  const billName=(clients.find(c=>c.id===SB.billTo)||{}).name||'';
+  const inner=sbPreviewHtml(sel, billName);
+  const w=window.open('', '_blank');
+  if(!w){ alert('Please allow pop-ups for this site to download the PDF.'); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Consolidated statement - '+billName.replace(/[<>&]/g,'')+'</title>'
+    + '<style>@page{margin:14mm} body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:18px;color:#15202B}</style>'
+    + '</head><body>' + inner
+    + '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},250);};</scr'+'ipt>'
+    + '</body></html>');
+  w.document.close();
 }
 
 function sbPush(){
@@ -3139,11 +3214,10 @@ function sbPush(){
 
 function vStmtBuild(){
   if(SB.loading && !SB.loaded) return `<h2>Statement Builder</h2><div class="card muted">Loading unpaid invoices from Zoho…</div>`;
-  const tot=SB.invoices.reduce((s,iv)=>s+(+iv.balance||0),0);
   return `<div class="em-compact">
   <h2>Statement Builder</h2>
   <div class="card" style="margin-bottom:10px">
-    <div class="muted" style="font-size:12px;line-height:1.5">Tick any unpaid invoices — across any client or currency — and push a <b>consolidated draft invoice</b> to Zoho. A client with several companies? Pick the invoices, then choose who to bill.</div>
+    <div class="muted" style="font-size:12px;line-height:1.5">Tick any unpaid invoices — across any client or currency — preview the statement, then push a <b>consolidated draft invoice</b> to Zoho. A client with several companies? Pick the invoices, then choose who to bill.</div>
   </div>
   ${SB.msg && !SB.result ? `<div class="${SB.msgErr?'warn':'ok'}">${SB.msg}</div>`:''}
   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
@@ -3151,6 +3225,7 @@ function vStmtBuild(){
     <button class="btn sec" style="width:auto;padding:5px 12px;font-size:11px" onclick="sbLoad()">↺ Refresh</button>
   </div>
   <input id="sbSearch" type="text" autocomplete="off" placeholder="🔍 Search by invoice number or client…" value="${qesc(SB.q)}" oninput="sbSearch(this.value)">
+  <div id="sbFilterBox">${sbFilterHtml()}</div>
   <div id="sbTableBox">${sbTableHtml()}</div>
   <div id="sbActionBox">${sbActionHtml()}</div>
   </div>`;
