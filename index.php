@@ -653,14 +653,48 @@ if (empty($_SESSION['auth'])):
     outline:2.5px solid var(--orange);outline-offset:2px}
 
   /* ---- Mobile: 48 px targets, horizontal nav scroll ---- */
+  /* ── Mobile hamburger button ── */
+  #mobMenuBtn{display:none;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.22);
+    color:#fff;border-radius:9px;padding:7px 12px;font-size:17px;cursor:pointer;line-height:1;
+    font-family:inherit;transition:background .15s}
+  #mobMenuBtn:active{background:rgba(255,255,255,.22)}
+
+  /* ── Mobile drawer overlay ── */
+  #mobOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:190;
+    backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  #mobOverlay.open{display:block}
+
+  /* ── Mobile drawer panel ── */
+  #mobDrawer{position:fixed;top:0;left:-300px;width:272px;height:100%;
+    background:linear-gradient(180deg,#1a2535 0%,#15202B 100%);
+    z-index:191;display:flex;flex-direction:column;overflow:hidden;
+    transition:left .28s cubic-bezier(.22,.61,.36,1);
+    border-right:1px solid rgba(255,255,255,.07)}
+  #mobDrawer.open{left:0;box-shadow:24px 0 60px rgba(0,0,0,.5)}
+  #mobDrawerHead{display:flex;align-items:center;justify-content:space-between;
+    padding:18px 16px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+  #mobDrawerHead button{background:rgba(255,255,255,.08);border:none;color:#9AA7B8;
+    border-radius:8px;width:32px;height:32px;font-size:15px;cursor:pointer;
+    font-family:inherit;transition:background .15s}
+  #mobDrawerHead button:active{background:rgba(255,255,255,.16)}
+  #mobDrawerBody{overflow-y:auto;flex:1;padding:8px 0 16px}
+  #mobDrawerBody::-webkit-scrollbar{width:3px}
+  #mobDrawerBody::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+  .mob-sect{font-size:9px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;
+    color:#3D5068;padding:18px 18px 5px;margin-top:2px}
+  .mob-item{position:relative;display:flex;align-items:center;gap:10px;width:100%;
+    background:transparent;border:none;color:#8FA3B8;font-size:13.5px;font-weight:500;
+    padding:10px 18px;text-align:left;cursor:pointer;font-family:inherit;
+    transition:background .12s,color .12s;border-radius:0}
+  .mob-item.mob-sub{padding-left:26px;font-size:13px;color:#7A94A8}
+  .mob-item:active{background:rgba(255,255,255,.06)}
+  .mob-item.mob-active{color:#F56F00;font-weight:600;background:rgba(245,111,0,.10)}
+  .mob-item.mob-active::before{content:'';position:absolute;left:0;top:4px;bottom:4px;
+    width:3px;background:#F56F00;border-radius:0 3px 3px 0}
+
   @media(max-width:680px){
-    .tabs{flex-wrap:nowrap;overflow-x:auto;padding:8px 12px;
-      scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
-    .tabs::-webkit-scrollbar{display:none}
-    .tabs .navgroup{scroll-snap-align:start}
-    /* submenus escape overflow:auto via position:fixed — set in JS */
-    .submenu{position:fixed!important;top:56px;left:8px!important;right:8px!important;
-      width:auto!important;min-width:unset;max-height:70vh;overflow-y:auto}
+    #mobMenuBtn{display:inline-flex;align-items:center;justify-content:center}
+    .tabs{display:none!important}
     .btn{min-height:48px;font-size:14px}
     table.rpt .btn{min-height:unset!important;font-size:10.5px!important;padding:3px 9px!important}
     input,select{min-height:48px;font-size:15px}
@@ -669,13 +703,13 @@ if (empty($_SESSION['auth'])):
     .em-compact table.rpt .btn{min-height:unset!important;padding:2px 8px!important;font-size:10px!important}
     .card{padding:14px 16px;border-radius:14px}
     h2{font-size:13.5px}
-    /* dashboard stacking */
     .grid2,.grid3,.cardgrid{grid-template-columns:1fr!important}
     .dsh-side{grid-template-columns:1fr!important}
-    /* payment row: wrap so name gets full width */
     .pay-row-top{flex-wrap:wrap!important;gap:2px 8px!important}
     .pay-row-cust{flex:1 0 100%!important}
-    .pay-row-meta{flex:1 0 auto}
+  }
+  @media(min-width:681px){
+    #mobDrawer,#mobOverlay,#mobMenuBtn{display:none!important}
   }
 
   /* ---- Print: invisible chrome, clean output ---- */
@@ -709,19 +743,10 @@ if (empty($_SESSION['auth'])):
   <header>
     <div style="display:flex;align-items:center;gap:10px">
       <div class="b">912</div>
-      <div><div style="color:#fff;font-weight:600;font-size:11.5px;letter-spacing:.2px">WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</div>
-      <div class="livepill"><span class="livedot"></span>LIVE FROM ZOHO BOOKS</div></div>
+      <div class="livepill"><span class="livedot"></span>LIVE FROM ZOHO BOOKS</div>
     </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);padding:4px 10px 4px 5px;border-radius:20px">
-        <span id="meAvatar" style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;background:#F56F00"><?php echo strtoupper(substr(preg_replace('/[^A-Za-z0-9]/','',$_SESSION['user'] ?? 'U'),0,2) ?: 'U'); ?></span>
-        <span style="display:flex;flex-direction:column;line-height:1.15">
-          <span style="color:#fff;font-size:12px;font-weight:600"><?php echo htmlspecialchars($_SESSION['user'] ?? 'user', ENT_QUOTES); ?></span>
-          <span style="color:#9AA7B8;font-size:9.5px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo (!empty($_SESSION['is_admin']) ? 'Admin' : 'Staff') . (!empty($_SESSION['email']) ? ' · ' . htmlspecialchars($_SESSION['email'], ENT_QUOTES) : ''); ?></span>
-        </span>
-      </div>
-      <a class="logout" href="connect_calendar.php" target="_blank" rel="noopener" style="color:#fff;background:rgba(245,111,0,.9);border:1px solid rgba(255,255,255,.18);padding:5px 11px;border-radius:8px;font-weight:600">📅 Authenticate calendar</a>
-      <a class="logout" href="#" onclick="pwOpen();return false;" title="Change your password">🔑 Password</a>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="mobMenuBtn" onclick="openMobileNav()" aria-label="Open menu">☰</button>
       <a class="logout" href="?logout=1">Sign out</a>
     </div>
   </header>
@@ -809,6 +834,62 @@ if (empty($_SESSION['auth'])):
 
   <div class="pane" id="pane"></div>
 </div>
+
+<!-- ── Mobile slide-in nav drawer ── -->
+<div id="mobOverlay" onclick="closeMobileNav()"></div>
+<nav id="mobDrawer">
+  <div id="mobDrawerHead">
+    <div style="display:flex;align-items:center;gap:9px">
+      <div class="b" style="width:28px;height:28px;font-size:12px;border-radius:7px">912</div>
+      <span style="color:#CBD6E3;font-weight:700;font-size:13px">Console</span>
+    </div>
+    <button onclick="closeMobileNav()" aria-label="Close">✕</button>
+  </div>
+  <div id="mobDrawerBody">
+    <button class="mob-item" data-tab="dash">🏠 Dashboard</button>
+
+    <div class="mob-sect">💰 Working Capital</div>
+    <button class="mob-item mob-sub" data-tab="deploy">🚀 Deploy</button>
+    <button class="mob-item mob-sub" data-tab="ledger">📒 Ledger</button>
+    <button class="mob-item mob-sub" data-tab="loans">💸 Loans</button>
+    <button class="mob-item mob-sub" data-tab="growth">📈 Growth</button>
+
+    <div class="mob-sect">📊 Accounts Efficiency</div>
+    <button class="mob-item mob-sub" data-tab="report">💹 Profit Report</button>
+    <button class="mob-item mob-sub" data-tab="etr">🔍 ETR Check</button>
+    <button class="mob-item mob-sub" data-tab="invrep">🧾 Invoices</button>
+    <button class="mob-item mob-sub" data-tab="quotes">📋 Quotes</button>
+    <button class="mob-item mob-sub" data-tab="payments">💳 Record Payment</button>
+    <button class="mob-item mob-sub" data-tab="bulkpay">⚡ Bulk Mark Paid</button>
+
+    <div class="mob-sect">🗂️ Quotes / Invoices</div>
+    <button class="mob-item mob-sub" data-tab="qlist">📋 Quotes Browser</button>
+    <button class="mob-item mob-sub" data-tab="ivlist">🧾 Invoice Browser</button>
+
+    <div class="mob-sect">✏️ Create</div>
+    <button class="mob-item mob-sub" data-tab="newquote">📝 New Quote</button>
+    <button class="mob-item mob-sub" data-tab="myquotes">📂 My Quotes</button>
+    <button class="mob-item mob-sub" data-tab="jobcards">🛠️ Job Cards</button>
+
+    <div class="mob-sect">✅ Tasks</div>
+    <button class="mob-item mob-sub" data-tab="todo">☑️ To-Do</button>
+    <button class="mob-item mob-sub" data-ext="tasks_board.php">📌 Task Board</button>
+
+    <div class="mob-sect">👥 Clients</div>
+    <button class="mob-item mob-sub" data-tab="emails">✉️ Emails</button>
+    <button class="mob-item mob-sub" data-ext="audrey.php">📊 Audrey Reports</button>
+
+    <div class="mob-sect">⚙️ Settings</div>
+    <button class="mob-item mob-sub" data-tab="settings">🔧 App Settings</button>
+    <button class="mob-item mob-sub" data-tab="users">👤 Users</button>
+    <button class="mob-item mob-sub" data-tab="clientaccess">🔗 Client Access</button>
+    <button class="mob-item mob-sub" data-tab="activity">📋 Activity Log</button>
+
+    <div style="padding:20px 18px 8px">
+      <a href="?logout=1" style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:rgba(239,68,68,.12);color:#F87171;font-weight:600;font-size:13px;text-decoration:none;border-radius:10px">🚪 Sign out</a>
+    </div>
+  </div>
+</nav>
 
 <div id="qbModal" class="qbmodal" onclick="if(event.target===this)qbClose()">
   <div class="qbm-card">
@@ -1024,6 +1105,8 @@ function applyPerms(){
   document.querySelectorAll('.tabs button[data-tab]').forEach(b=>{ b.style.display = tabAllowed(b.dataset.tab)?'':'none'; });
   document.querySelectorAll('.tabs button[data-ext]').forEach(b=>{ const k=b.dataset.ext==='audrey.php'?'audrey':(b.dataset.ext==='tasks_board.php'?'taskboard':''); b.style.display = tabAllowed(k)?'':'none'; });
   document.querySelectorAll('.tabs .navgroup').forEach(g=>{ const any=[...g.querySelectorAll('.submenu button')].some(x=>x.style.display!=='none'); g.style.display = any?'':'none'; });
+  document.querySelectorAll('#mobDrawer .mob-item[data-tab]').forEach(b=>{ b.style.display=tabAllowed(b.dataset.tab)?'':'none'; });
+  updateMobActive();
   if(!ME.admin){
     const navTips={dash:'Your home — a quick view of your quotes and tasks',
       newquote:'Start a new quote for a customer',
@@ -4190,6 +4273,9 @@ function vTodo(){
 /* ================= end To-Do ================= */
 
 function closeNavGroups(){ document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open')); }
+function openMobileNav(){ document.getElementById('mobDrawer').classList.add('open'); document.getElementById('mobOverlay').classList.add('open'); document.body.style.overflow='hidden'; }
+function closeMobileNav(){ document.getElementById('mobDrawer').classList.remove('open'); document.getElementById('mobOverlay').classList.remove('open'); document.body.style.overflow=''; }
+function updateMobActive(){ document.querySelectorAll('.mob-item[data-tab]').forEach(b=>b.classList.toggle('mob-active',b.dataset.tab===TAB)); }
 
 function navActivate(b){
   if(b.dataset.tab==='newquote'){ qbOpenNew(); closeNavGroups(); return; }   // builder opens as a popup, not a tab
@@ -4198,6 +4284,7 @@ function navActivate(b){
   const grp=b.closest('.navgroup');
   if(grp){ const gb=grp.querySelector('.grp'); if(gb) gb.classList.add('active'); }
   TAB=b.dataset.tab;
+  updateMobActive();
   closeNavGroups();
   if(TAB==='report' && !REPORT.loaded && !REPORT.loading){ render(); loadReport(); return; }
   if(TAB==='etr' && !ETR.loaded && !ETR.loading){ render(); etrLoad(); return; }
@@ -4784,6 +4871,9 @@ function navTo(tab){ const b=document.querySelector('.tabs button[data-tab="'+ta
 
 /* direct tabs + submenu tabs */
 document.querySelectorAll('.tabs button[data-tab]').forEach(b=>b.onclick=()=>navActivate(b));
+/* mobile drawer tabs */
+document.querySelectorAll('#mobDrawer .mob-item[data-tab]').forEach(b=>b.onclick=()=>{ navActivate(b); closeMobileNav(); });
+document.querySelectorAll('#mobDrawer .mob-item[data-ext]').forEach(b=>b.onclick=()=>{ window.open(b.dataset.ext,'_blank'); closeMobileNav(); });
 /* external links (e.g. Audrey) */
 document.querySelectorAll('.tabs button[data-ext]').forEach(b=>b.onclick=()=>{ window.open(b.dataset.ext,'_blank'); closeNavGroups(); });
 /* group headers toggle their dropdown */
