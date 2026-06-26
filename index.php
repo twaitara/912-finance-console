@@ -658,6 +658,9 @@ if (empty($_SESSION['auth'])):
       scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
     .tabs::-webkit-scrollbar{display:none}
     .tabs .navgroup{scroll-snap-align:start}
+    /* submenus escape overflow:auto via position:fixed — set in JS */
+    .submenu{position:fixed!important;top:56px;left:8px!important;right:8px!important;
+      width:auto!important;min-width:unset;max-height:70vh;overflow-y:auto}
     .btn{min-height:48px;font-size:14px}
     table.rpt .btn{min-height:unset!important;font-size:10.5px!important;padding:3px 9px!important}
     input,select{min-height:48px;font-size:15px}
@@ -666,6 +669,13 @@ if (empty($_SESSION['auth'])):
     .em-compact table.rpt .btn{min-height:unset!important;padding:2px 8px!important;font-size:10px!important}
     .card{padding:14px 16px;border-radius:14px}
     h2{font-size:13.5px}
+    /* dashboard stacking */
+    .grid2,.grid3,.cardgrid{grid-template-columns:1fr!important}
+    .dsh-side{grid-template-columns:1fr!important}
+    /* payment row: wrap so name gets full width */
+    .pay-row-top{flex-wrap:wrap!important;gap:2px 8px!important}
+    .pay-row-cust{flex:1 0 100%!important}
+    .pay-row-meta{flex:1 0 auto}
   }
 
   /* ---- Print: invisible chrome, clean output ---- */
@@ -1415,10 +1425,10 @@ function vDash(){
       const invNums=(row.invoices||[]).join(', ');
       const sub=[row.number,invNums,row.ref].filter(Boolean).join(' · ').slice(0,72);
       return `<div class="dsh-pay-row" data-client="${(row.customer||'').toLowerCase().replace(/"/g,'')}" style="padding:5px 0;border-bottom:1px solid var(--line)">
-        <div style="display:flex;align-items:baseline;gap:8px">
-          <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</span>
-          <span style="font-size:10px;color:var(--mute);white-space:nowrap;flex-shrink:0">${row.date}</span>
-          <span style="font-size:11.5px;font-weight:700;color:var(--good);white-space:nowrap;flex-shrink:0">KES ${Math.round(row.amount).toLocaleString('en-KE')}</span>
+        <div class="pay-row-top" style="display:flex;align-items:baseline;gap:8px">
+          <span class="pay-row-cust" style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</span>
+          <span class="pay-row-meta" style="font-size:10px;color:var(--mute);white-space:nowrap;flex-shrink:0">${row.date}</span>
+          <span class="pay-row-meta" style="font-size:11.5px;font-weight:700;color:var(--good);white-space:nowrap;flex-shrink:0">KES ${Math.round(row.amount).toLocaleString('en-KE')}</span>
         </div>
         ${sub?`<div style="font-size:9.5px;color:var(--mute);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}
       </div>`;
@@ -1461,7 +1471,7 @@ function vDash(){
     <div class="kpi" style="--accent:var(--good);padding:11px 13px"><div class="l">Restored</div><div class="n" style="font-size:24px">${s.restored.length}</div><div class="h">Bridges repaid</div></div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start">
+  <div class="dsh-side" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start">
     ${paidPanel}
     ${vDashTeamQuotes()}
   </div>
@@ -4781,7 +4791,16 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
   e.stopPropagation();
   const ng=g.closest('.navgroup'); const wasOpen=ng.classList.contains('open');
   closeNavGroups();
-  if(!wasOpen) ng.classList.add('open');
+  if(!wasOpen){
+    ng.classList.add('open');
+    /* on mobile the tabs bar has overflow:auto which clips position:absolute submenus —
+       reposition as fixed so the submenu floats above the page */
+    if(window.innerWidth<=680){
+      const sub=ng.querySelector('.submenu');
+      const rect=g.getBoundingClientRect();
+      sub.style.top=(rect.bottom+4)+'px';
+    }
+  }
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
