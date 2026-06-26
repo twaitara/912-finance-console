@@ -966,8 +966,10 @@ const CFG = <?php echo json_encode([
   'inboxDays'=>$cfg['inbox_days'] ?? 14,'sentDays'=>$cfg['sent_hide_days'] ?? 30,
   'biz'=>$cfg['business_name'] ?? 'Nine One Two Holdings',
   'stmtSubject'=>$cfg['statement_subject'] ?? 'Pending invoices and Statement',
-  'stmtFooter'=>$cfg['statement_footer'] ?? ''
+  'stmtFooter'=>$cfg['statement_footer'] ?? '',
+  'org'=>$cfg['organization_id'] ?? ''
 ]); ?>;
+const zbInvUrl = id => (CFG.org && id) ? ('https://books.zoho.com/app/'+CFG.org+'#/invoices/'+id) : '';
 const ME = <?php echo json_encode([
   'user'  => $_SESSION['user'] ?? 'admin',
   'email' => $_SESSION['email'] ?? '',
@@ -3133,7 +3135,7 @@ function sbTableHtml(){
     return `<tr${on?' style="background:#FFF8F1"':''}>
       <td class="l" style="width:30px"><input type="checkbox" ${on?'checked':''} onclick="sbToggle('${iv.id}')"></td>
       <td class="l" style="font-weight:600">${(iv.customer_name||'(no name)')}</td>
-      <td class="l" style="color:var(--orange);font-weight:600;white-space:nowrap">${iv.number||''}</td>
+      <td class="l" style="white-space:nowrap">${zbInvUrl(iv.id)?`<a href="${zbInvUrl(iv.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--orange);font-weight:600;text-decoration:none" title="Open ${iv.number||''} in Zoho Books">${iv.number||''} ↗</a>`:`<span style="color:var(--orange);font-weight:600">${iv.number||''}</span>`}</td>
       <td style="color:var(--mute);white-space:nowrap">${iv.date||''}</td>
       <td>${usd?`<span class="pill" style="background:#EEF2FE;color:var(--blue)">${iv.currency}</span>`:`<span class="muted">KES</span>`}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${iv.currency||'KES'} ${fmtn(iv.balance)}</td>
