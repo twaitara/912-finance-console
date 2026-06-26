@@ -52,11 +52,15 @@ do {
 // ── All payment rows, newest first ────────────────────────────────────────
 usort($payments, fn($a, $b) => strcmp($b['date'] ?? '', $a['date'] ?? ''));
 $rows = array_map(fn($p) => [
-    'customer' => (string)($p['customer_name']  ?? ''),
-    'amount'   => (float)($p['amount']          ?? 0),
-    'date'     => (string)($p['date']            ?? ''),
-    'number'   => (string)($p['payment_number'] ?? ''),
-    'mode'     => (string)($p['payment_mode']   ?? ''),
+    'customer' => (string)($p['customer_name']    ?? ''),
+    'amount'   => (float)($p['amount']            ?? 0),
+    'date'     => (string)($p['date']             ?? ''),
+    'number'   => (string)($p['payment_number']   ?? ''),
+    'mode'     => (string)($p['payment_mode']     ?? ''),
+    'ref'      => (string)($p['reference_number'] ?? ''),
+    'desc'     => mb_strimwidth((string)($p['description'] ?? $p['notes'] ?? ''), 0, 60, '…'),
+    'invoices' => array_map(fn($iv) => (string)($iv['invoice_number'] ?? ''),
+                    array_filter($p['invoices'] ?? [], fn($iv) => !empty($iv['invoice_number']))),
 ], $payments);
 
 echo json_encode([
