@@ -1317,6 +1317,20 @@ function vDashTeamQuotes(){
 /* ---- Dashboard quick-expense widget ---- */
 let DEXP = { amount:'', desc:'', date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), saving:false, msg:'', err:false };
 function dexpField(k,v){ DEXP[k]=v; }
+function dexpFmt(){ const a=String(DEXP.amount||''); const dot=a.indexOf('.'); const intp=dot>=0?a.slice(0,dot):a; const decp=dot>=0?a.slice(dot+1):null; return intp.replace(/\B(?=(\d{3})+(?!\d))/g,',') + (decp!==null?'.'+decp:''); }
+function dexpAmount(el){
+  const v=el.value, pos=el.selectionStart||0;
+  const digitsBefore=(v.slice(0,pos).match(/\d/g)||[]).length;     // remember cursor by digits to its left
+  const raw=v.replace(/[^0-9.]/g,'');
+  const dot=raw.indexOf('.');
+  const intp=(dot>=0?raw.slice(0,dot):raw).replace(/\./g,'');
+  const decp=dot>=0?raw.slice(dot+1).replace(/\./g,'').slice(0,2):null;   // max 2 decimals
+  DEXP.amount = intp + (decp!==null?'.'+decp:'');
+  const formatted = intp.replace(/\B(?=(\d{3})+(?!\d))/g,',') + (decp!==null?'.'+decp:'');
+  el.value=formatted;
+  let np=0,seen=0; while(np<formatted.length && seen<digitsBefore){ if(/\d/.test(formatted[np])) seen++; np++; }
+  el.setSelectionRange(np,np);
+}
 function dexpPickAcc(v){
   const acc=EXP.accounts; if(!acc) return;
   const q=String(v||'').trim().toLowerCase();
@@ -1347,7 +1361,7 @@ function vDashQuickExpense(){
       <span class="muted" style="font-size:10px;margin-left:auto">straight to Zoho</span>
     </div>
     ${!acc?`<div class="muted" style="font-size:11.5px;padding:6px 0">${EXP.loadingAcc?'Loading accounts…':'<span style="color:var(--orange);cursor:pointer" onclick="expLoadAccounts();render()">Load accounts →</span>'}</div>`:`
-    <input type="number" inputmode="decimal" placeholder="Amount (KES)" value="${DEXP.amount}" oninput="dexpField('amount',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
+    <input id="dexpAmt" type="text" inputmode="decimal" placeholder="Amount (KES)" value="${dexpFmt()}" oninput="dexpAmount(this)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="text" placeholder="What for? (description)" value="${(DEXP.desc||'').replace(/"/g,'&quot;')}" oninput="dexpField('desc',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="date" value="${DEXP.date}" onchange="dexpField('date',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
     <input type="text" list="dexpAccList" autocomplete="off" placeholder="🔍 Search expense account…" value="${(((acc.expense||[]).find(a=>a.id===EXP.acc)||{}).name||'').replace(/"/g,'&quot;')}" oninput="dexpPickAcc(this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid ${EXP.acc?'var(--line)':'#F7C99A'};border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
