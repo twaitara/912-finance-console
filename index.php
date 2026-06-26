@@ -751,6 +751,14 @@ if (empty($_SESSION['auth'])):
     </div>
 
     <div class="navgroup">
+      <button class="grp">🗂️ Quotes / Invoices <span class="car">▾</span></button>
+      <div class="submenu">
+        <button data-tab="qlist">📋 Quotes</button>
+        <button data-tab="ivlist">🧾 Invoices</button>
+      </div>
+    </div>
+
+    <div class="navgroup">
       <button class="grp">✏️ Create <span class="car">▾</span></button>
       <div class="submenu">
         <button data-tab="newquote">📝 New Quote</button>
@@ -1028,6 +1036,8 @@ function tabRefresh(){
     case 'etr':       ETR.loaded=false;ETR.loading=false;ETR.data=null;render();etrLoad();break;
     case 'invrep':    INVR.loaded=false;INVR.loading=false;INVR.data=null;render();invrLoad();break;
     case 'quotes':    QUOT.loaded=false;QUOT.loading=false;QUOT.data=null;render();quotLoad();break;
+    case 'qlist':     QLIST.loaded=false;QLIST.loading=false;QLIST.allItems=[];QLIST.page=1;render();qlistLoad();break;
+    case 'ivlist':    IVLIST.loaded=false;IVLIST.loading=false;IVLIST.allItems=[];IVLIST.page=1;render();ivlistLoad();break;
     case 'emails':    EMAIL.loaded=false;EMAIL.loadingClients=false;EMAIL.clients=[];render();emailLoadClients();break;
     case 'todo':      TASK.loaded=false;TASK.loading=false;TASK.tasks=[];render();todoLoad();break;
     case 'loans':     LOANS=[];render();loadLoans();break;
@@ -1057,7 +1067,7 @@ function render(){
   const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
   const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
-  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity'};
+  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser'};
   document.title = (ME.user||'Console') + ' · ' + (_tabNames[TAB]||TAB) + ' · 912';
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -1068,6 +1078,8 @@ function render(){
   if(TAB==='etr') p.innerHTML = vETR();
   if(TAB==='invrep') p.innerHTML = vInvRep();
   if(TAB==='quotes') p.innerHTML = vQuotes();
+  if(TAB==='qlist') p.innerHTML = vQList();
+  if(TAB==='ivlist') p.innerHTML = vIVList();
   if(TAB==='payments'){ p.innerHTML = vPayments(); if(!PAY.loaded) payLoadClients(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='bulkpay'){ p.innerHTML = vBulkPay(); if(!BULK.loaded) bulkLoad(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='settings') p.innerHTML = vSettings();
@@ -2698,6 +2710,212 @@ function quotLoad(refresh){
 }
 /* ================= end Quotes ================= */
 
+/* ================= Quote Browser (qlist) ================= */
+let QLIST = {loaded:false,loading:false,allItems:[],hasMore:false,page:1,status:'',preset:'month',from:'',to:'',search:'',error:''};
+
+function qlistDates(){
+  const now=new Date(),y=now.getFullYear(),m=now.getMonth();
+  const fmt=d=>d.toISOString().slice(0,10);
+  if(QLIST.preset==='month')     return {from:fmt(new Date(y,m,1)),     to:fmt(new Date(y,m+1,0))};
+  if(QLIST.preset==='lastmonth') return {from:fmt(new Date(y,m-1,1)),   to:fmt(new Date(y,m,0))};
+  if(QLIST.preset==='quarter')   {const q=Math.floor(m/3);return{from:fmt(new Date(y,q*3,1)),to:fmt(new Date(y,q*3+3,0))};}
+  if(QLIST.preset==='year')      return {from:`${y}-01-01`,             to:`${y}-12-31`};
+  if(QLIST.preset==='custom')    return {from:QLIST.from,               to:QLIST.to};
+  return {from:'',to:''};
+}
+function qlistLoad(more=false){
+  if(QLIST.loading) return;
+  if(!more){QLIST.page=1;QLIST.allItems=[];QLIST.hasMore=false;QLIST.error='';}
+  QLIST.loading=true; render();
+  const {from,to}=qlistDates();
+  const p=new URLSearchParams({status:QLIST.status,from,to,page:QLIST.page,sort:'date',order:'D'});
+  fetch('api/zoho_quotes.php?'+p,{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{
+      QLIST.loading=false;QLIST.loaded=true;
+      if(j.ok){QLIST.allItems=[...QLIST.allItems,...(j.items||[])];QLIST.hasMore=j.hasMore;QLIST.page++;}
+      else{QLIST.error=j.error||'Error loading quotes';}
+      render();
+    }).catch(e=>{QLIST.loading=false;QLIST.loaded=true;QLIST.error='Request failed: '+e;render();});
+}
+function vQList(){
+  const SC={draft:'#94A3B8',sent:'#3B82F6',accepted:'#10B981',declined:'#EF4444',invoiced:'#8B5CF6',expired:'#F59E0B'};
+  const statusOpts=['','Draft','Sent','Accepted','Declined','Invoiced','Expired'];
+  const statusBar=statusOpts.map(s=>{
+    const on=QLIST.status===(s.toLowerCase()||'')&&!(s==='')&&QLIST.status!==''||(!s&&!QLIST.status);
+    return `<button class="btn${on?'':' sec'}" style="padding:4px 10px;font-size:11px;width:auto"
+      onclick="QLIST.status='${s.toLowerCase()}';QLIST.page=1;QLIST.allItems=[];qlistLoad()">${s||'All'}</button>`;
+  }).join('');
+  const presets=[['month','This Month'],['lastmonth','Last Month'],['quarter','Quarter'],['year','This Year'],['all','All Time'],['custom','Custom']];
+  const presetBar=presets.map(([k,l])=>`<button class="btn${QLIST.preset===k?'':' sec'}" style="padding:4px 9px;font-size:11px;width:auto"
+    onclick="QLIST.preset='${k}';QLIST.page=1;QLIST.allItems=[];${k!=='custom'?'qlistLoad()':'render()'}">${l}</button>`).join('');
+  const customInputs=QLIST.preset==='custom'?`<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+    <label style="font-size:11px;color:var(--mute)">From</label>
+    <input type="date" id="qlFrom" value="${QLIST.from}" style="font-size:11px;padding:4px 6px" onchange="QLIST.from=this.value">
+    <label style="font-size:11px;color:var(--mute)">To</label>
+    <input type="date" id="qlTo" value="${QLIST.to}" style="font-size:11px;padding:4px 6px" onchange="QLIST.to=this.value">
+    <button class="btn" style="padding:4px 12px;font-size:11px;width:auto" onclick="QLIST.page=1;QLIST.allItems=[];qlistLoad()">Apply</button>
+  </div>`:'';
+  const q=QLIST.search.toLowerCase();
+  const items=QLIST.allItems.filter(x=>!q||x.customer.toLowerCase().includes(q)||x.number.toLowerCase().includes(q));
+  const total=items.reduce((s,x)=>s+(+x.total||0),0);
+  const badge=s=>`<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:9px;color:#fff;background:${SC[s]||'#94A3B8'};text-transform:capitalize">${s||'—'}</span>`;
+  const rows=items.map(x=>`<tr>
+    <td style="padding:7px 10px;font-size:11.5px;font-weight:600;white-space:nowrap;color:var(--orange)">${x.number}</td>
+    <td style="padding:7px 10px;font-size:11.5px">${x.customer}</td>
+    <td style="padding:7px 10px;font-size:11px;color:var(--mute);white-space:nowrap">${x.date}</td>
+    <td style="padding:7px 10px;font-size:11px;color:var(--mute);white-space:nowrap">${x.expiry||'—'}</td>
+    <td style="padding:7px 10px">${badge(x.status)}</td>
+    <td style="padding:7px 10px;font-size:11.5px;font-weight:700;text-align:right;white-space:nowrap">KES ${Math.round(x.total).toLocaleString('en-KE')}</td>
+    ${x.ref?`<td style="padding:7px 10px;font-size:10.5px;color:var(--mute)">${x.ref}</td>`:'<td></td>'}
+  </tr>`).join('');
+  return `
+  <h2>Quotes</h2>
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${statusBar}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${presetBar}</div>
+    ${customInputs}
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <input id="qlSearch" type="text" placeholder="Search client or quote #…" value="${QLIST.search}"
+        style="flex:1;font-size:12px;padding:6px 10px"
+        oninput="QLIST.search=this.value;render()">
+      <button class="btn sec" style="width:auto;padding:6px 14px;font-size:11.5px;flex-shrink:0" onclick="QLIST.page=1;QLIST.allItems=[];qlistLoad()">↺ Refresh</button>
+    </div>
+  </div>
+  ${QLIST.error?`<div class="warn">${QLIST.error}</div>`:''}
+  ${!QLIST.loaded&&QLIST.loading?`<div class="card muted" style="text-align:center;padding:20px">Loading quotes from Zoho…</div>`:''}
+  ${QLIST.loaded||QLIST.allItems.length?`
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:12px;font-weight:600">${items.length} quote${items.length!==1?'s':''}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--orange)">KES ${Math.round(total).toLocaleString('en-KE')}</span>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:var(--bg-card)">
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600;white-space:nowrap">Quote #</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Client</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Date</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Expiry</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Status</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:right;color:var(--mute);font-weight:600">Amount</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Ref</th>
+      </tr></thead>
+      <tbody style="divide-y">${rows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--mute);font-size:12px">No quotes found</td></tr>'}</tbody>
+    </table>
+    </div>
+    ${QLIST.hasMore?`<div style="padding:10px 14px;border-top:1px solid var(--line);text-align:center">
+      <button class="btn sec" style="width:auto;padding:6px 20px;font-size:12px" onclick="qlistLoad(true)">${QLIST.loading?'Loading…':'Load next 200 →'}</button>
+    </div>`:''}
+  </div>`:''}`;
+}
+/* ================= end Quote Browser ================= */
+
+/* ================= Invoice Browser (ivlist) ================= */
+let IVLIST = {loaded:false,loading:false,allItems:[],hasMore:false,page:1,status:'',preset:'month',from:'',to:'',search:'',error:''};
+
+function ivlistDates(){
+  const now=new Date(),y=now.getFullYear(),m=now.getMonth();
+  const fmt=d=>d.toISOString().slice(0,10);
+  if(IVLIST.preset==='month')     return {from:fmt(new Date(y,m,1)),     to:fmt(new Date(y,m+1,0))};
+  if(IVLIST.preset==='lastmonth') return {from:fmt(new Date(y,m-1,1)),   to:fmt(new Date(y,m,0))};
+  if(IVLIST.preset==='quarter')   {const q=Math.floor(m/3);return{from:fmt(new Date(y,q*3,1)),to:fmt(new Date(y,q*3+3,0))};}
+  if(IVLIST.preset==='year')      return {from:`${y}-01-01`,             to:`${y}-12-31`};
+  if(IVLIST.preset==='custom')    return {from:IVLIST.from,              to:IVLIST.to};
+  return {from:'',to:''};
+}
+function ivlistLoad(more=false){
+  if(IVLIST.loading) return;
+  if(!more){IVLIST.page=1;IVLIST.allItems=[];IVLIST.hasMore=false;IVLIST.error='';}
+  IVLIST.loading=true; render();
+  const {from,to}=ivlistDates();
+  const p=new URLSearchParams({status:IVLIST.status,from,to,page:IVLIST.page,sort:'date',order:'D'});
+  fetch('api/zoho_invoices.php?'+p,{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{
+      IVLIST.loading=false;IVLIST.loaded=true;
+      if(j.ok){IVLIST.allItems=[...IVLIST.allItems,...(j.items||[])];IVLIST.hasMore=j.hasMore;IVLIST.page++;}
+      else{IVLIST.error=j.error||'Error loading invoices';}
+      render();
+    }).catch(e=>{IVLIST.loading=false;IVLIST.loaded=true;IVLIST.error='Request failed: '+e;render();});
+}
+function vIVList(){
+  const SC={draft:'#94A3B8',sent:'#3B82F6',overdue:'#EF4444',paid:'#10B981',partiallypaid:'#F59E0B',void:'#94A3B8',unpaid:'#F59E0B'};
+  const statusOpts=['','Overdue','Unpaid','Sent','Paid','PartiallyPaid','Draft','Void'];
+  const statusLabels={'':'All','Overdue':'Overdue','Unpaid':'Unpaid','Sent':'Sent','Paid':'Paid','PartiallyPaid':'Partial','Draft':'Draft','Void':'Void'};
+  const statusBar=statusOpts.map(s=>{
+    const key=s.toLowerCase();
+    const on=(!s&&!IVLIST.status)||(s&&IVLIST.status===key);
+    return `<button class="btn${on?'':' sec'}" style="padding:4px 10px;font-size:11px;width:auto"
+      onclick="IVLIST.status='${key}';IVLIST.page=1;IVLIST.allItems=[];ivlistLoad()">${statusLabels[s]}</button>`;
+  }).join('');
+  const presets=[['month','This Month'],['lastmonth','Last Month'],['quarter','Quarter'],['year','This Year'],['all','All Time'],['custom','Custom']];
+  const presetBar=presets.map(([k,l])=>`<button class="btn${IVLIST.preset===k?'':' sec'}" style="padding:4px 9px;font-size:11px;width:auto"
+    onclick="IVLIST.preset='${k}';IVLIST.page=1;IVLIST.allItems=[];${k!=='custom'?'ivlistLoad()':'render()'}">${l}</button>`).join('');
+  const customInputs=IVLIST.preset==='custom'?`<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+    <label style="font-size:11px;color:var(--mute)">From</label>
+    <input type="date" id="ivFrom" value="${IVLIST.from}" style="font-size:11px;padding:4px 6px" onchange="IVLIST.from=this.value">
+    <label style="font-size:11px;color:var(--mute)">To</label>
+    <input type="date" id="ivTo" value="${IVLIST.to}" style="font-size:11px;padding:4px 6px" onchange="IVLIST.to=this.value">
+    <button class="btn" style="padding:4px 12px;font-size:11px;width:auto" onclick="IVLIST.page=1;IVLIST.allItems=[];ivlistLoad()">Apply</button>
+  </div>`:'';
+  const q=IVLIST.search.toLowerCase();
+  const items=IVLIST.allItems.filter(x=>!q||x.customer.toLowerCase().includes(q)||x.number.toLowerCase().includes(q));
+  const totalAmt=items.reduce((s,x)=>s+(+x.total||0),0);
+  const totalBal=items.reduce((s,x)=>s+(+x.balance||0),0);
+  const overdue=items.filter(x=>x.status==='overdue');
+  const badge=s=>`<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:9px;color:#fff;background:${SC[s]||'#94A3B8'};text-transform:capitalize">${s==='partiallypaid'?'Partial':s||'—'}</span>`;
+  const rows=items.map(x=>`<tr>
+    <td style="padding:7px 10px;font-size:11.5px;font-weight:600;white-space:nowrap;color:var(--orange)">${x.number}</td>
+    <td style="padding:7px 10px;font-size:11.5px">${x.customer}</td>
+    <td style="padding:7px 10px;font-size:11px;color:var(--mute);white-space:nowrap">${x.date}</td>
+    <td style="padding:7px 10px;font-size:11px;color:${x.status==='overdue'?'#EF4444':'var(--mute)'};white-space:nowrap;font-weight:${x.status==='overdue'?700:400}">${x.dueDate||'—'}</td>
+    <td style="padding:7px 10px">${badge(x.status)}</td>
+    <td style="padding:7px 10px;font-size:11.5px;font-weight:700;text-align:right;white-space:nowrap">KES ${Math.round(x.total).toLocaleString('en-KE')}</td>
+    <td style="padding:7px 10px;font-size:11.5px;font-weight:700;text-align:right;white-space:nowrap;color:${x.balance>0?'#EF4444':'var(--mute)'}">${x.balance>0?'KES '+Math.round(x.balance).toLocaleString('en-KE'):'—'}</td>
+  </tr>`).join('');
+  return `
+  <h2>Invoices</h2>
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${statusBar}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${presetBar}</div>
+    ${customInputs}
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <input id="ivSearch" type="text" placeholder="Search client or invoice #…" value="${IVLIST.search}"
+        style="flex:1;font-size:12px;padding:6px 10px"
+        oninput="IVLIST.search=this.value;render()">
+      <button class="btn sec" style="width:auto;padding:6px 14px;font-size:11.5px;flex-shrink:0" onclick="IVLIST.page=1;IVLIST.allItems=[];ivlistLoad()">↺ Refresh</button>
+    </div>
+  </div>
+  ${IVLIST.error?`<div class="warn">${IVLIST.error}</div>`:''}
+  ${!IVLIST.loaded&&IVLIST.loading?`<div class="card muted" style="text-align:center;padding:20px">Loading invoices from Zoho…</div>`:''}
+  ${IVLIST.loaded||IVLIST.allItems.length?`
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:600">${items.length} invoice${items.length!==1?'s':''}</span>
+      <span style="font-size:12px">Billed <b>KES ${Math.round(totalAmt).toLocaleString('en-KE')}</b></span>
+      ${totalBal>0?`<span style="font-size:12px">Outstanding <b style="color:#EF4444">KES ${Math.round(totalBal).toLocaleString('en-KE')}</b></span>`:''}
+      ${overdue.length?`<span style="font-size:12px;color:#EF4444;font-weight:700">${overdue.length} overdue</span>`:''}
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:var(--bg-card)">
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600;white-space:nowrap">Invoice #</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Client</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Date</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Due</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Status</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:right;color:var(--mute);font-weight:600">Total</th>
+        <th style="padding:7px 10px;font-size:10px;text-align:right;color:var(--mute);font-weight:600">Balance</th>
+      </tr></thead>
+      <tbody>${rows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--mute);font-size:12px">No invoices found</td></tr>'}</tbody>
+    </table>
+    </div>
+    ${IVLIST.hasMore?`<div style="padding:10px 14px;border-top:1px solid var(--line);text-align:center">
+      <button class="btn sec" style="width:auto;padding:6px 20px;font-size:12px" onclick="ivlistLoad(true)">${IVLIST.loading?'Loading…':'Load next 200 →'}</button>
+    </div>`:''}
+  </div>`:''}`;
+}
+/* ================= end Invoice Browser ================= */
+
 /* ================= Settings ================= */
 function vSettings(){
   const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
@@ -3975,6 +4193,8 @@ function navActivate(b){
   if(TAB==='etr' && !ETR.loaded && !ETR.loading){ render(); etrLoad(); return; }
   if(TAB==='invrep' && !INVR.loaded && !INVR.loading){ render(); invrLoad(); return; }
   if(TAB==='quotes' && !QUOT.loaded && !QUOT.loading){ render(); quotLoad(); return; }
+  if(TAB==='qlist'){ render(); if(!QLIST.loaded && !QLIST.loading) qlistLoad(); return; }
+  if(TAB==='ivlist'){ render(); if(!IVLIST.loaded && !IVLIST.loading) ivlistLoad(); return; }
   if(TAB==='emails' && !EMAIL.loaded && !EMAIL.loadingClients){ render(); emailLoadClients(); return; }
   if(TAB==='todo' && !TASK.loaded && !TASK.loading){ render(); todoLoad(); return; }
   if(TAB==='loans'){ render(); loadLoans(); return; }
