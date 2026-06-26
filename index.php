@@ -4109,7 +4109,9 @@ let BULK = {
 function bulkIvNet(iv){
   const w=BULK.wht[iv.id]||{};
   const rate=(w.r5?0.05:0)+(w.r2?0.02:0)+(w.r7?0.07:0);
-  const deduct=Math.round(iv.balance*rate);
+  const vat=(CFG.vat!=null?CFG.vat:0.16);
+  const base=iv.balance/(1+vat);              // WHT on the VAT-exclusive value, per KRA
+  const deduct=Math.round(base*rate);
   return {gross:Math.round(iv.balance), deduct, net:Math.round(iv.balance)-deduct};
 }
 
