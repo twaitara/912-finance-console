@@ -1526,6 +1526,13 @@ function vDash(){
           <div style="border-left:2px solid rgba(255,255,255,.25);padding-left:10px"><div style="font-size:9px;color:rgba(255,255,255,.6)">Profit</div><div style="font-size:13px;font-weight:800;color:#15202B;line-height:1.2">${d.profit<0?'−':''}KES ${Math.abs(Math.round(d.profit)).toLocaleString('en-KE')}</div></div>
         </div>
       </div>
+      ${d.unpaid?`<div style="background:#15202B;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94A3B8">Outstanding · ${d.unpaid.count} unpaid<div style="font-size:8.5px;font-weight:500;text-transform:none;letter-spacing:0;color:#5B6B7D;margin-top:1px">@ 1 USD = KES ${(+d.unpaid.rate).toLocaleString('en-KE',{maximumFractionDigits:2})}${d.unpaid.rateSrc==='fallback'?' (set)':''}</div></div>
+        <div style="text-align:right;display:flex;gap:14px;align-items:baseline">
+          <div><span style="font-size:13.5px;font-weight:800;color:#fff">KES ${Math.round(d.unpaid.totalKES).toLocaleString('en-KE')}</span></div>
+          <div><span style="font-size:13.5px;font-weight:800;color:#5BD68A">USD ${Math.round(d.unpaid.totalUSD).toLocaleString('en-US')}</span></div>
+        </div>
+      </div>`:''}
       ${allRows?`<div style="padding:6px 10px 4px 14px;border-bottom:1px solid var(--line)">
         <input id="dshPayQ" type="text" placeholder="Search payment…" autocomplete="off"
           style="width:100%;box-sizing:border-box;border:none;outline:none;font-size:11.5px;padding:5px 0;background:transparent;font-family:inherit;color:var(--ink)"

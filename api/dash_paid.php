@@ -3,6 +3,7 @@
 session_start();
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in']); exit; }
 require __DIR__ . '/../zoho.php';
+require __DIR__ . '/../fx.php';
 header('Content-Type: application/json');
 
 $from  = date('Y-m-01');   // first day of current month
@@ -49,6 +50,36 @@ do {
     $page++;
 } while ($more && $page <= 3);
 
+// ── Outstanding: all unpaid invoice balances, by currency ──────────────────
+$cacheDir = __DIR__ . '/../data';
+if (!is_dir($cacheDir)) @mkdir($cacheDir, 0775, true);
+$cfg = function_exists('zoho_config') ? zoho_config() : [];
+$fx  = usd_kes_rate($cacheDir, $cfg);   // ['rate'=>float, 'src'=>string, 'asOf'=>iso]
+
+$dueKES = 0.0; $dueUSD = 0.0; $unpaidCount = 0;
+$page = 1;
+do {
+    [$ud, $uc] = zoho_api('GET', 'invoices', null, [
+        'filter_by' => 'Status.Unpaid', 'per_page' => 200, 'page' => $page,
+    ]);
+    if ($uc >= 400) break;
+    foreach ($ud['invoices'] ?? [] as $iv) {
+        if (($iv['status'] ?? '') === 'void') continue;
+        $bal = (float)($iv['balance'] ?? 0);
+        if ($bal <= 0) continue;
+        $unpaidCount++;
+        $cur = strtoupper((string)($iv['currency_code'] ?? 'KES'));
+        if ($cur === 'USD') $dueUSD += $bal;
+        else                $dueKES += $bal;
+    }
+    $more = $ud['page_context']['has_more_page'] ?? false;
+    $page++;
+} while ($more && $page <= 15);
+
+$rate = (float)($fx['rate'] ?? 0);
+$dueTotalKES = $dueKES + ($rate > 0 ? $dueUSD * $rate : 0);
+$dueTotalUSD = $dueUSD + ($rate > 0 ? $dueKES / $rate : 0);
+
 // ── All payment rows, newest first ────────────────────────────────────────
 usort($payments, fn($a, $b) => strcmp($b['date'] ?? '', $a['date'] ?? ''));
 $rows = array_map(function($p) {
@@ -82,4 +113,13 @@ echo json_encode([
     'expenses' => round($expenses, 2),
     'profit'   => round($net - $expenses, 2),
     'rows'     => $rows,
+    'unpaid'   => [
+        'count'    => $unpaidCount,
+        'kes'      => round($dueKES, 2),       // KES-invoice balances
+        'usd'      => round($dueUSD, 2),       // USD-invoice balances
+        'totalKES' => round($dueTotalKES, 2),  // everything expressed in KES
+        'totalUSD' => round($dueTotalUSD, 2),  // everything expressed in USD
+        'rate'     => $rate,
+        'rateSrc'  => $fx['src'] ?? '',
+    ],
 ]);
