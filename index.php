@@ -3949,14 +3949,24 @@ async function paySubmit(){
   const selInvs=(PAY.invoices||[]).filter(iv=>PAY.sel[iv.id||iv.number]);
   if(!selInvs.length){ PAY.msg='Select at least one invoice to apply the payment to.'; PAY.msgErr=true; render(); return; }
   PAY.saving=true; PAY.msg=''; render();
-  // cash received + WHT withheld = total credit applied, so the invoice clears (WHT isn't a leftover balance)
+  // Per invoice Zoho clears the balance via amount_applied (cash) + tax_amount_withheld (WHT).
+  // Allocate WHT first, then cash, across the selected invoices up to each balance.
   const wht=payWhtTotal();
-  let remaining=amt+wht;
+  let rCash=amt, rWht=wht;
   const invoices=[];
-  selInvs.forEach(iv=>{ if(remaining<=0.005) return; const apply=Math.min(iv.balance||0, remaining); remaining-=apply; invoices.push({ invoice_id:iv.id, amount_applied:apply }); });
+  selInvs.forEach(iv=>{
+    const bal=iv.balance||0;
+    if(rCash<=0.005 && rWht<=0.005) return;
+    const applyTax=Math.min(rWht, bal);
+    const applyCash=Math.min(rCash, Math.max(0, bal-applyTax));
+    rWht-=applyTax; rCash-=applyCash;
+    const row={ invoice_id:iv.id, amount_applied:Math.round(applyCash*100)/100 };
+    if(applyTax>0) row.tax_amount_withheld=Math.round(applyTax*100)/100;
+    invoices.push(row);
+  });
   try{
     const r=await fetch('api/payment_record.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ customer_id:PAY.clientId, amount:amt, tax_amount_withheld:wht, date:PAY.date, mode:PAY.mode,
+      body:JSON.stringify({ customer_id:PAY.clientId, amount:amt, date:PAY.date, mode:PAY.mode,
         reference:PAY.ref, notes:PAY.notes, bank_charges:parseFloat(PAY.bankCharges)||0,
         deposit_account_id:PAY.depositId, invoices })});
     const j=await r.json();
@@ -4171,17 +4181,15 @@ async function bulkProcess(){
   for(const [custId,g] of Object.entries(byClient)){
     const nets=g.invoices.map(iv=>({iv,n:bulkIvNet(iv)}));
     const amount=nets.reduce((s,{n})=>s+n.net,0);       // cash actually received (net of WHT)
-    const wht=nets.reduce((s,{n})=>s+n.deduct,0);        // total WHT withheld by the client
     const payload={
       customer_id:custId,
       amount:Math.round(amount*100)/100,
-      tax_amount_withheld:Math.round(wht*100)/100,
       date:BULK.date,
       mode:BULK.mode,
       reference:BULK.ref,
       deposit_account_id:PAY.depositId||'',
-      // apply the FULL gross (cash + WHT) so each invoice clears — WHT is not left as a balance
-      invoices:nets.map(({iv,n})=>({invoice_id:iv.id,amount_applied:n.gross}))
+      // per invoice: cash applied + tax withheld → Zoho clears the invoice, WHT booked as TDS
+      invoices:nets.map(({iv,n})=>{ const r={invoice_id:iv.id,amount_applied:n.net}; if(n.deduct>0) r.tax_amount_withheld=n.deduct; return r; })
     };
     try{
       const r=await fetch('api/payment_record.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
