@@ -18,7 +18,8 @@ $params = [
     'sort_column' => in_array($sort, ['date','total','customer_name','estimate_number']) ? $sort : 'date',
     'sort_order'  => $order === 'A' ? 'A' : 'D',
 ];
-if ($status) $params['filter_by']  = 'Status.' . $status;
+$statusMap = ['draft'=>'Draft','sent'=>'Sent','accepted'=>'Accepted','declined'=>'Declined','invoiced'=>'Invoiced','expired'=>'Expired'];
+if ($status && isset($statusMap[$status])) $params['filter_by'] = 'Status.' . $statusMap[$status];
 if ($from)   $params['date_start'] = preg_replace('/[^0-9\-]/','',$from);
 if ($to)     $params['date_end']   = preg_replace('/[^0-9\-]/','',$to);
 
