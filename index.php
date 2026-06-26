@@ -3021,7 +3021,9 @@ function vIVList(){
 /* ================= end Invoice Browser ================= */
 
 /* ================= Statement Builder (consolidate unpaid → draft invoice) ================= */
-let SB = { loaded:false, loading:false, invoices:[], sel:{}, q:'', cur:'', billTo:'', pushing:false, msg:'', msgErr:false, result:null };
+let SB = { loaded:false, loading:false, invoices:[], sel:{}, q:'', cur:'', billTo:'',
+           to_email:'', toEdited:false, subject:'', intro:'', introEdited:false, book:[], newEmail:'',
+           saving:false, msg:'', msgErr:false, result:null };
 
 function sbLoad(){
   if(SB.loading) return;
@@ -3050,10 +3052,50 @@ function sbClients(){
 function sbToggle(id){ SB.sel[id]=!SB.sel[id]; sbSyncBillTo(); sbRefreshUI(); }
 function sbSelAll(on){ sbFiltered().forEach(iv=>{ SB.sel[iv.id]=on; }); sbSyncBillTo(); sbRefreshUI(); }
 function sbSyncBillTo(){
-  // default bill-to to the first selected invoice's company if not yet chosen / no longer valid
+  // default the statement client to the first selected invoice's company if not yet chosen / no longer valid
   const clients=sbClients();
-  if(!SB.billTo || !clients.some(c=>c.id===SB.billTo)){ SB.billTo = clients.length? clients[0].id : ''; }
+  if(!SB.billTo || !clients.some(c=>c.id===SB.billTo)){ const id = clients.length? clients[0].id : ''; if(id!==SB.billTo) sbPickBill(id, true); }
 }
+function sbBillName(){ return (sbClients().find(c=>c.id===SB.billTo)||{}).name||''; }
+function sbDefaults(){
+  const name=sbBillName();
+  if(!SB.subject) SB.subject = (CFG.stmtSubject||'Pending invoices and Statement');
+  if(!SB.introEdited) SB.intro = 'Dear '+(name||'Client')+',\n\nPlease find the unpaid invoices attached to this email, together with your statement of account below, for payment.';
+}
+function sbPickBill(id, silent){
+  SB.billTo=id;
+  SB.book=[]; if(!SB.toEdited) SB.to_email='';
+  sbDefaults();
+  if(id){
+    fetch('api/email_book.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ customer_id:id })})
+      .then(r=>r.json()).then(j=>{
+        SB.book=(j.ok && j.emails)?j.emails:[];
+        if(!SB.toEdited && !SB.to_email && SB.book.length) SB.to_email=SB.book[0];
+        sbRefreshUI();
+      }).catch(()=>{});
+  }
+  if(!silent) sbRefreshUI();
+}
+function sbAddEmail(){
+  const em=(SB.newEmail||'').trim()||(SB.to_email||'').trim();
+  if(!em){ SB.msg='Type an email to save first.'; SB.msgErr=true; render(); return; }
+  if(!SB.billTo){ SB.msg='Pick a client first.'; SB.msgErr=true; render(); return; }
+  fetch('api/email_book.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ customer_id:SB.billTo, add:em })})
+    .then(r=>r.json()).then(j=>{
+      if(j.ok){ SB.book=j.emails||[]; SB.newEmail=''; if(!SB.to_email){ SB.to_email=em; SB.toEdited=true; } SB.msg=''; }
+      else { SB.msg=j.error||'Could not save email.'; SB.msgErr=true; }
+      sbRefreshUI();
+    }).catch(e=>{ SB.msg='Error: '+e; SB.msgErr=true; render(); });
+}
+function sbRemoveEmail(em){
+  fetch('api/email_book.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ customer_id:SB.billTo, remove:em })})
+    .then(r=>r.json()).then(j=>{ if(j.ok){ SB.book=j.emails||[]; sbRefreshUI(); } }).catch(()=>{});
+}
+function sbUseEmail(em){ SB.to_email=em; SB.toEdited=true; sbRefreshUI(); }
+function sbField(k,v){ SB[k]=v; if(k==='intro') SB.introEdited=true; if(k==='to_email') SB.toEdited=true; }
 function sbSearch(v){ SB.q=v; sbRefreshUI(); }
 function sbSetCur(c){ SB.cur=c; sbRefreshUI(); }
 function sbRefreshUI(){
@@ -3106,9 +3148,11 @@ function sbTableHtml(){
   </table></div>`;
 }
 
-/* Branded consolidated-statement preview — mirrors the Emails-tab statement look */
-function sbPreviewHtml(sel, billName){
+/* Branded consolidated-statement HTML — mirrors the Emails-tab statement look. Used for both the
+   on-screen preview and the Zoho Mail draft body. */
+function sbPreviewHtml(sel, billName, intro){
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const introHtml = esc(intro||('Consolidated statement of outstanding invoices.')).replace(/\n/g,'<br>');
   const byCur={};
   sel.forEach(iv=>{ const c=String(iv.currency||'KES').toUpperCase(); (byCur[c]=byCur[c]||[]).push(iv); });
   const curKeys=Object.keys(byCur).sort();
@@ -3142,9 +3186,10 @@ function sbPreviewHtml(sel, billName){
         </td></tr></table>
     </div>
     <div style="border:1px solid #E6EAF0;border-top:0;border-radius:0 0 10px 10px;padding:20px">
-      <p style="margin:0 0 14px;line-height:1.55">Consolidated statement of outstanding invoices${curKeys.length>1?` across ${curKeys.length} currencies`:''}.</p>
+      <p style="margin:0 0 16px;line-height:1.55">${introHtml}</p>
       ${block}
-      <p style="margin:0;color:#64748B;font-size:12px;line-height:1.5">For any queries on this statement, please reach out to us.</p>
+      <p style="margin:0;color:#64748B;font-size:12px;line-height:1.5">For any queries on this statement, please reply to this email.</p>
+      <p style="margin:14px 0 0;padding-top:12px;border-top:1px solid #EEF1F5;color:#AEB9C7;font-size:10px;line-height:1.5;font-style:italic">${esc(CFG.stmtFooter||"Prepared and reconciled by the Waitara Holdings Group of Companies Console — Nine One Two Holdings' intelligent finance engine, delivering precise, automated account statements in real time.")}</p>
     </div>
   </div>`;
 }
@@ -3152,41 +3197,50 @@ function sbPreviewHtml(sel, billName){
 function sbActionHtml(){
   const sel=sbSelected();
   if(!sel.length) return `<div class="muted" style="font-size:12px;padding:10px 2px">Tick the unpaid invoices you want to consolidate — a statement preview will appear here.</div>`;
-  const byCur={};
-  sel.forEach(iv=>{ const c=String(iv.currency||'KES').toUpperCase(); byCur[c]=byCur[c]||{n:0,t:0}; byCur[c].n++; byCur[c].t+=(+iv.balance||0); });
-  const curKeys=Object.keys(byCur).sort();
-  const multi = curKeys.length>1;
+  sbDefaults();
   const clients=sbClients();
-  const billName=(clients.find(c=>c.id===SB.billTo)||{}).name||'';
+  const billName=sbBillName();
   const opts=clients.map(c=>`<option value="${c.id}" ${c.id===SB.billTo?'selected':''}>${c.name}</option>`).join('');
   return `<div class="card" style="margin-top:10px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
       <b style="font-size:12.5px">Statement preview — ${sel.length} invoice${sel.length===1?'':'s'}</b>
       <button class="btn sec" style="width:auto;padding:5px 12px;font-size:11px" onclick="sbDownloadPdf()">⤓ Download PDF</button>
     </div>
-    <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px">${sbPreviewHtml(sel, billName)}</div>
-    ${multi?`<div class="warn" style="margin-bottom:10px">Mixed currencies selected — ${curKeys.length} separate draft invoices will be created (one per currency), all billed to the chosen client.</div>`:''}
-    <label>Bill the consolidated draft to</label>
-    <select onchange="SB.billTo=this.value;sbRefreshUI()">${opts}</select>
-    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button class="btn" style="flex:1;min-width:200px" onclick="sbPush()" ${SB.pushing||!SB.billTo?'disabled':''}>
-        ${SB.pushing?'Pushing to Zoho…':`📑 Push ${multi?curKeys.length+' drafts':'draft'} to Zoho Drafts`}</button>
+    <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px">${sbPreviewHtml(sel, billName, SB.intro)}</div>
+
+    <label>Statement for</label>
+    <select onchange="sbPickBill(this.value)">${opts}</select>
+
+    <label style="margin-top:12px">Send to</label>
+    <div style="display:flex;gap:8px">
+      <input type="email" list="sbBookList" style="flex:1" value="${qesc(SB.to_email)}" oninput="sbField('to_email',this.value)" placeholder="client@email.com">
+      <button class="btn sec" style="flex:0 0 auto;width:auto;padding:10px 14px" onclick="sbAddEmail()">＋ Save</button>
     </div>
-    <div class="muted" style="font-size:11px;margin-top:8px">Creates draft invoice(s) in Zoho Books — nothing is sent. Review &amp; finalise from Zoho. Each ticked invoice becomes one line item (its outstanding balance).</div>
+    <datalist id="sbBookList">${(SB.book||[]).map(e=>`<option value="${qesc(e)}">`).join('')}</datalist>
+    ${(SB.book||[]).length?`<div style="margin:-2px 0 12px;display:flex;flex-wrap:wrap;gap:6px">
+      ${SB.book.map(e=>`<span style="display:inline-flex;align-items:center;gap:6px;background:#F1F4F8;border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:11.5px">
+        <span style="cursor:pointer;color:var(--blue)" onclick="sbUseEmail('${e.replace(/'/g,"")}')">${e}</span>
+        <span style="cursor:pointer;color:var(--bad);font-weight:700" title="Remove" onclick="sbRemoveEmail('${e.replace(/'/g,"")}')">×</span></span>`).join('')}
+    </div>`:`<div class="muted" style="margin:-4px 0 12px;font-size:11px">Tip: type an email and tap “Save” to remember it for this client.</div>`}
+
+    <label>Subject</label>
+    <input type="text" value="${qesc(SB.subject)}" oninput="sbField('subject',this.value)">
+
+    <label>Message</label>
+    <textarea rows="4" oninput="sbField('intro',this.value)" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:12px">${SB.intro||''}</textarea>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" style="flex:1;min-width:200px" onclick="sbSaveDraft()" ${SB.saving?'disabled':''}>${SB.saving?'Saving…':'Save to Zoho Drafts'}</button>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px">Creates a draft in your Zoho Mail — it does not send. Review and send it from Zoho Mail. The full consolidated statement (all selected invoices) is in the email body.</div>
     ${SB.msg?`<div class="${SB.msgErr?'warn':'ok'}" style="margin-top:10px">${SB.msg}</div>`:''}
-    ${SB.result&&SB.result.drafts&&SB.result.drafts.length?`<div class="ok" style="margin-top:10px">
-      ${SB.result.drafts.map(d=>`✓ Draft <b>${d.number||'(created)'}</b> — ${d.count} line${d.count===1?'':'s'}, ${d.currency} ${fmtn(d.total)}`).join('<br>')}
-      <div style="margin-top:4px;font-size:11px">Open Zoho Books → Invoices → Drafts to review and send.</div>
-    </div>`:''}
-    ${SB.result&&SB.result.errors&&SB.result.errors.length?`<div class="warn" style="margin-top:8px">${SB.result.errors.map(e=>`${e.currency}: ${e.error}`).join('<br>')}</div>`:''}
   </div>`;
 }
 
 function sbDownloadPdf(){
   const sel=sbSelected(); if(!sel.length) return;
-  const clients=sbClients();
-  const billName=(clients.find(c=>c.id===SB.billTo)||{}).name||'';
-  const inner=sbPreviewHtml(sel, billName);
+  const billName=sbBillName();
+  const inner=sbPreviewHtml(sel, billName, SB.intro);
   const w=window.open('', '_blank');
   if(!w){ alert('Please allow pop-ups for this site to download the PDF.'); return; }
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Consolidated statement - '+billName.replace(/[<>&]/g,'')+'</title>'
@@ -3197,19 +3251,20 @@ function sbDownloadPdf(){
   w.document.close();
 }
 
-function sbPush(){
+function sbSaveDraft(){
   const sel=sbSelected();
-  if(!sel.length || SB.pushing) return;
-  if(!SB.billTo){ SB.msg='Pick a client to bill the draft to.'; SB.msgErr=true; render(); return; }
-  SB.pushing=true; SB.msg=''; SB.result=null; render();
-  const payload={ customer_id:SB.billTo, invoices:sel.map(iv=>({number:iv.number,customer_name:iv.customer_name,date:iv.date,balance:iv.balance,currency:iv.currency})) };
-  fetch('api/statement_draft.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+  if(!sel.length || SB.saving) return;
+  if(!(SB.to_email||'').trim()){ SB.msg='Add a recipient email first.'; SB.msgErr=true; render(); return; }
+  SB.saving=true; SB.msg=''; render();
+  const html=sbPreviewHtml(sel, sbBillName(), SB.intro);
+  fetch('api/email_draft.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ to:SB.to_email, subject:SB.subject, html:html })})
     .then(r=>r.json()).then(j=>{
-      SB.pushing=false; SB.result=j;
-      if(j.ok){ SB.msg=`Done — ${j.drafts.length} draft invoice${j.drafts.length===1?'':'s'} created in Zoho.`; SB.msgErr=false; SB.sel={}; }
-      else { SB.msg=j.error||'Failed to create draft.'; SB.msgErr=true; }
+      SB.saving=false;
+      if(j.ok){ SB.msg='Draft saved to Zoho Mail'+(j.from?(' ('+j.from+')'):'')+'. Open Zoho Mail → Drafts to review and send.'; SB.msgErr=false; }
+      else { SB.msg='Could not save draft: '+(j.error||'failed'); SB.msgErr=true; }
       render();
-    }).catch(e=>{ SB.pushing=false; SB.msg='Request failed: '+e; SB.msgErr=true; render(); });
+    }).catch(e=>{ SB.saving=false; SB.msg='Request failed: '+e; SB.msgErr=true; render(); });
 }
 
 function vStmtBuild(){
@@ -3217,7 +3272,7 @@ function vStmtBuild(){
   return `<div class="em-compact">
   <h2>Statement Builder</h2>
   <div class="card" style="margin-bottom:10px">
-    <div class="muted" style="font-size:12px;line-height:1.5">Tick any unpaid invoices — across any client or currency — preview the statement, then push a <b>consolidated draft invoice</b> to Zoho. A client with several companies? Pick the invoices, then choose who to bill.</div>
+    <div class="muted" style="font-size:12px;line-height:1.5">Tick any unpaid invoices — across any client or currency — preview the statement, then save a <b>consolidated statement draft to your Zoho Mail</b> (nothing is sent). A client with several companies? Pick the invoices, choose who it's addressed to, and send one statement.</div>
   </div>
   ${SB.msg && !SB.result ? `<div class="${SB.msgErr?'warn':'ok'}">${SB.msg}</div>`:''}
   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
