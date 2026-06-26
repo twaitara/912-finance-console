@@ -780,6 +780,7 @@ if (empty($_SESSION['auth'])):
         <button data-tab="quotes">📋 Quotes</button>
         <button data-tab="payments">💳 Record Payment</button>
         <button data-tab="bulkpay">⚡ Bulk Mark Paid</button>
+        <button data-tab="stmtbuild">📑 Statement Builder</button>
       </div>
     </div>
 
@@ -859,6 +860,7 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-tab="quotes">📋 Quotes</button>
     <button class="mob-item mob-sub" data-tab="payments">💳 Record Payment</button>
     <button class="mob-item mob-sub" data-tab="bulkpay">⚡ Bulk Mark Paid</button>
+    <button class="mob-item mob-sub" data-tab="stmtbuild">📑 Statement Builder</button>
 
     <div class="mob-sect">🗂️ Quotes / Invoices</div>
     <button class="mob-item mob-sub" data-tab="qlist">📋 Quotes Browser</button>
@@ -1129,6 +1131,7 @@ function tabRefresh(){
     case 'quotes':    QUOT.loaded=false;QUOT.loading=false;QUOT.data=null;render();quotLoad();break;
     case 'qlist':     QLIST.loaded=false;QLIST.loading=false;QLIST.allItems=[];QLIST.page=1;render();qlistLoad();break;
     case 'ivlist':    IVLIST.loaded=false;IVLIST.loading=false;IVLIST.allItems=[];IVLIST.page=1;render();ivlistLoad();break;
+    case 'stmtbuild': SB.loaded=false;SB.loading=false;SB.invoices=[];SB.result=null;SB.msg='';render();sbLoad();break;
     case 'emails':    EMAIL.loaded=false;EMAIL.loadingClients=false;EMAIL.clients=[];render();emailLoadClients();break;
     case 'todo':      TASK.loaded=false;TASK.loading=false;TASK.tasks=[];render();todoLoad();break;
     case 'loans':     LOANS=[];render();loadLoans();break;
@@ -1158,7 +1161,7 @@ function render(){
   const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
   const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
-  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser'};
+  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder'};
   document.title = (ME.user||'Console') + ' · ' + (_tabNames[TAB]||TAB) + ' · 912';
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -1173,6 +1176,7 @@ function render(){
   if(TAB==='ivlist') p.innerHTML = vIVList();
   if(TAB==='payments'){ p.innerHTML = vPayments(); if(!PAY.loaded) payLoadClients(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='bulkpay'){ p.innerHTML = vBulkPay(); if(!BULK.loaded) bulkLoad(); if(!PAY.accsLoaded) payLoadAccounts(); }
+  if(TAB==='stmtbuild'){ p.innerHTML = vStmtBuild(); if(!SB.loaded && !SB.loading) sbLoad(); }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -3016,6 +3020,143 @@ function vIVList(){
 }
 /* ================= end Invoice Browser ================= */
 
+/* ================= Statement Builder (consolidate unpaid → draft invoice) ================= */
+let SB = { loaded:false, loading:false, invoices:[], sel:{}, q:'', billTo:'', pushing:false, msg:'', msgErr:false, result:null };
+
+function sbLoad(){
+  if(SB.loading) return;
+  SB.loading=true; SB.msg=''; render();
+  fetch('api/unpaid_invoices.php',{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{
+      SB.loading=false; SB.loaded=true;
+      if(j.ok){ SB.invoices=(j.invoices||[]).filter(iv=>(+iv.balance||0)>0); }
+      else { SB.msg=j.error||'Failed to load unpaid invoices'; SB.msgErr=true; }
+      render();
+    }).catch(e=>{ SB.loading=false; SB.loaded=true; SB.msg='Request failed: '+e; SB.msgErr=true; render(); });
+}
+function sbClients(){
+  // unique bill-to options = the companies that hold the selected invoices, else all companies in the list
+  const selIds=Object.keys(SB.sel).filter(k=>SB.sel[k]);
+  const src = selIds.length ? SB.invoices.filter(iv=>SB.sel[iv.id]) : SB.invoices;
+  const seen={}, out=[];
+  src.forEach(iv=>{ if(iv.customer_id && !seen[iv.customer_id]){ seen[iv.customer_id]=1; out.push({id:iv.customer_id,name:iv.customer_name||'(no name)'}); } });
+  out.sort((a,b)=>a.name.localeCompare(b.name));
+  return out;
+}
+function sbToggle(id){ SB.sel[id]=!SB.sel[id]; sbSyncBillTo(); sbRefreshUI(); }
+function sbSelAll(on){ sbFiltered().forEach(iv=>{ SB.sel[iv.id]=on; }); sbSyncBillTo(); sbRefreshUI(); }
+function sbSyncBillTo(){
+  // default bill-to to the first selected invoice's company if not yet chosen / no longer valid
+  const clients=sbClients();
+  if(!SB.billTo || !clients.some(c=>c.id===SB.billTo)){ SB.billTo = clients.length? clients[0].id : ''; }
+}
+function sbSearch(v){ SB.q=v; sbRefreshUI(); }
+function sbRefreshUI(){
+  const t=document.getElementById('sbTableBox'); if(t) t.innerHTML=sbTableHtml();
+  const s=document.getElementById('sbActionBox'); if(s) s.innerHTML=sbActionHtml();
+}
+function sbFiltered(){
+  const q=(SB.q||'').trim().toLowerCase();
+  let list=SB.invoices.slice();
+  if(q) list=list.filter(iv=>((iv.number||'')+' '+(iv.customer_name||'')).toLowerCase().includes(q));
+  return list.sort((a,b)=>(a.customer_name||'').localeCompare(b.customer_name||'') || strcmpDesc(a.date,b.date));
+}
+function strcmpDesc(a,b){ return String(b||'').localeCompare(String(a||'')); }
+function sbSelected(){ return SB.invoices.filter(iv=>SB.sel[iv.id]); }
+
+function sbTableHtml(){
+  const list=sbFiltered();
+  if(!list.length) return `<div class="muted" style="padding:16px;text-align:center">${SB.q?`No unpaid invoice matches “${qesc(SB.q)}”.`:'No unpaid invoices found.'}</div>`;
+  const allSel = list.length && list.every(iv=>SB.sel[iv.id]);
+  const rows=list.map(iv=>{
+    const on=!!SB.sel[iv.id];
+    const usd=String(iv.currency||'KES').toUpperCase()!=='KES';
+    return `<tr${on?' style="background:#FFF8F1"':''}>
+      <td class="l" style="width:30px"><input type="checkbox" ${on?'checked':''} onclick="sbToggle('${iv.id}')"></td>
+      <td class="l" style="font-weight:600">${(iv.customer_name||'(no name)')}</td>
+      <td class="l" style="color:var(--orange);font-weight:600;white-space:nowrap">${iv.number||''}</td>
+      <td style="color:var(--mute);white-space:nowrap">${iv.date||''}</td>
+      <td>${usd?`<span class="pill" style="background:#EEF2FE;color:var(--blue)">${iv.currency}</span>`:`<span class="muted">KES</span>`}</td>
+      <td style="text-align:right;font-weight:700;white-space:nowrap">${iv.currency||'KES'} ${fmtn(iv.balance)}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="rptwrap"><table class="rpt" style="font-size:11.5px">
+    <thead><tr>
+      <th class="l"><input type="checkbox" ${allSel?'checked':''} onclick="sbSelAll(this.checked)" title="Select all shown"></th>
+      <th class="l">Client</th><th class="l">Invoice #</th><th>Date</th><th>Cur</th><th style="text-align:right">Balance</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function sbActionHtml(){
+  const sel=sbSelected();
+  if(!sel.length) return `<div class="muted" style="font-size:12px;padding:6px 2px">Tick the unpaid invoices you want to consolidate.</div>`;
+  // group selected by currency
+  const byCur={};
+  sel.forEach(iv=>{ const c=String(iv.currency||'KES').toUpperCase(); byCur[c]=byCur[c]||{n:0,t:0}; byCur[c].n++; byCur[c].t+=(+iv.balance||0); });
+  const curKeys=Object.keys(byCur).sort();
+  const chips=curKeys.map(c=>`<span class="pill" style="background:#F1F4F8;color:var(--ink);font-size:11.5px">${c}: ${byCur[c].n} · ${c} ${fmtn(byCur[c].t)}</span>`).join(' ');
+  const clients=sbClients();
+  const opts=clients.map(c=>`<option value="${c.id}" ${c.id===SB.billTo?'selected':''}>${c.name}</option>`).join('');
+  const multi = curKeys.length>1;
+  return `<div class="card" style="margin-top:4px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <b style="font-size:12.5px">${sel.length} invoice${sel.length===1?'':'s'} selected</b>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
+    </div>
+    ${multi?`<div class="warn" style="margin-bottom:10px">Mixed currencies selected — ${curKeys.length} separate draft invoices will be created (one per currency), all billed to the chosen client.</div>`:''}
+    <label>Bill the consolidated draft to</label>
+    <select onchange="SB.billTo=this.value">${opts}</select>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn" style="flex:1;min-width:200px" onclick="sbPush()" ${SB.pushing||!SB.billTo?'disabled':''}>
+        ${SB.pushing?'Pushing to Zoho…':`📑 Push ${multi?curKeys.length+' drafts':'draft'} to Zoho Drafts`}</button>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px">Creates draft invoice(s) in Zoho Books — nothing is sent. Review &amp; finalise from Zoho. Each ticked invoice becomes one line item (its outstanding balance).</div>
+    ${SB.msg?`<div class="${SB.msgErr?'warn':'ok'}" style="margin-top:10px">${SB.msg}</div>`:''}
+    ${SB.result&&SB.result.drafts&&SB.result.drafts.length?`<div class="ok" style="margin-top:10px">
+      ${SB.result.drafts.map(d=>`✓ Draft <b>${d.number||'(created)'}</b> — ${d.count} line${d.count===1?'':'s'}, ${d.currency} ${fmtn(d.total)}`).join('<br>')}
+      <div style="margin-top:4px;font-size:11px">Open Zoho Books → Invoices → Drafts to review and send.</div>
+    </div>`:''}
+    ${SB.result&&SB.result.errors&&SB.result.errors.length?`<div class="warn" style="margin-top:8px">${SB.result.errors.map(e=>`${e.currency}: ${e.error}`).join('<br>')}</div>`:''}
+  </div>`;
+}
+
+function sbPush(){
+  const sel=sbSelected();
+  if(!sel.length || SB.pushing) return;
+  if(!SB.billTo){ SB.msg='Pick a client to bill the draft to.'; SB.msgErr=true; render(); return; }
+  SB.pushing=true; SB.msg=''; SB.result=null; render();
+  const payload={ customer_id:SB.billTo, invoices:sel.map(iv=>({number:iv.number,customer_name:iv.customer_name,date:iv.date,balance:iv.balance,currency:iv.currency})) };
+  fetch('api/statement_draft.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(r=>r.json()).then(j=>{
+      SB.pushing=false; SB.result=j;
+      if(j.ok){ SB.msg=`Done — ${j.drafts.length} draft invoice${j.drafts.length===1?'':'s'} created in Zoho.`; SB.msgErr=false; SB.sel={}; }
+      else { SB.msg=j.error||'Failed to create draft.'; SB.msgErr=true; }
+      render();
+    }).catch(e=>{ SB.pushing=false; SB.msg='Request failed: '+e; SB.msgErr=true; render(); });
+}
+
+function vStmtBuild(){
+  if(SB.loading && !SB.loaded) return `<h2>Statement Builder</h2><div class="card muted">Loading unpaid invoices from Zoho…</div>`;
+  const tot=SB.invoices.reduce((s,iv)=>s+(+iv.balance||0),0);
+  return `<div class="em-compact">
+  <h2>Statement Builder</h2>
+  <div class="card" style="margin-bottom:10px">
+    <div class="muted" style="font-size:12px;line-height:1.5">Tick any unpaid invoices — across any client or currency — and push a <b>consolidated draft invoice</b> to Zoho. A client with several companies? Pick the invoices, then choose who to bill.</div>
+  </div>
+  ${SB.msg && !SB.result ? `<div class="${SB.msgErr?'warn':'ok'}">${SB.msg}</div>`:''}
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <label style="margin:0">Unpaid invoices (${SB.invoices.length})</label>
+    <button class="btn sec" style="width:auto;padding:5px 12px;font-size:11px" onclick="sbLoad()">↺ Refresh</button>
+  </div>
+  <input id="sbSearch" type="text" autocomplete="off" placeholder="🔍 Search by invoice number or client…" value="${qesc(SB.q)}" oninput="sbSearch(this.value)">
+  <div id="sbTableBox">${sbTableHtml()}</div>
+  <div id="sbActionBox">${sbActionHtml()}</div>
+  </div>`;
+}
+/* ================= end Statement Builder ================= */
+
 /* ================= Settings ================= */
 function vSettings(){
   const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
@@ -4299,6 +4440,7 @@ function navActivate(b){
   if(TAB==='quotes' && !QUOT.loaded && !QUOT.loading){ render(); quotLoad(); return; }
   if(TAB==='qlist'){ render(); if(!QLIST.loaded && !QLIST.loading) qlistLoad(); return; }
   if(TAB==='ivlist'){ render(); if(!IVLIST.loaded && !IVLIST.loading) ivlistLoad(); return; }
+  if(TAB==='stmtbuild'){ render(); if(!SB.loaded && !SB.loading) sbLoad(); return; }
   if(TAB==='emails' && !EMAIL.loaded && !EMAIL.loadingClients){ render(); emailLoadClients(); return; }
   if(TAB==='todo' && !TASK.loaded && !TASK.loading){ render(); todoLoad(); return; }
   if(TAB==='loans'){ render(); loadLoans(); return; }
