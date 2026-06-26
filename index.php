@@ -1317,6 +1317,12 @@ function vDashTeamQuotes(){
 /* ---- Dashboard quick-expense widget ---- */
 let DEXP = { amount:'', desc:'', date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), saving:false, msg:'', err:false };
 function dexpField(k,v){ DEXP[k]=v; }
+function dexpPickAcc(v){
+  const acc=EXP.accounts; if(!acc) return;
+  const q=String(v||'').trim().toLowerCase();
+  const m=(acc.expense||[]).find(a=>(a.name||'').toLowerCase()===q);
+  EXP.acc = m ? m.id : '';   // set when an exact account name is chosen/typed; stays cleared until matched
+}
 async function dexpSave(){
   const amt=parseFloat(DEXP.amount)||0;
   if(amt<=0){ DEXP.msg='Enter an amount.'; DEXP.err=true; render(); return; }
@@ -1333,7 +1339,6 @@ async function dexpSave(){
 }
 function vDashQuickExpense(){
   const acc=EXP.accounts;
-  const expOpts=acc?['<option value="">— expense account —</option>'].concat((acc.expense||[]).map(a=>`<option value="${a.id}" ${a.id===EXP.acc?'selected':''}>${(a.name||'').replace(/</g,'&lt;')}</option>`)).join(''):'';
   const paidOpts=acc?['<option value="">— paid through (optional) —</option>'].concat((acc.paid||[]).map(a=>`<option value="${a.id}" ${a.id===EXP.paid?'selected':''}>${(a.name||'').replace(/</g,'&lt;')}</option>`)).join(''):'';
   return `<div class="card" style="padding:14px 16px;margin-bottom:0">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
@@ -1345,7 +1350,8 @@ function vDashQuickExpense(){
     <input type="number" inputmode="decimal" placeholder="Amount (KES)" value="${DEXP.amount}" oninput="dexpField('amount',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="text" placeholder="What for? (description)" value="${(DEXP.desc||'').replace(/"/g,'&quot;')}" oninput="dexpField('desc',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="date" value="${DEXP.date}" onchange="dexpField('date',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
-    <select onchange="EXP.acc=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">${expOpts}</select>
+    <input type="text" list="dexpAccList" autocomplete="off" placeholder="🔍 Search expense account…" value="${(((acc.expense||[]).find(a=>a.id===EXP.acc)||{}).name||'').replace(/"/g,'&quot;')}" oninput="dexpPickAcc(this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid ${EXP.acc?'var(--line)':'#F7C99A'};border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
+    <datalist id="dexpAccList">${(acc.expense||[]).map(a=>`<option value="${(a.name||'').replace(/"/g,'&quot;')}"></option>`).join('')}</datalist>
     <select onchange="EXP.paid=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:10px">${paidOpts}</select>
     <button class="btn" style="width:100%" onclick="dexpSave()" ${DEXP.saving?'disabled':''}>${DEXP.saving?'Saving…':'＋ Log expense'}</button>
     ${DEXP.msg?`<div class="${DEXP.err?'warn':'ok'}" style="margin-top:8px;font-size:11.5px">${DEXP.msg}</div>`:''}`}
