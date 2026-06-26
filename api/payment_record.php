@@ -15,6 +15,7 @@ $mode          = trim((string)($body['mode']               ?? 'bankremittance'))
 $reference     = trim((string)($body['reference']          ?? ''));
 $notes         = trim((string)($body['notes']              ?? ''));
 $bankCharges   = (float)($body['bank_charges']             ?? 0);
+$whtAmount     = (float)($body['tax_amount_withheld']      ?? 0);   // KRA WHT withheld by the client
 $depositAccId  = trim((string)($body['deposit_account_id'] ?? ''));
 $invoices      = $body['invoices']                         ?? [];
 
@@ -22,15 +23,17 @@ if (!$customerId) { echo json_encode(['ok'=>false,'error'=>'No client selected']
 if ($amount <= 0) { echo json_encode(['ok'=>false,'error'=>'Amount must be greater than zero']); exit; }
 if (!$invoices)   { echo json_encode(['ok'=>false,'error'=>'No invoices selected']); exit; }
 
-// Clamp each invoice's amount_applied so total doesn't exceed payment amount
+// The cash received plus any WHT withheld is the total credit available to settle invoices.
+// Applying the full gross (cash + WHT) clears the invoice — the WHT is not a leftover balance.
+$creditCap    = $amount + max(0, $whtAmount);
 $totalApplied = 0;
 $zohoInvoices = [];
 foreach ($invoices as $iv) {
     $ivId  = trim((string)($iv['invoice_id'] ?? ''));
     $apply = (float)($iv['amount_applied'] ?? 0);
     if (!$ivId || $apply <= 0) continue;
-    $remaining = $amount - $totalApplied;
-    if ($remaining <= 0) break;
+    $remaining = $creditCap - $totalApplied;
+    if ($remaining <= 0.005) break;
     $apply = min($apply, $remaining);
     $totalApplied += $apply;
     $zohoInvoices[] = ['invoice_id' => $ivId, 'amount_applied' => round($apply, 2)];
@@ -48,6 +51,7 @@ $payload = [
     'bank_charges'     => round($bankCharges, 2),
     'invoices'         => $zohoInvoices,
 ];
+if ($whtAmount > 0)  $payload['tax_amount_withheld'] = round($whtAmount, 2);
 if ($depositAccId) $payload['account_id'] = $depositAccId;
 
 [$data, $code] = zoho_api('POST', 'customerpayments', $payload);
