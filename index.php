@@ -783,6 +783,7 @@ if (empty($_SESSION['auth'])):
         <button data-tab="bulkpay">⚡ Bulk Mark Paid</button>
         <button data-tab="stmtbuild">📑 Statement Builder</button>
         <button data-tab="latepay">⏰ Late Payers</button>
+        <button data-tab="bulkexp">🧾 Log Expenses</button>
       </div>
     </div>
 
@@ -864,6 +865,7 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-tab="bulkpay">⚡ Bulk Mark Paid</button>
     <button class="mob-item mob-sub" data-tab="stmtbuild">📑 Statement Builder</button>
     <button class="mob-item mob-sub" data-tab="latepay">⏰ Late Payers</button>
+    <button class="mob-item mob-sub" data-tab="bulkexp">🧾 Log Expenses</button>
 
     <div class="mob-sect">🗂️ Quotes / Invoices</div>
     <button class="mob-item mob-sub" data-tab="qlist">📋 Quotes Browser</button>
@@ -1138,6 +1140,7 @@ function tabRefresh(){
     case 'ivlist':    IVLIST.loaded=false;IVLIST.loading=false;IVLIST.allItems=[];IVLIST.page=1;render();ivlistLoad();break;
     case 'stmtbuild': SB.loaded=false;SB.loading=false;SB.invoices=[];SB.result=null;SB.msg='';render();sbLoad();break;
     case 'latepay':   LATE.loaded=false;LATE.loading=false;LATE.data=null;render();lateLoad(true);break;
+    case 'bulkexp':   render();expLoadAccounts();break;
     case 'emails':    EMAIL.loaded=false;EMAIL.loadingClients=false;EMAIL.clients=[];render();emailLoadClients();break;
     case 'todo':      TASK.loaded=false;TASK.loading=false;TASK.tasks=[];render();todoLoad();break;
     case 'loans':     LOANS=[];render();loadLoans();break;
@@ -1167,7 +1170,7 @@ function render(){
   const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
   const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
-  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers'};
+  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers',bulkexp:'Log Expenses'};
   document.title = (ME.user||'Console') + ' · ' + (_tabNames[TAB]||TAB) + ' · 912';
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -1184,6 +1187,7 @@ function render(){
   if(TAB==='bulkpay'){ p.innerHTML = vBulkPay(); if(!BULK.loaded) bulkLoad(); if(!PAY.accsLoaded) payLoadAccounts(); }
   if(TAB==='stmtbuild'){ p.innerHTML = vStmtBuild(); if(!SB.loaded && !SB.loading) sbLoad(); }
   if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
+  if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -2288,8 +2292,8 @@ function expLoadAccounts(){
     EXP.loadingAcc=false;
     if(j.ok){ EXP.accounts={expense:j.expense||[],paid:j.paid||[]}; const d=j.defaults||{}; if(!EXP.acc&&d.account_id)EXP.acc=d.account_id; if(!EXP.paid&&d.paid_through_account_id)EXP.paid=d.paid_through_account_id; }
     else { EXP.msg='Accounts: '+(j.error||'failed'); EXP.err=true; }
-    if(TAB==='report'||TAB==='dash') render();
-  }).catch(e=>{ EXP.loadingAcc=false; EXP.msg='Accounts: '+e; EXP.err=true; if(TAB==='report'||TAB==='dash') render(); });
+    if(TAB==='report'||TAB==='dash'||TAB==='bulkexp') render();
+  }).catch(e=>{ EXP.loadingAcc=false; EXP.msg='Accounts: '+e; EXP.err=true; if(TAB==='report'||TAB==='dash'||TAB==='bulkexp') render(); });
 }
 async function rowPushCost(num){
   const el=document.getElementById('rc_'+num); const st=document.getElementById('rcS_'+num);
@@ -3455,6 +3459,111 @@ function vLatePay(){
     <div class="muted" style="font-size:10.5px;margin-top:10px">Generated ${new Date(d.generatedAt).toLocaleString()} · only clients with ≥2 invoices and ≥2 late payments are ranked. USD overdue converted at KES ${(+d.rate).toLocaleString('en-KE',{maximumFractionDigits:2})}.</div>`;
 }
 /* ================= end Late Payers ================= */
+
+/* ================= Bulk Expenses (log many at once) ================= */
+let BEXP = { date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), paid:'',
+             rows:[{amount:'',desc:'',acc:'',accQ:''},{amount:'',desc:'',acc:'',accQ:''},{amount:'',desc:'',acc:'',accQ:''}],
+             running:false, msg:'', err:false };
+function bexpAddRow(){ BEXP.rows.push({amount:'',desc:'',acc:'',accQ:''}); render(); }
+function bexpDelRow(i){ BEXP.rows.splice(i,1); if(!BEXP.rows.length) BEXP.rows.push({amount:'',desc:'',acc:'',accQ:''}); render(); }
+function bexpClearLogged(){ BEXP.rows=BEXP.rows.filter(r=>!r.done); if(!BEXP.rows.length) BEXP.rows.push({amount:'',desc:'',acc:'',accQ:''}); BEXP.msg=''; render(); }
+function bexpField(i,k,v){ if(BEXP.rows[i]) BEXP.rows[i][k]=v; }
+function bexpFmt(i){ const a=String((BEXP.rows[i]||{}).amount||''); const dot=a.indexOf('.'); const intp=dot>=0?a.slice(0,dot):a; const decp=dot>=0?a.slice(dot+1):null; return intp.replace(/\B(?=(\d{3})+(?!\d))/g,',')+(decp!==null?'.'+decp:''); }
+function bexpAmount(i,el){
+  const v=el.value,pos=el.selectionStart||0; const db=(v.slice(0,pos).match(/\d/g)||[]).length;
+  const raw=v.replace(/[^0-9.]/g,''); const dot=raw.indexOf('.');
+  const intp=(dot>=0?raw.slice(0,dot):raw).replace(/\./g,''); const decp=dot>=0?raw.slice(dot+1).replace(/\./g,'').slice(0,2):null;
+  BEXP.rows[i].amount=intp+(decp!==null?'.'+decp:'');
+  const f=intp.replace(/\B(?=(\d{3})+(?!\d))/g,',')+(decp!==null?'.'+decp:''); el.value=f;
+  let np=0,seen=0; while(np<f.length&&seen<db){if(/\d/.test(f[np]))seen++;np++;} el.setSelectionRange(np,np);
+}
+function bexpAccMatches(i){ const acc=EXP.accounts; if(!acc) return []; const q=String((BEXP.rows[i]||{}).accQ||'').trim().toLowerCase(); let l=acc.expense||[]; if(q) l=l.filter(a=>(a.name||'').toLowerCase().includes(q)); return l.slice(0,50); }
+function bexpAccDDHtml(i){
+  const list=bexpAccMatches(i); const sel=(BEXP.rows[i]||{}).acc;
+  if(!list.length) return `<div style="padding:7px 10px;color:var(--mute);font-size:11.5px">No match.</div>`;
+  return list.map(a=>{ const on=a.id===sel; return `<div onmousedown="event.preventDefault();bexpAccChoose(${i},'${a.id}')" style="padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line);background:${on?'#FFF4EB':'#fff'}" onmouseover="this.style.background='#F1F4F8'" onmouseout="this.style.background='${on?'#FFF4EB':'#fff'}'">${(a.name||'').replace(/</g,'&lt;')}</div>`; }).join('');
+}
+function bexpAccSearch(i,v){ BEXP.rows[i].accQ=v; BEXP.rows[i].acc=''; const dd=document.getElementById('bexpDD'+i); if(dd){dd.innerHTML=bexpAccDDHtml(i);dd.style.display='block';} const inp=document.getElementById('bexpAcc'+i); if(inp)inp.style.borderColor='#F7C99A'; }
+function bexpAccFocus(i){ const dd=document.getElementById('bexpDD'+i); if(dd){dd.innerHTML=bexpAccDDHtml(i);dd.style.display='block';} }
+function bexpAccChoose(i,id){ const acc=EXP.accounts; if(!acc) return; const a=(acc.expense||[]).find(x=>x.id===id); if(!a) return; BEXP.rows[i].acc=id; BEXP.rows[i].accQ=a.name; const inp=document.getElementById('bexpAcc'+i); if(inp){inp.value=a.name;inp.style.borderColor='var(--line)';} const dd=document.getElementById('bexpDD'+i); if(dd)dd.style.display='none'; }
+function bexpAccBlur(i){ setTimeout(()=>{const dd=document.getElementById('bexpDD'+i); if(dd)dd.style.display='none';},150); }
+async function bexpRun(){
+  if(BEXP.running) return;
+  if(!BEXP.date){ BEXP.msg='Pick a date.'; BEXP.err=true; render(); return; }
+  const todo=BEXP.rows.filter(r=>!r.done && (parseFloat(r.amount)||0)>0 && r.acc);
+  if(!todo.length){ BEXP.msg='Add at least one row with an amount and an expense account.'; BEXP.err=true; render(); return; }
+  BEXP.running=true; BEXP.msg=''; BEXP.err=false; render();
+  let ok=0, fail=0;
+  for(const r of todo){
+    r.status='busy'; render();
+    try{
+      const res=await fetch('api/expense_quick.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ amount:parseFloat(r.amount)||0, description:r.desc, account_id:r.acc, paid_through_account_id:BEXP.paid, date:BEXP.date })});
+      const j=await res.json();
+      if(j.ok){ r.status='ok'; r.done=true; ok++; } else { r.status='fail'; r.err=j.error||'failed'; fail++; }
+    }catch(e){ r.status='fail'; r.err=String(e); fail++; }
+    render();
+  }
+  BEXP.running=false; BEXP.err=(ok===0);
+  BEXP.msg=`Logged ${ok} expense${ok===1?'':'s'} in Zoho${fail?`, ${fail} failed`:''}.`;
+  render();
+}
+function vBulkExp(){
+  const acc=EXP.accounts;
+  const paidOpts=acc?['<option value="">— paid through (optional) —</option>'].concat((acc.paid||[]).map(a=>`<option value="${a.id}" ${a.id===BEXP.paid?'selected':''}>${(a.name||'').replace(/</g,'&lt;')}</option>`)).join(''):'';
+  const inp='box-sizing:border-box;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;font-family:inherit;width:100%';
+  const pending=BEXP.rows.filter(r=>!r.done && (parseFloat(r.amount)||0)>0 && r.acc);
+  const total=pending.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  const doneCount=BEXP.rows.filter(r=>r.done).length;
+
+  const rowsHtml=BEXP.rows.map((r,i)=>{
+    const stat = r.status==='busy'?`<span style="color:var(--blue);font-size:10.5px">saving…</span>`
+      : r.status==='ok'?`<span style="color:var(--good);font-size:10.5px;font-weight:700">✓ logged</span>`
+      : r.status==='fail'?`<span style="color:var(--bad);font-size:10.5px">✗ ${(r.err||'').slice(0,40)}</span>`:'';
+    const ro=r.done?'readonly tabindex="-1"':'';
+    return `<div style="display:grid;grid-template-columns:118px 1fr 1.05fr 24px;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line);${r.done?'opacity:.55':''}">
+      <input id="bexpAmt${i}" type="text" inputmode="decimal" placeholder="Amount" value="${bexpFmt(i)}" oninput="bexpAmount(${i},this)" ${ro} style="${inp};text-align:right;font-weight:600">
+      <input type="text" placeholder="Description" value="${(r.desc||'').replace(/"/g,'&quot;')}" oninput="bexpField(${i},'desc',this.value)" ${ro} style="${inp}">
+      <div style="position:relative">
+        <input id="bexpAcc${i}" type="text" autocomplete="off" placeholder="🔍 account" value="${(r.accQ||'').replace(/"/g,'&quot;')}" oninput="bexpAccSearch(${i},this.value)" onfocus="bexpAccFocus(${i})" onblur="bexpAccBlur(${i})" ${ro} style="${inp};border-color:${r.acc?'var(--line)':'#F7C99A'}">
+        <div id="bexpDD${i}" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:190px;overflow-y:auto;z-index:${50-i}"></div>
+      </div>
+      ${r.done?`<span style="text-align:center;color:var(--good);font-weight:700">✓</span>`:`<button onclick="bexpDelRow(${i})" title="Remove row" style="background:none;border:none;color:var(--mute);font-size:16px;cursor:pointer;line-height:1;padding:0">×</button>`}
+      ${stat?`<div style="grid-column:1/-1;padding:1px 0 2px">${stat}</div>`:''}
+    </div>`;
+  }).join('');
+
+  return `<div class="em-compact">
+  <h2>Log expenses</h2>
+  ${!acc?`<div class="card muted" style="text-align:center;padding:18px">${EXP.loadingAcc?'Loading accounts from Zoho…':'<span style="color:var(--orange);cursor:pointer" onclick="expLoadAccounts();render()">Load accounts →</span>'}</div>`:`
+  <div class="card" style="padding:12px 14px;margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:10px;align-items:end">
+      <div><label style="font-size:11px">Date (applies to all)</label><input type="date" value="${BEXP.date}" onchange="BEXP.date=this.value" style="${inp}"></div>
+      <div><label style="font-size:11px">Paid through (applies to all)</label><select onchange="BEXP.paid=this.value" style="${inp}">${paidOpts}</select></div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:10px 14px 12px;margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:118px 1fr 1.05fr 24px;gap:6px;padding-bottom:4px;border-bottom:2px solid var(--ink)">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);text-align:right">Amount</div>
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--mute)">Description</div>
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--mute)">Expense account</div>
+      <div></div>
+    </div>
+    ${rowsHtml}
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <button class="btn sec" style="width:auto;padding:6px 14px;font-size:12px" onclick="bexpAddRow()">＋ Add row</button>
+      ${doneCount?`<button class="btn sec" style="width:auto;padding:6px 14px;font-size:12px" onclick="bexpClearLogged()">Clear ${doneCount} logged</button>`:''}
+      <span style="margin-left:auto;font-size:12px;color:var(--mute)">To log: <b style="color:var(--ink)">${pending.length}</b> · <b style="color:var(--ink)">KES ${fmtn(total)}</b></span>
+    </div>
+  </div>
+
+  <button class="btn" onclick="bexpRun()" ${BEXP.running||!pending.length?'disabled':''}>${BEXP.running?'Logging…':`Log ${pending.length} expense${pending.length===1?'':'s'} to Zoho`}</button>
+  ${BEXP.msg?`<div class="${BEXP.err?'warn':'ok'}" style="margin-top:10px">${BEXP.msg}</div>`:''}
+  <div class="muted" style="font-size:11px;margin-top:8px">Each row posts a separate expense to Zoho Books. Amount + expense account are required per row; date &amp; paid-through apply to the whole batch.</div>`}
+  </div>`;
+}
+/* ================= end Bulk Expenses ================= */
 
 /* ================= Settings ================= */
 function vSettings(){
@@ -4769,6 +4878,7 @@ function navActivate(b){
   if(TAB==='ivlist'){ render(); if(!IVLIST.loaded && !IVLIST.loading) ivlistLoad(); return; }
   if(TAB==='stmtbuild'){ render(); if(!SB.loaded && !SB.loading) sbLoad(); return; }
   if(TAB==='latepay'){ render(); if(!LATE.loaded && !LATE.loading) lateLoad(); return; }
+  if(TAB==='bulkexp'){ render(); expLoadAccounts(); return; }
   if(TAB==='emails' && !EMAIL.loaded && !EMAIL.loadingClients){ render(); emailLoadClients(); return; }
   if(TAB==='todo' && !TASK.loaded && !TASK.loading){ render(); todoLoad(); return; }
   if(TAB==='loans'){ render(); loadLoans(); return; }
