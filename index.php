@@ -1342,11 +1342,9 @@ function vDashQuickExpense(){
       <span class="muted" style="font-size:10px;margin-left:auto">straight to Zoho</span>
     </div>
     ${!acc?`<div class="muted" style="font-size:11.5px;padding:6px 0">${EXP.loadingAcc?'Loading accounts…':'<span style="color:var(--orange);cursor:pointer" onclick="expLoadAccounts();render()">Load accounts →</span>'}</div>`:`
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <input type="number" inputmode="decimal" placeholder="Amount (KES)" value="${DEXP.amount}" oninput="dexpField('amount',this.value)" style="flex:1;min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit">
-      <input type="date" value="${DEXP.date}" onchange="dexpField('date',this.value)" style="flex:0 0 auto;padding:9px 9px;border:1px solid var(--line);border-radius:9px;font-size:12px;font-family:inherit">
-    </div>
+    <input type="number" inputmode="decimal" placeholder="Amount (KES)" value="${DEXP.amount}" oninput="dexpField('amount',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="text" placeholder="What for? (description)" value="${(DEXP.desc||'').replace(/"/g,'&quot;')}" oninput="dexpField('desc',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
+    <input type="date" value="${DEXP.date}" onchange="dexpField('date',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
     <select onchange="EXP.acc=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">${expOpts}</select>
     <select onchange="EXP.paid=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:10px">${paidOpts}</select>
     <button class="btn" style="width:100%" onclick="dexpSave()" ${DEXP.saving?'disabled':''}>${DEXP.saving?'Saving…':'＋ Log expense'}</button>
