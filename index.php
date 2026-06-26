@@ -1397,15 +1397,15 @@ function vDash(){
     if(!d) return `<div class="card" style="padding:16px;display:flex;align-items:center;justify-content:center;min-height:90px"><span class="muted" style="font-size:11.5px">${DPAID.loading?'Loading payments…':'—'}</span></div>`;
     const wht=Math.max(0,Math.round(d.gross-d.net));
     const mo=new Date(d.from+'T00:00:00').toLocaleString('en-KE',{month:'long',year:'numeric'});
-    const topRows=(d.rows||[]).slice(0,5).map(row=>`
-      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">
+    const allRows=(d.rows||[]).map(row=>`
+      <div class="dsh-pay-row" data-client="${(row.customer||'').toLowerCase().replace(/"/g,'')}" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">
         <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</span>
         <span style="font-size:10px;color:var(--mute);white-space:nowrap">${row.date}</span>
         <span style="font-size:11.5px;font-weight:700;color:var(--good);white-space:nowrap">KES ${Math.round(row.amount).toLocaleString('en-KE')}</span>
       </div>`).join('');
     return `<div class="card" style="padding:0;overflow:hidden">
       <div style="background:var(--grad-orange);padding:12px 14px 11px">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:9px">Payments \xb7 ${mo} \xb7 ${d.count}</div>
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:9px">Payments · ${mo} · ${d.count}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 10px">
           <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Gross billed</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">KES ${Math.round(d.gross/1000)}K</div></div>
           <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Net received</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">KES ${Math.round(d.net/1000)}K</div>${wht>0?`<div style="font-size:9px;color:rgba(255,255,255,.55);margin-top:2px">WHT −KES ${wht.toLocaleString('en-KE')}</div>`:''}</div>
@@ -1413,10 +1413,12 @@ function vDash(){
           <div style="border-left:2px solid rgba(255,255,255,.25);padding-left:10px"><div style="font-size:9px;color:rgba(255,255,255,.6)">Profit</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">${d.profit<0?'−':''}KES ${Math.abs(Math.round(d.profit/1000))}K</div></div>
         </div>
       </div>
-      ${topRows?`<div style="padding:6px 14px 10px">
-        ${topRows}
-        ${d.count>5?`<div style="padding:6px 0 2px;text-align:right"><span style="font-size:11px;color:var(--orange);cursor:pointer;font-weight:600" onclick="navTo('payments')">+${d.count-5} more →</span></div>`:''}
-      </div>`:''}
+      ${allRows?`<div style="padding:6px 10px 4px 14px;border-bottom:1px solid var(--line)">
+        <input id="dshPayQ" type="text" placeholder="Search payment…" autocomplete="off"
+          style="width:100%;box-sizing:border-box;border:none;outline:none;font-size:11.5px;padding:5px 0;background:transparent;font-family:inherit;color:var(--ink)"
+          oninput="(function(v){const q=v.toLowerCase();document.querySelectorAll('.dsh-pay-row').forEach(r=>{r.style.display=r.dataset.client.includes(q)?'flex':'none'});})(this.value)">
+      </div>
+      <div style="max-height:260px;overflow-y:auto;padding:0 14px 10px">${allRows}</div>`:''}
     </div>`;
   })();
 
