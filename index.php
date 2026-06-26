@@ -1520,10 +1520,10 @@ function vDash(){
       <div style="background:var(--grad-orange);padding:12px 14px 11px">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:9px">Payments · ${mo} · ${d.count}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 10px">
-          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Gross billed</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">KES ${Math.round(d.gross/1000)}K</div></div>
-          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Net received</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">KES ${Math.round(d.net/1000)}K</div>${wht>0?`<div style="font-size:9px;color:rgba(255,255,255,.55);margin-top:2px">WHT −KES ${wht.toLocaleString('en-KE')}</div>`:''}</div>
-          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Expenses</div><div style="font-size:16px;font-weight:700;color:rgba(255,255,255,.85);line-height:1.1">KES ${Math.round(d.expenses/1000)}K</div></div>
-          <div style="border-left:2px solid rgba(255,255,255,.25);padding-left:10px"><div style="font-size:9px;color:rgba(255,255,255,.6)">Profit</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">${d.profit<0?'−':''}KES ${Math.abs(Math.round(d.profit/1000))}K</div></div>
+          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Gross billed</div><div style="font-size:13px;font-weight:800;color:#15202B;line-height:1.2">KES ${Math.round(d.gross).toLocaleString('en-KE')}</div></div>
+          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Net received</div><div style="font-size:13px;font-weight:800;color:#15202B;line-height:1.2">KES ${Math.round(d.net).toLocaleString('en-KE')}</div>${wht>0?`<div style="font-size:9px;color:rgba(255,255,255,.55);margin-top:2px">WHT −KES ${wht.toLocaleString('en-KE')}</div>`:''}</div>
+          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Expenses</div><div style="font-size:13px;font-weight:800;color:#15202B;line-height:1.2">KES ${Math.round(d.expenses).toLocaleString('en-KE')}</div></div>
+          <div style="border-left:2px solid rgba(255,255,255,.25);padding-left:10px"><div style="font-size:9px;color:rgba(255,255,255,.6)">Profit</div><div style="font-size:13px;font-weight:800;color:#15202B;line-height:1.2">${d.profit<0?'−':''}KES ${Math.abs(Math.round(d.profit)).toLocaleString('en-KE')}</div></div>
         </div>
       </div>
       ${allRows?`<div style="padding:6px 10px 4px 14px;border-bottom:1px solid var(--line)">
