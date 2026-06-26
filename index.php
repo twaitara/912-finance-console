@@ -1390,34 +1390,73 @@ function vDash(){
   if(!ME.admin) return vDashLite();
   const s = summary(), r = rows(), overdue = r.filter(x=>x.overdue);
   const openTasks=(TASK.tasks||[]).filter(t=>t.status!=='done').length;
-  const invoiced=(MQ.quotes||[]).filter(q=>q.status==='invoiced'||q.zoho_invoice_number);
+  const d=DPAID.data;
+
+  const paidPanel=(()=>{
+    if(!d) return `<div class="card" style="padding:16px;display:flex;align-items:center;justify-content:center;min-height:90px"><span class="muted" style="font-size:11.5px">${DPAID.loading?'Loading payments…':'—'}</span></div>`;
+    const wht=Math.max(0,Math.round(d.gross-d.net));
+    const mo=new Date(d.from+'T00:00:00').toLocaleString('en-KE',{month:'long',year:'numeric'});
+    const topRows=(d.rows||[]).slice(0,5).map(row=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">
+        <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</span>
+        <span style="font-size:10px;color:var(--mute);white-space:nowrap">${row.date}</span>
+        <span style="font-size:11.5px;font-weight:700;color:var(--good);white-space:nowrap">KES ${Math.round(row.amount).toLocaleString('en-KE')}</span>
+      </div>`).join('');
+    return `<div class="card" style="padding:0;overflow:hidden">
+      <div style="background:var(--grad-orange);padding:12px 14px 11px">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:9px">Payments \xb7 ${mo} \xb7 ${d.count}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 10px">
+          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Gross billed</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">KES ${Math.round(d.gross/1000)}K</div></div>
+          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Net received</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">KES ${Math.round(d.net/1000)}K</div>${wht>0?`<div style="font-size:9px;color:rgba(255,255,255,.55);margin-top:2px">WHT −KES ${wht.toLocaleString('en-KE')}</div>`:''}</div>
+          <div><div style="font-size:9px;color:rgba(255,255,255,.6)">Expenses</div><div style="font-size:16px;font-weight:700;color:rgba(255,255,255,.85);line-height:1.1">KES ${Math.round(d.expenses/1000)}K</div></div>
+          <div style="border-left:2px solid rgba(255,255,255,.25);padding-left:10px"><div style="font-size:9px;color:rgba(255,255,255,.6)">Profit</div><div style="font-size:20px;font-weight:800;color:#fff;line-height:1.1">${d.profit<0?'−':''}KES ${Math.abs(Math.round(d.profit/1000))}K</div></div>
+        </div>
+      </div>
+      ${topRows?`<div style="padding:6px 14px 10px">
+        ${topRows}
+        ${d.count>5?`<div style="padding:6px 0 2px;text-align:right"><span style="font-size:11px;color:var(--orange);cursor:pointer;font-weight:600" onclick="navTo('payments')">+${d.count-5} more →</span></div>`:''}
+      </div>`:''}
+    </div>`;
+  })();
+
   return `
-  <div class="dsh-hero">
-    <div class="ey">Net profit so far · excl. VAT</div>
-    <div class="big">${fmt(s.netProfit)}</div>
-    <div class="sub">
-      <div><div class="l">VAT element</div><div class="v" style="color:#AEB9C7">${fmt(s.totalVat)}</div></div>
-      <div><div class="l">Loaned out</div><div class="v">${fmt(s.loanOut)}</div></div>
-      <div><div class="l">Bridges restored</div><div class="v">${s.restored.length}</div></div>
-      <div><div class="l">Open bridges</div><div class="v">${s.open.length}</div></div>
+  <div class="dsh-hero" style="padding:18px 22px;margin-bottom:10px">
+    <div class="ey">Net profit \xb7 excl. VAT</div>
+    <div class="big" style="font-size:30px;margin-top:4px">${fmt(s.netProfit)}</div>
+    <div class="sub" style="margin-top:10px;gap:16px">
+      <div><div class="l">VAT collected</div><div class="v" style="color:#AEB9C7;font-size:13px">${fmt(s.totalVat)}</div></div>
+      <div><div class="l">Loaned out</div><div class="v" style="font-size:13px">${fmt(s.loanOut)}</div></div>
+      <div><div class="l">Restored</div><div class="v" style="font-size:13px">${s.restored.length}</div></div>
+      <div><div class="l">Open bridges</div><div class="v" style="font-size:13px">${s.open.length}</div></div>
     </div>
   </div>
-  <div class="muted" style="margin:-4px 2px 12px">VAT is collected for KRA, not earnings — shown but kept out of profit.</div>
 
-  <div class="kpis">
-    <div class="kpi" style="--accent:var(--orange)"><div class="l">Open bridges</div><div class="n">${s.open.length}</div><div class="h">Working capital deployed</div></div>
-    <div class="kpi" style="--accent:${overdue.length?'var(--bad)':'var(--good)'}"><div class="l">Overdue</div><div class="n" style="color:${overdue.length?'var(--bad)':'var(--ink)'}">${overdue.length}</div><div class="h">${overdue.length?'Needs chasing':'All on track'}</div></div>
-    <div class="kpi" style="--accent:var(--blue)"><div class="l">Open tasks</div><div class="n">${openTasks}</div><div class="h">On the to-do list</div></div>
-    <div class="kpi" style="--accent:var(--good)"><div class="l">Restored</div><div class="n">${s.restored.length}</div><div class="h">Bridges repaid</div></div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+    <div class="kpi" style="--accent:var(--orange);padding:11px 13px"><div class="l">Open bridges</div><div class="n" style="font-size:24px">${s.open.length}</div><div class="h">Capital deployed</div></div>
+    <div class="kpi" style="--accent:${overdue.length?'var(--bad)':'var(--good)'};padding:11px 13px"><div class="l">Overdue</div><div class="n" style="font-size:24px;color:${overdue.length?'var(--bad)':'var(--ink)'}">${overdue.length}</div><div class="h">${overdue.length?'Needs chasing':'All on track'}</div></div>
+    <div class="kpi" style="--accent:var(--blue);padding:11px 13px"><div class="l">Open tasks</div><div class="n" style="font-size:24px">${openTasks}</div><div class="h">On the to-do list</div></div>
+    <div class="kpi" style="--accent:var(--good);padding:11px 13px"><div class="l">Restored</div><div class="n" style="font-size:24px">${s.restored.length}</div><div class="h">Bridges repaid</div></div>
   </div>
 
-  ${vDashTeamQuotes()}
-  ${vDashPaid()}
-  ${vDashMyQuotes()}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start">
+    ${paidPanel}
+    ${vDashTeamQuotes()}
+  </div>
+
+  ${overdue.length?`<div style="margin-bottom:10px">
+    <div class="sect" style="margin-bottom:8px"><b>Chase list</b><span class="ln"></span><span class="pill" style="background:#FDECEA;color:var(--bad)">${overdue.length} overdue</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px">
+      ${overdue.map(x=>`<div class="card" style="border-left:4px solid var(--bad);padding:10px 13px;margin-bottom:0">
+        <div style="font-size:11.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.client||x.purpose||''}</div>
+        <div style="font-size:10.5px;color:var(--mute);margin-top:2px">${x.invoice_number||''} \xb7 due ${x.expected_date||'—'}</div>
+        <div style="font-size:14px;font-weight:800;color:var(--bad);margin-top:4px">${fmt(x.amount)} <span style="font-size:10px;font-weight:600;color:var(--mute)">${x.dd}d late</span></div>
+      </div>`).join('')}
+    </div>
+  </div>`:''}
 
   <div class="sect"><b>Working capital</b><span class="ln"></span>
     <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="gotoLoans()">Manage loans →</button></div>
-  <div class="wcgrid">
+  <div class="wcgrid" style="margin-bottom:10px">
     ${dashWorkingCapitalHtml()}
     ${dashLoansHtml()}
   </div>
@@ -1425,84 +1464,63 @@ function vDash(){
   ${dashTeamHtml()}
 
   <div class="wcgrid">
-   <div>
-   <div class="sect"><b>Shared links</b><span class="ln"></span></div>
-  <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:6px">
-    <div class="linktile" onclick="window.open(AUDREY_URL,'_blank')">
-      <div class="ic" style="background:#FFF4EB;color:var(--orange)">📊</div>
-      <div style="flex:1;min-width:0"><div class="t">Audrey Report</div><div class="s">Unpaid-invoice tracker · public</div></div>
-      <button class="btn sec" style="width:auto;padding:5px 9px;font-size:10.5px" onclick="event.stopPropagation();copyAudrey(this)">Copy</button>
-    </div>
-    <div class="linktile" onclick="window.open(TASKBOARD_URL,'_blank')">
-      <div class="ic" style="background:#EEF2FE;color:var(--blue)">✅</div>
-      <div style="flex:1;min-width:0"><div class="t">Task Board</div><div class="s">Who's doing what · public</div></div>
-      <button class="btn sec" style="width:auto;padding:5px 9px;font-size:10.5px" onclick="event.stopPropagation();copyBoard(this)">Copy</button>
-    </div>
-  </div>
-  </div>
-   <div>
-  <div class="sect"><b>Operations</b><span class="ln"></span></div>
-  <div class="tool">
-    <details>
-      <summary>Backup to WorkDrive <span class="cv">${BK.folder?'folder set ✓':'set a folder'}</span></summary>
-      <div class="body">
-        <div class="muted" style="font-size:11px;margin-bottom:8px">Saves your ledger, Audrey notes, email book and settings as one <b>.sql</b> file — these live only in your database, so this is your safety copy.</div>
-        <div class="row" style="gap:8px">
-          <input id="bkFolder" type="text" placeholder="WorkDrive folder ID" value="${(BK.folder||'').replace(/"/g,'&quot;')}" style="flex:1;margin-bottom:0" oninput="BK.folder=this.value">
-          <button class="btn sec" style="width:auto;padding:9px 12px;font-size:12px" onclick="bkBrowse()">📁 Browse</button>
+    <div>
+      <div class="sect"><b>Shared links</b><span class="ln"></span></div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:6px">
+        <div class="linktile" onclick="window.open(AUDREY_URL,'_blank')">
+          <div class="ic" style="background:#FFF4EB;color:var(--orange)">📊</div>
+          <div style="flex:1;min-width:0"><div class="t">Audrey Report</div><div class="s">Unpaid-invoice tracker \xb7 public</div></div>
+          <button class="btn sec" style="width:auto;padding:5px 9px;font-size:10.5px" onclick="event.stopPropagation();copyAudrey(this)">Copy</button>
         </div>
-        ${BK.pick.open?`<div class="card" style="margin-top:8px;background:#FAFBFD">
-          <div class="row" style="margin-bottom:8px">
-            <b style="font-size:12px">${BK.pick.current?('📁 '+(BK.pick.current.name||'Folder')):'Pick a folder'}</b>
-            <span>${BK.pick.current?`<button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="bkUp()">⬆ Up</button> `:''}<button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="bkCloseBrowse()">✕</button></span>
+        <div class="linktile" onclick="window.open(TASKBOARD_URL,'_blank')">
+          <div class="ic" style="background:#EEF2FE;color:var(--blue)">✅</div>
+          <div style="flex:1;min-width:0"><div class="t">Task Board</div><div class="s">Who's doing what \xb7 public</div></div>
+          <button class="btn sec" style="width:auto;padding:5px 9px;font-size:10.5px" onclick="event.stopPropagation();copyBoard(this)">Copy</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="sect"><b>Operations</b><span class="ln"></span></div>
+      <div class="tool">
+        <details>
+          <summary>Backup to WorkDrive <span class="cv">${BK.folder?'folder set ✓':'set a folder'}</span></summary>
+          <div class="body">
+            <div class="muted" style="font-size:11px;margin-bottom:8px">Saves your ledger, Audrey notes, email book and settings as one <b>.sql</b> file — these live only in your database, so this is your safety copy.</div>
+            <div class="row" style="gap:8px">
+              <input id="bkFolder" type="text" placeholder="WorkDrive folder ID" value="${(BK.folder||'').replace(/"/g,'&quot;')}" style="flex:1;margin-bottom:0" oninput="BK.folder=this.value">
+              <button class="btn sec" style="width:auto;padding:9px 12px;font-size:12px" onclick="bkBrowse()">📁 Browse</button>
+            </div>
+            ${BK.pick.open?`<div class="card" style="margin-top:8px;background:#FAFBFD">
+              <div class="row" style="margin-bottom:8px">
+                <b style="font-size:12px">${BK.pick.current?('📁 '+(BK.pick.current.name||'Folder')):'Pick a folder'}</b>
+                <span>${BK.pick.current?`<button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="bkUp()">⬆ Up</button> `:''}<button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="bkCloseBrowse()">✕</button></span>
+              </div>
+              ${BK.pick.loading?`<div class="muted" style="font-size:11px;text-align:center;padding:10px">Loading folders…</div>`
+                :BK.pick.err?`<div class="warn" style="font-size:11px">${BK.pick.err}</div>`
+                :`${(BK.pick.current?BK.pick.folders:BK.pick.roots).length?(BK.pick.current?BK.pick.folders:BK.pick.roots).map(f=>`
+                    <div class="invrow" onclick="bkOpenFolder('${f.id}')"><div style="font-size:12px">📁 ${(f.name||'(folder)').replace(/</g,'&lt;')}</div><div class="muted" style="font-size:11px">open ›</div></div>`).join('')
+                  :`<div class="muted" style="font-size:11px;text-align:center;padding:8px">No sub-folders here.</div>`}`}
+              ${BK.pick.current?`<button class="btn" style="width:100%;margin-top:8px;font-size:12px" onclick="bkUseFolder()">✓ Use "${(BK.pick.current.name||'this folder').replace(/"/g,'')}"</button>`:''}</div>`:''}
+            <div class="row" style="gap:8px;margin-top:8px">
+              <button class="btn" style="flex:1" onclick="runBackup()" ${BK.running?'disabled':''}>${BK.running?'Backing up…':'⬆ Back up now'}</button>
+              <button class="btn sec" style="width:auto;padding:11px 13px;font-size:12px" onclick="window.open('api/backup.php?download=1','_blank')">⤓ Download</button>
+            </div>
+            ${BK.msg?`<div class="${BK.msgErr?'warn':'ok'}" style="margin-top:8px;font-size:11px">${BK.msg}</div>`:''}
+            <div class="muted" style="font-size:10.5px;margin-top:6px">Remembers the last folder used. To back up elsewhere, change it and hit Back up now.</div>
           </div>
-          ${BK.pick.loading?`<div class="muted" style="font-size:11px;text-align:center;padding:10px">Loading folders…</div>`
-            : BK.pick.err?`<div class="warn" style="font-size:11px">${BK.pick.err}</div>`
-            : `${(BK.pick.current?BK.pick.folders:BK.pick.roots).length? (BK.pick.current?BK.pick.folders:BK.pick.roots).map(f=>`
-                <div class="invrow" onclick="bkOpenFolder('${f.id}')"><div style="font-size:12px">📁 ${(f.name||'(folder)').replace(/</g,'&lt;')}</div><div class="muted" style="font-size:11px">open ›</div></div>`).join('')
-              : `<div class="muted" style="font-size:11px;text-align:center;padding:8px">No sub-folders here.</div>`}`}
-          ${BK.pick.current?`<button class="btn" style="width:100%;margin-top:8px;font-size:12px" onclick="bkUseFolder()">✓ Use “${(BK.pick.current.name||'this folder').replace(/"/g,'')}”</button>`:''}
-        </div>`:''}
-        <div class="row" style="gap:8px;margin-top:8px">
-          <button class="btn" style="flex:1" onclick="runBackup()" ${BK.running?'disabled':''}>${BK.running?'Backing up…':'⤴ Back up now'}</button>
-          <button class="btn sec" style="width:auto;padding:11px 13px;font-size:12px" onclick="window.open('api/backup.php?download=1','_blank')">⤓ Download</button>
-        </div>
-        ${BK.msg?`<div class="${BK.msgErr?'warn':'ok'}" style="margin-top:8px;font-size:11px">${BK.msg}</div>`:''}
-        <div class="muted" style="font-size:10.5px;margin-top:6px">Remembers the last folder used. To back up elsewhere, change it and hit Back up now.</div>
+        </details>
+        <details>
+          <summary>Cache <span class="cv">last pull: ${cacheWhen()}</span></summary>
+          <div class="body">
+            <div class="muted" style="font-size:11px;margin-bottom:8px">Pre-builds the ETR and Profit reports for ${PRELOAD.year} so they open instantly for 24h. Other years load on demand.</div>
+            <div style="font-size:11.5px;margin-bottom:8px">🕐 Last full cache from Zoho: <b>${cacheWhen()}</b></div>
+            <button class="btn" onclick="preloadCache()" ${PRELOAD.running?'disabled':''}>${PRELOAD.running?'Pulling…':'⟳ Pull all data into cache'}</button>
+            ${PRELOAD.log.length?`<div style="margin-top:8px;font-size:11px;line-height:1.6">${PRELOAD.log.map(l=>`<div>${l}</div>`).join('')}</div>`:''}
+          </div>
+        </details>
       </div>
-    </details>
-    <details>
-      <summary>Cache <span class="cv">last pull: ${cacheWhen()}</span></summary>
-      <div class="body">
-        <div class="muted" style="font-size:11px;margin-bottom:8px">Pre-builds the ETR and Profit reports for ${PRELOAD.year} so they open instantly for 24h. Other years load on demand.</div>
-        <div style="font-size:11.5px;margin-bottom:8px">🕒 Last full cache from Zoho: <b>${cacheWhen()}</b></div>
-        <button class="btn" onclick="preloadCache()" ${PRELOAD.running?'disabled':''}>${PRELOAD.running?'Pulling…':'⟳ Pull all data into cache'}</button>
-        ${PRELOAD.log.length? `<div style="margin-top:8px;font-size:11px;line-height:1.6">${PRELOAD.log.map(l=>`<div>${l}</div>`).join('')}</div>`:''}
-      </div>
-    </details>
-  </div>
-  </div>
-  </div>
-
-  <div class="sect"><b>Quotes invoiced</b><span class="ln"></span>${invoiced.length?`<span class="pill" style="background:#EEF2FE;color:var(--blue)">${invoiced.length}</span>`:''}
-    <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="navTo('myquotes')">View all →</button></div>
-  ${invoiced.length? `<div class="rptwrap" style="margin-bottom:10px"><table class="rpt">
-      <thead><tr><th class="l">Customer</th><th class="l">Invoice</th><th class="l">By</th><th class="l">Date</th><th>Total</th></tr></thead>
-      <tbody>${invoiced.map(q=>`<tr style="cursor:pointer" onclick="navTo('myquotes')">
-        <td class="l">${qesc(q.customer_name||'')}</td>
-        <td class="l" style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number||q.zoho_estimate_number||'—')}</td>
-        <td class="l">${qesc(q.created_by||'')}</td>
-        <td class="l">${qesc((q.quote_date||String(q.created_at||'').slice(0,10))||'')}</td>
-        <td>${qesc(q.currency||'KES')} ${fmtn(q.total)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr class="tot"><td class="l" colspan="4">Total invoiced (${invoiced.length})</td><td>${fmtn(invoiced.reduce((a,q)=>a+(+q.total||0),0))}</td></tr></tfoot>
-    </table></div>`
-    : `<div class="card muted" style="text-align:center;padding:16px">No quotes converted to invoices yet.</div>`}
-
-  <div class="sect"><b>Chase list</b><span class="ln"></span>${overdue.length?`<span class="pill" style="background:#FDECEA;color:var(--bad)">${overdue.length} overdue</span>`:''}</div>
-  ${overdue.length? overdue.map(x=>`<div class="card" style="border-left:4px solid var(--bad)">
-    <div class="row"><b style="font-size:13px">${x.client||x.purpose||''}</b><b style="color:var(--orange)">${fmt(x.amount)}</b></div>
-    <div class="muted">${x.invoice_number||''} · due ${x.expected_date||'—'} · ${x.dd} days</div></div>`).join('')
-    : `<div class="card muted" style="text-align:center;padding:18px">Nothing overdue — you're all caught up. 🎉</div>`}`;
+    </div>
+  </div>`;
 }
 
 function invItems(){
