@@ -1401,7 +1401,7 @@ function vDash(){
     const mo=new Date(d.from+'T00:00:00').toLocaleString('en-KE',{month:'long',year:'numeric'});
     const allRows=(d.rows||[]).map(row=>{
       const invNums=(row.invoices||[]).join(', ');
-      const sub=[invNums,row.ref,row.desc].filter(Boolean).join(' · ').slice(0,72);
+      const sub=[row.number,invNums,row.ref].filter(Boolean).join(' · ').slice(0,72);
       return `<div class="dsh-pay-row" data-client="${(row.customer||'').toLowerCase().replace(/"/g,'')}" style="padding:5px 0;border-bottom:1px solid var(--line)">
         <div style="display:flex;align-items:baseline;gap:8px">
           <span style="font-size:11px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</span>
