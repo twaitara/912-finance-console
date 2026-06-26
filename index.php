@@ -1045,7 +1045,7 @@ function tabRefresh(){
     case 'bulkpay':
       BULK.loaded=false;BULK.loading=false;BULK.invoices=[];BULK.sel={};BULK.done=[];BULK.msg='';
       render();bulkLoad();if(!PAY.accsLoaded)payLoadAccounts();break;
-    case 'dash':      DPAID.loaded=false;DPAID.data=null;loadTasks();checkBackup();loadQuotes();dashPaidLoad();render();break;
+    case 'dash':      DPAID.loaded=false;DPAID.data=null;loadTasks();checkBackup();loadQuotes();dashPaidLoad();if(!USERS.loaded)usersLoad();render();break;
     default:          render();
   }
 }
@@ -1136,6 +1136,64 @@ function vDashPaid(){
       <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:2px">${d.count} payments this month — newest first</div>
     </div>
     <div style="padding:0 16px 12px;max-height:420px;overflow-y:auto">${rows}</div>`:''}
+  </div>`;
+}
+
+function vDashTeamQuotes(){
+  const mo=new Date().toLocaleString('en-KE',{month:'long',year:'numeric'});
+  const thisMonth=new Date().toISOString().slice(0,7);
+  const monthQ=(MQ.quotes||[]).filter(q=>String(q.created_at||q.quote_date||'').slice(0,7)===thisMonth);
+  // Build user list: all known users + anyone who created a quote this month but isn't in USERS.list
+  const knownUsers=(USERS.list||[]).filter(u=>!u.disabled).map(u=>u.username);
+  const quoteCreators=[...new Set(monthQ.map(q=>q.created_by).filter(Boolean))];
+  const allNames=[...new Set([...knownUsers,...quoteCreators])].sort((a,b)=>a.localeCompare(b));
+  const rows=allNames.map(name=>{
+    const uq=monthQ.filter(q=>String(q.created_by||'').toLowerCase()===name.toLowerCase());
+    const inv=uq.filter(q=>q.status==='invoiced'||q.zoho_invoice_number);
+    const genVal=uq.reduce((s,q)=>s+(+q.total||0),0);
+    const invVal=inv.reduce((s,q)=>s+(+q.total||0),0);
+    const pct=genVal>0?Math.round(invVal/genVal*100):0;
+    const barColor=pct>=50?'var(--good)':pct>=25?'var(--orange)':'#E2E8F0';
+    const isMe=name.toLowerCase()===String(ME.user||'').toLowerCase();
+    return `<tr style="${isMe?'background:#FFFBF5':''}">
+      <td style="padding:8px 10px;font-size:12px;font-weight:${isMe?700:500};white-space:nowrap">${name}${isMe?' 👤':''}</td>
+      <td style="padding:8px 10px;font-size:13px;font-weight:700;text-align:center">${uq.length}</td>
+      <td style="padding:8px 10px;font-size:13px;font-weight:700;color:${inv.length?'var(--good)':'var(--mute)'};text-align:center">${inv.length}</td>
+      <td style="padding:8px 10px;font-size:11px;color:var(--mute);text-align:right">KES ${Math.round(genVal).toLocaleString('en-KE')}</td>
+      <td style="padding:8px 10px;min-width:90px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;height:5px;background:#F1F4F8;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px"></div>
+          </div>
+          <span style="font-size:10.5px;font-weight:700;color:${barColor==='#E2E8F0'?'var(--mute)':barColor};width:32px;text-align:right">${pct}%</span>
+        </div>
+      </td>
+    </tr>`;
+  });
+  // totals row
+  const totGen=monthQ.length, totInv=monthQ.filter(q=>q.status==='invoiced'||q.zoho_invoice_number).length;
+  const totVal=monthQ.reduce((s,q)=>s+(+q.total||0),0);
+  const totPct=totVal>0?Math.round(totInv/totGen*100*totInv/totInv||0):0; // weighted by count
+  const totPct2=totGen>0?Math.round(totInv/totGen*100):0;
+  return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
+    <div style="padding:12px 14px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--mute)">Quotes · ${mo}</div>
+      <div style="display:flex;gap:16px">
+        <div style="text-align:center"><div style="font-size:9px;color:var(--mute)">Generated</div><div style="font-size:18px;font-weight:800">${totGen}</div></div>
+        <div style="text-align:center"><div style="font-size:9px;color:var(--mute)">Converted</div><div style="font-size:18px;font-weight:800;color:var(--good)">${totInv}</div></div>
+        <div style="text-align:center"><div style="font-size:9px;color:var(--mute)">Rate</div><div style="font-size:18px;font-weight:800;color:${totPct2>=50?'var(--good)':totPct2>=25?'var(--orange)':'var(--bad)'}">${totPct2}%</div></div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#F8FAFC">
+        <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:left">Staff</th>
+        <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:center">Generated</th>
+        <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:center">Converted</th>
+        <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:right">Value generated</th>
+        <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute)">Rate</th>
+      </tr></thead>
+      <tbody style="border-top:1px solid var(--line)">${rows.join('')}</tbody>
+    </table>
   </div>`;
 }
 
@@ -1353,37 +1411,7 @@ function vDash(){
     <div class="kpi" style="--accent:var(--good)"><div class="l">Restored</div><div class="n">${s.restored.length}</div><div class="h">Bridges repaid</div></div>
   </div>
 
-  ${(()=>{
-    const thisMonth=new Date().toISOString().slice(0,7);
-    const all=(MQ.quotes||[]).filter(q=>String(q.created_at||q.quote_date||'').slice(0,7)===thisMonth);
-    const inv=all.filter(q=>q.status==='invoiced'||q.zoho_invoice_number);
-    const totalVal=all.reduce((s,q)=>s+(+q.total||0),0);
-    const invVal=inv.reduce((s,q)=>s+(+q.total||0),0);
-    const pct=totalVal>0?Math.round(invVal/totalVal*100):0;
-    const barColor=pct>=50?'var(--good)':pct>=25?'var(--orange)':'var(--bad)';
-    const mo=new Date().toLocaleString('en-KE',{month:'long'});
-    return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
-      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin-bottom:12px">Quotes · ${mo}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
-        <div>
-          <div style="font-size:9.5px;color:var(--mute)">Generated</div>
-          <div style="font-size:32px;font-weight:800;line-height:1.1">${all.length}</div>
-          <div style="font-size:11px;color:var(--mute)">KES ${Math.round(totalVal).toLocaleString('en-KE')}</div>
-        </div>
-        <div>
-          <div style="font-size:9.5px;color:var(--mute)">Converted</div>
-          <div style="font-size:32px;font-weight:800;color:var(--good);line-height:1.1">${inv.length}</div>
-          <div style="font-size:11px;color:var(--good)">KES ${Math.round(invVal).toLocaleString('en-KE')}</div>
-        </div>
-      </div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
-        <div style="flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px"></div>
-        </div>
-        <span style="font-size:12px;font-weight:700;color:${barColor};white-space:nowrap">${pct}% converted</span>
-      </div>
-    </div>`;
-  })()}
+  ${vDashTeamQuotes()}
   ${vDashPaid()}
   ${vDashMyQuotes()}
 
@@ -4532,6 +4560,7 @@ else { render(); }
 loadDashTasks();
 loadDashQuotes();
 dashPaidLoad();
+if(ME.admin && !USERS.loaded) usersLoad();
 </script>
 <div style="text-align:center;padding:18px 12px 22px;border-top:1px solid #E6EAF0;margin-top:24px;line-height:1.7">
   <div style="font-size:11.5px;color:#64748B">This system is designed for <b>912 Holdings</b>, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited &amp; Global IT Limited</div>
