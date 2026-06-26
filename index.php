@@ -1155,7 +1155,7 @@ function tabRefresh(){
     case 'bulkpay':
       BULK.loaded=false;BULK.loading=false;BULK.invoices=[];BULK.sel={};BULK.done=[];BULK.msg='';
       render();bulkLoad();if(!PAY.accsLoaded)payLoadAccounts();break;
-    case 'dash':      DPAID.loaded=false;DPAID.data=null;loadTasks();checkBackup();loadQuotes();dashPaidLoad();if(!USERS.loaded)usersLoad();render();break;
+    case 'dash':      DPAID.loaded=false;DPAID.data=null;loadTasks();checkBackup();loadQuotes();dashPaidLoad();if(!USERS.loaded)usersLoad();if(ME.admin)expLoadAccounts();render();break;
     default:          render();
   }
 }
@@ -1311,6 +1311,46 @@ function vDashTeamQuotes(){
       </tr></thead>
       <tbody style="border-top:1px solid var(--line)">${rows.join('')}</tbody>
     </table>
+  </div>`;
+}
+
+/* ---- Dashboard quick-expense widget ---- */
+let DEXP = { amount:'', desc:'', date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), saving:false, msg:'', err:false };
+function dexpField(k,v){ DEXP[k]=v; }
+async function dexpSave(){
+  const amt=parseFloat(DEXP.amount)||0;
+  if(amt<=0){ DEXP.msg='Enter an amount.'; DEXP.err=true; render(); return; }
+  if(!EXP.acc){ DEXP.msg='Pick an expense account.'; DEXP.err=true; render(); return; }
+  DEXP.saving=true; DEXP.msg=''; render();
+  try{
+    const r=await fetch('api/expense_quick.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ amount:amt, description:DEXP.desc, account_id:EXP.acc, paid_through_account_id:EXP.paid, date:DEXP.date||today() })});
+    const j=await r.json();
+    DEXP.saving=false;
+    if(j.ok){ DEXP.msg='Expense logged in Zoho ✓'; DEXP.err=false; DEXP.amount=''; DEXP.desc=''; DPAID.loaded=false; DPAID.data=null; dashPaidLoad(); render(); }
+    else { DEXP.msg='Error: '+(j.error||'failed'); DEXP.err=true; render(); }
+  }catch(e){ DEXP.saving=false; DEXP.msg='Error: '+e; DEXP.err=true; render(); }
+}
+function vDashQuickExpense(){
+  const acc=EXP.accounts;
+  const expOpts=acc?['<option value="">— expense account —</option>'].concat((acc.expense||[]).map(a=>`<option value="${a.id}" ${a.id===EXP.acc?'selected':''}>${(a.name||'').replace(/</g,'&lt;')}</option>`)).join(''):'';
+  const paidOpts=acc?['<option value="">— paid through (optional) —</option>'].concat((acc.paid||[]).map(a=>`<option value="${a.id}" ${a.id===EXP.paid?'selected':''}>${(a.name||'').replace(/</g,'&lt;')}</option>`)).join(''):'';
+  return `<div class="card" style="padding:14px 16px;margin-bottom:0">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
+      <span style="font-size:15px">🧾</span>
+      <b style="font-size:12.5px;letter-spacing:.2px">Log an expense</b>
+      <span class="muted" style="font-size:10px;margin-left:auto">straight to Zoho</span>
+    </div>
+    ${!acc?`<div class="muted" style="font-size:11.5px;padding:6px 0">${EXP.loadingAcc?'Loading accounts…':'<span style="color:var(--orange);cursor:pointer" onclick="expLoadAccounts();render()">Load accounts →</span>'}</div>`:`
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input type="number" inputmode="decimal" placeholder="Amount (KES)" value="${DEXP.amount}" oninput="dexpField('amount',this.value)" style="flex:1;min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit">
+      <input type="date" value="${DEXP.date}" onchange="dexpField('date',this.value)" style="flex:0 0 auto;padding:9px 9px;border:1px solid var(--line);border-radius:9px;font-size:12px;font-family:inherit">
+    </div>
+    <input type="text" placeholder="What for? (description)" value="${(DEXP.desc||'').replace(/"/g,'&quot;')}" oninput="dexpField('desc',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
+    <select onchange="EXP.acc=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">${expOpts}</select>
+    <select onchange="EXP.paid=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:10px">${paidOpts}</select>
+    <button class="btn" style="width:100%" onclick="dexpSave()" ${DEXP.saving?'disabled':''}>${DEXP.saving?'Saving…':'＋ Log expense'}</button>
+    ${DEXP.msg?`<div class="${DEXP.err?'warn':'ok'}" style="margin-top:8px;font-size:11.5px">${DEXP.msg}</div>`:''}`}
   </div>`;
 }
 
@@ -1574,7 +1614,7 @@ function vDash(){
 
   <div class="dsh-side" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start">
     ${paidPanel}
-    ${vDashTeamQuotes()}
+    <div style="display:flex;flex-direction:column;gap:10px">${vDashTeamQuotes()}${vDashQuickExpense()}</div>
   </div>
 
   ${overdue.length?`<div style="margin-bottom:10px">
@@ -2208,8 +2248,8 @@ function expLoadAccounts(){
     EXP.loadingAcc=false;
     if(j.ok){ EXP.accounts={expense:j.expense||[],paid:j.paid||[]}; const d=j.defaults||{}; if(!EXP.acc&&d.account_id)EXP.acc=d.account_id; if(!EXP.paid&&d.paid_through_account_id)EXP.paid=d.paid_through_account_id; }
     else { EXP.msg='Accounts: '+(j.error||'failed'); EXP.err=true; }
-    if(TAB==='report') render();
-  }).catch(e=>{ EXP.loadingAcc=false; EXP.msg='Accounts: '+e; EXP.err=true; if(TAB==='report') render(); });
+    if(TAB==='report'||TAB==='dash') render();
+  }).catch(e=>{ EXP.loadingAcc=false; EXP.msg='Accounts: '+e; EXP.err=true; if(TAB==='report'||TAB==='dash') render(); });
 }
 async function rowPushCost(num){
   const el=document.getElementById('rc_'+num); const st=document.getElementById('rcS_'+num);
@@ -5316,6 +5356,7 @@ loadDashTasks();
 loadDashQuotes();
 dashPaidLoad();
 if(ME.admin && !USERS.loaded) usersLoad();
+if(ME.admin) expLoadAccounts();
 </script>
 <div style="text-align:center;padding:18px 12px 22px;border-top:1px solid #E6EAF0;margin-top:24px;line-height:1.7">
   <div style="font-size:11.5px;color:#64748B">This system is designed for <b>912 Holdings</b>, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited &amp; Global IT Limited</div>
