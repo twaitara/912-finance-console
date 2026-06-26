@@ -1315,7 +1315,7 @@ function vDashTeamQuotes(){
 }
 
 /* ---- Dashboard quick-expense widget ---- */
-let DEXP = { amount:'', desc:'', date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), saving:false, msg:'', err:false };
+let DEXP = { amount:'', desc:'', date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), accQ:'', saving:false, msg:'', err:false };
 function dexpField(k,v){ DEXP[k]=v; }
 function dexpFmt(){ const a=String(DEXP.amount||''); const dot=a.indexOf('.'); const intp=dot>=0?a.slice(0,dot):a; const decp=dot>=0?a.slice(dot+1):null; return intp.replace(/\B(?=(\d{3})+(?!\d))/g,',') + (decp!==null?'.'+decp:''); }
 function dexpAmount(el){
@@ -1331,12 +1331,31 @@ function dexpAmount(el){
   let np=0,seen=0; while(np<formatted.length && seen<digitsBefore){ if(/\d/.test(formatted[np])) seen++; np++; }
   el.setSelectionRange(np,np);
 }
-function dexpPickAcc(v){
-  const acc=EXP.accounts; if(!acc) return;
-  const q=String(v||'').trim().toLowerCase();
-  const m=(acc.expense||[]).find(a=>(a.name||'').toLowerCase()===q);
-  EXP.acc = m ? m.id : '';   // set when an exact account name is chosen/typed; stays cleared until matched
+function dexpAccMatches(){
+  const acc=EXP.accounts; if(!acc) return [];
+  const q=String(DEXP.accQ||'').trim().toLowerCase();
+  let list=acc.expense||[];
+  if(q) list=list.filter(a=>(a.name||'').toLowerCase().includes(q));
+  return list.slice(0,50);
 }
+function dexpAccDDHtml(){
+  const list=dexpAccMatches();
+  if(!list.length) return `<div style="padding:9px 11px;color:var(--mute);font-size:12px">No expense account matches.</div>`;
+  return list.map(a=>{
+    const on=a.id===EXP.acc;
+    return `<div onmousedown="event.preventDefault();dexpAccChoose('${a.id}')" style="padding:8px 11px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--line);background:${on?'#FFF4EB':'#fff'};${on?'font-weight:600':''}" onmouseover="this.style.background='#F1F4F8'" onmouseout="this.style.background='${on?'#FFF4EB':'#fff'}'">${(a.name||'').replace(/</g,'&lt;')}</div>`;
+  }).join('');
+}
+function dexpAccSearch(v){ DEXP.accQ=v; EXP.acc=''; const dd=document.getElementById('dexpAccDD'); if(dd){ dd.innerHTML=dexpAccDDHtml(); dd.style.display='block'; } const inp=document.getElementById('dexpAccInp'); if(inp) inp.style.borderColor='#F7C99A'; }
+function dexpAccFocus(){ const dd=document.getElementById('dexpAccDD'); if(dd){ dd.innerHTML=dexpAccDDHtml(); dd.style.display='block'; } }
+function dexpAccChoose(id){
+  const acc=EXP.accounts; if(!acc) return;
+  const a=(acc.expense||[]).find(x=>x.id===id); if(!a) return;
+  EXP.acc=id; DEXP.accQ=a.name;
+  const inp=document.getElementById('dexpAccInp'); if(inp){ inp.value=a.name; inp.style.borderColor='var(--line)'; }
+  const dd=document.getElementById('dexpAccDD'); if(dd) dd.style.display='none';
+}
+function dexpAccBlur(){ setTimeout(()=>{ const dd=document.getElementById('dexpAccDD'); if(dd) dd.style.display='none'; },150); }
 async function dexpSave(){
   const amt=parseFloat(DEXP.amount)||0;
   if(amt<=0){ DEXP.msg='Enter an amount.'; DEXP.err=true; render(); return; }
@@ -1353,6 +1372,7 @@ async function dexpSave(){
 }
 function vDashQuickExpense(){
   const acc=EXP.accounts;
+  if(acc && EXP.acc && !DEXP.accQ){ const sa=(acc.expense||[]).find(x=>x.id===EXP.acc); if(sa) DEXP.accQ=sa.name; }
   const paidOpts=acc?['<option value="">— paid through (optional) —</option>'].concat((acc.paid||[]).map(a=>`<option value="${a.id}" ${a.id===EXP.paid?'selected':''}>${(a.name||'').replace(/</g,'&lt;')}</option>`)).join(''):'';
   return `<div class="card" style="padding:14px 16px;margin-bottom:0">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
@@ -1364,8 +1384,10 @@ function vDashQuickExpense(){
     <input id="dexpAmt" type="text" inputmode="decimal" placeholder="Amount (KES)" value="${dexpFmt()}" oninput="dexpAmount(this)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="text" placeholder="What for? (description)" value="${(DEXP.desc||'').replace(/"/g,'&quot;')}" oninput="dexpField('desc',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="date" value="${DEXP.date}" onchange="dexpField('date',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
-    <input type="text" list="dexpAccList" autocomplete="off" placeholder="🔍 Search expense account…" value="${(((acc.expense||[]).find(a=>a.id===EXP.acc)||{}).name||'').replace(/"/g,'&quot;')}" oninput="dexpPickAcc(this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid ${EXP.acc?'var(--line)':'#F7C99A'};border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
-    <datalist id="dexpAccList">${(acc.expense||[]).map(a=>`<option value="${(a.name||'').replace(/"/g,'&quot;')}"></option>`).join('')}</datalist>
+    <div style="position:relative;margin-bottom:8px">
+      <input id="dexpAccInp" type="text" autocomplete="off" placeholder="🔍 Search expense account…" value="${(DEXP.accQ||'').replace(/"/g,'&quot;')}" oninput="dexpAccSearch(this.value)" onfocus="dexpAccFocus()" onblur="dexpAccBlur()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid ${EXP.acc?'var(--line)':'#F7C99A'};border-radius:9px;font-size:12.5px;font-family:inherit">
+      <div id="dexpAccDD" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:200px;overflow-y:auto;z-index:40"></div>
+    </div>
     <select onchange="EXP.paid=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:10px">${paidOpts}</select>
     <button class="btn" style="width:100%" onclick="dexpSave()" ${DEXP.saving?'disabled':''}>${DEXP.saving?'Saving…':'＋ Log expense'}</button>
     ${DEXP.msg?`<div class="${DEXP.err?'warn':'ok'}" style="margin-top:8px;font-size:11.5px">${DEXP.msg}</div>`:''}`}
