@@ -3905,11 +3905,13 @@ function payGrossChange(v){
 function payAmountChange(v){ PAY.amount=v; }
 function payWhtHtml(gross){
   if(!gross||gross<=0) return '';
+  const vat = (CFG.vat!=null ? CFG.vat : 0.16);
+  const base = gross/(1+vat);                 // WHT is levied on the VAT-exclusive value
   let totalWht=0;
-  WHT_RATES.forEach(({key,r})=>{ if(PAY.whtSel[key]) totalWht+=gross*r; });
+  WHT_RATES.forEach(({key,r})=>{ if(PAY.whtSel[key]) totalWht+=base*r; });
   const net=gross-totalWht;
   const rows=WHT_RATES.map(({key,r,label})=>{
-    const wht=Math.round(gross*r); const on=!!PAY.whtSel[key];
+    const wht=Math.round(base*r); const on=!!PAY.whtSel[key];
     return `<tr style="${on?'background:#FFF4EB':''}">
       <td style="padding:5px 8px;width:28px"><input type="checkbox" ${on?'checked':''} onchange="payWhtToggle('${key}')"></td>
       <td class="l" style="padding:5px 8px;font-size:11px">${label}</td>
@@ -3924,9 +3926,10 @@ function payWhtHtml(gross){
   return `<div style="margin:6px 0">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:4px">KRA Withholding Tax — tick all that apply (combinations allowed)</div>
     <div class="rptwrap"><table class="rpt" style="font-size:11px">
-      <thead><tr><th style="padding:5px 8px;width:28px"></th><th class="l" style="padding:5px 8px">WHT type</th><th style="padding:5px 8px;text-align:right">Deduction on KES ${Math.round(gross).toLocaleString('en-KE')}</th></tr></thead>
+      <thead><tr><th style="padding:5px 8px;width:28px"></th><th class="l" style="padding:5px 8px">WHT type</th><th style="padding:5px 8px;text-align:right">Deduction on ex-VAT KES ${Math.round(base).toLocaleString('en-KE')}</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
+    <div class="muted" style="font-size:10px;margin-top:4px">WHT is calculated on the VAT-exclusive value (gross ÷ ${(1+vat).toLocaleString('en-KE',{maximumFractionDigits:2})}) = KES ${Math.round(base).toLocaleString('en-KE')}, per KRA rules.</div>
     ${summary}
   </div>`;
 }
