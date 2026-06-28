@@ -710,6 +710,34 @@ if (empty($_SESSION['auth'])):
     .kpi .n{font-size:20px!important;margin-top:4px!important}
     .kpi .l{font-size:8px!important;letter-spacing:.4px!important}
     .kpi .h{font-size:9px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+    /* ── Mobile overflow prevention ───────────────────────────── */
+    /* Clip anything that escapes the container — tables in .rptwrap
+       still scroll horizontally within their own scroll box */
+    .wrap{overflow-x:hidden}
+
+    /* Flex children (inputs, selects, buttons) must be able to shrink
+       below their natural/min-width inside flex rows */
+    .pane input,.pane select,.pane textarea,
+    .pane .btn,.pane button{min-width:0!important;max-width:100%}
+
+    /* Link tiles in dashboard flex rows */
+    .linktile{min-width:0!important;flex-shrink:1}
+
+    /* Dropdown submenus must not exceed the viewport */
+    .submenu{min-width:min(192px,80vw)!important}
+
+    /* Any .row class used in render functions must wrap */
+    .row{flex-wrap:wrap!important}
+
+    /* Tables not inside .rptwrap get their own scroll container */
+    table:not(.rpt){display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+
+    /* Ensure text in narrow cells can break */
+    .pane td,.pane th{word-break:break-word}
+
+    /* Images and media */
+    img,video,iframe,object,embed{max-width:100%!important}
   }
   @media(min-width:681px){
     #mobDrawer,#mobOverlay,#mobMenuBtn{display:none!important}
