@@ -39,7 +39,7 @@ function ec_apply_sent($clients){
 try {
     $cacheDir = __DIR__ . '/../data';
     if (!is_dir($cacheDir)) @mkdir($cacheDir, 0775, true);
-    $cacheFile = $cacheDir . '/email_clients_v5.json';
+    $cacheFile = $cacheDir . '/email_clients_v6.json';
     $force = isset($_GET['refresh']) && $_GET['refresh'] == '1';
 
     if (!$force && is_file($cacheFile) && (time() - filemtime($cacheFile) < 21600)) {
@@ -52,12 +52,14 @@ try {
     do {
         [$d, $code] = zoho_api('GET', 'contacts', null, [
             'contact_type' => 'customer',
+            'status'       => 'active',
             'per_page'     => 200,
             'page'         => $page,
             'sort_column'  => 'contact_name',
         ]);
         if ($code >= 400) throw new Exception($d['message'] ?? 'Zoho error (contacts)');
         foreach (($d['contacts'] ?? []) as $ct) {
+            if (($ct['status'] ?? 'active') !== 'active') continue; // never show inactive customers
             $clients[] = [
                 'id'    => $ct['contact_id'] ?? '',
                 'name'  => $ct['contact_name'] ?? ($ct['company_name'] ?? ''),

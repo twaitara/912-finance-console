@@ -33,6 +33,7 @@ try {
     [$data, $code] = zoho_api('GET', 'contacts', null, [
         'contact_name_contains' => $q,
         'contact_type'          => 'customer',
+        'status'                => 'active',
         'per_page'              => 50,
     ]);
     if ($code >= 400) throw new Exception($data['message'] ?? 'Zoho error (contacts).');
@@ -41,6 +42,7 @@ try {
     foreach (($data['contacts'] ?? []) as $c) {
         $id = (string)($c['contact_id'] ?? '');
         if ($id === '') continue;
+        if (($c['status'] ?? 'active') !== 'active') continue;      // never show inactive customers
         if ($allowed !== null && !isset($allowed[$id])) continue;   // staff: only their customers
         $out[] = [
             'id'       => $id,
