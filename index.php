@@ -4311,7 +4311,7 @@ function vPayments(){
 
 /* ================= Bulk Mark Paid ================= */
 let BULK = {
-  loaded:false, loading:false, invoices:[], sel:{}, wht:{}, q:'',
+  loaded:false, loading:false, invoices:[], sel:{}, wht:{}, q:'', usd:false,
   date:(()=>{ const d=new Date(); return d.toISOString().slice(0,10); })(),
   mode:'bankremittance', ref:'',
   processing:false, done:[], msg:'', err:false
@@ -4351,9 +4351,9 @@ function bulkToggleAll(on){
 
 function bulkToggleVisible(on){
   const q=(BULK.q||'').toLowerCase().trim();
-  const visible=q
-    ? (BULK.invoices||[]).filter(iv=>iv.customer_name.toLowerCase().includes(q)||iv.number.toLowerCase().includes(q))
-    : BULK.invoices;
+  let visible=BULK.invoices||[];
+  if(BULK.usd) visible=visible.filter(iv=>iv.currency&&iv.currency!=='KES');
+  if(q) visible=visible.filter(iv=>iv.customer_name.toLowerCase().includes(q)||iv.number.toLowerCase().includes(q));
   visible.forEach(iv=>{ BULK.sel[iv.id]=on; });
   render();
 }
@@ -4400,9 +4400,10 @@ async function bulkProcess(){
 function vBulkPay(){
   const today=new Date().toISOString().slice(0,10);
   const q=(BULK.q||'').toLowerCase().trim();
-  const visible=q
-    ? (BULK.invoices||[]).filter(iv=>iv.customer_name.toLowerCase().includes(q)||iv.number.toLowerCase().includes(q))
-    : (BULK.invoices||[]);
+  const usdCount=(BULK.invoices||[]).filter(iv=>iv.currency&&iv.currency!=='KES').length;
+  let visible=BULK.invoices||[];
+  if(BULK.usd) visible=visible.filter(iv=>iv.currency&&iv.currency!=='KES');
+  if(q) visible=visible.filter(iv=>iv.customer_name.toLowerCase().includes(q)||iv.number.toLowerCase().includes(q));
   const selInvs=visible.filter(iv=>BULK.sel[iv.id]);
   const selClientSet=new Set(selInvs.map(iv=>iv.customer_id));
   const selClients=selClientSet.size;
@@ -4433,7 +4434,7 @@ function vBulkPay(){
       </tr>`:'';
       return clientHdr+`<tr style="${on?'background:#F0FDF4;':''}cursor:default">
         <td style="padding:4px 8px 4px 22px"><input type="checkbox" ${on?'checked':''} onchange="BULK.sel['${iv.id}']=this.checked;render()"></td>
-        <td class="l" style="padding:4px 8px;font-size:11px;font-weight:600">${iv.number}
+        <td class="l" style="padding:4px 8px;font-size:11px;font-weight:600">${iv.number}${iv.currency&&iv.currency!=='KES'?`&nbsp;<span style="background:#EEF2FE;color:var(--blue);border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700;vertical-align:middle">${iv.currency}</span>`:''}
           <span style="display:block;font-weight:400;font-size:9.5px;color:${overdue?'var(--bad)':'var(--mute)'}">${iv.date}${overdue?' · overdue':''}</span></td>
         <td style="padding:4px 8px;text-align:right;font-size:11px">${gross.toLocaleString('en-KE')}</td>
         <td style="padding:4px 8px;white-space:nowrap;text-align:center">
@@ -4444,9 +4445,10 @@ function vBulkPay(){
       </tr>`;
     }).join('');
     const allVisOn=visible.length>0&&visible.every(iv=>BULK.sel[iv.id]);
-    tableHtml=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <input id="bulkQ" type="text" autocomplete="off" placeholder="🔍 Search client or invoice number…" value="${(BULK.q||'').replace(/"/g,'&quot;')}" oninput="BULK.q=this.value;render()" style="flex:1;margin-bottom:0;min-height:unset!important;padding:7px 10px!important;font-size:12px!important">
-      ${q?`<button class="btn sec" onclick="BULK.q='';render()" style="white-space:nowrap;padding:5px 10px;font-size:11px;min-height:unset">✕ Clear</button>`:''}
+    tableHtml=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <input id="bulkQ" type="text" autocomplete="off" placeholder="🔍 Search client or invoice number…" value="${(BULK.q||'').replace(/"/g,'&quot;')}" oninput="BULK.q=this.value;render()" style="flex:1;min-width:160px;margin-bottom:0;min-height:unset!important;padding:7px 10px!important;font-size:12px!important">
+      ${usdCount?`<button onclick="BULK.usd=!BULK.usd;render()" style="border:1.5px solid ${BULK.usd?'var(--blue)':'var(--line)'};background:${BULK.usd?'#EEF2FE':'#fff'};color:${BULK.usd?'var(--blue)':'var(--mute)'};border-radius:7px;padding:4px 11px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:unset">💵 USD only${BULK.usd?` (${visible.length})`:`&nbsp;·&nbsp;${usdCount}`}</button>`:''}
+      ${q||BULK.usd?`<button class="btn sec" onclick="BULK.q='';BULK.usd=false;render()" style="white-space:nowrap;padding:5px 10px;font-size:11px;min-height:unset">✕ Clear</button>`:''}
       <span style="font-size:10.5px;color:var(--mute);white-space:nowrap">${visible.length} of ${BULK.invoices.length}</span>
     </div>
     <div class="rptwrap" style="margin-bottom:10px;max-height:420px;overflow-y:auto">
