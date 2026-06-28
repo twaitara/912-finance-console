@@ -706,6 +706,10 @@ if (empty($_SESSION['auth'])):
     .grid2,.grid3,.cardgrid{grid-template-columns:1fr!important}
     .dsh-side{grid-template-columns:1fr!important}
     .late-cards{grid-template-columns:1fr!important}
+    .kpi{padding:10px 8px 9px!important;border-radius:12px!important}
+    .kpi .n{font-size:20px!important;margin-top:4px!important}
+    .kpi .l{font-size:8px!important;letter-spacing:.4px!important}
+    .kpi .h{font-size:9px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   }
   @media(min-width:681px){
     #mobDrawer,#mobOverlay,#mobMenuBtn{display:none!important}
@@ -1649,11 +1653,11 @@ function vDash(){
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
-    <div class="kpi" style="--accent:var(--orange);padding:11px 13px"><div class="l">Open bridges</div><div class="n" style="font-size:24px">${s.open.length}</div><div class="h">Capital deployed</div></div>
-    <div class="kpi" style="--accent:${overdue.length?'var(--bad)':'var(--good)'};padding:11px 13px"><div class="l">Overdue</div><div class="n" style="font-size:24px;color:${overdue.length?'var(--bad)':'var(--ink)'}">${overdue.length}</div><div class="h">${overdue.length?'Needs chasing':'All on track'}</div></div>
-    <div class="kpi" style="--accent:var(--blue);padding:11px 13px"><div class="l">Open tasks</div><div class="n" style="font-size:24px">${openTasks}</div><div class="h">On the to-do list</div></div>
-    <div class="kpi" style="--accent:var(--good);padding:11px 13px"><div class="l">Restored</div><div class="n" style="font-size:24px">${s.restored.length}</div><div class="h">Bridges repaid</div></div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+    <div class="kpi" style="--accent:var(--orange)"><div class="l">Open bridges</div><div class="n" style="font-size:24px">${s.open.length}</div><div class="h" title="Capital deployed">Capital deployed</div></div>
+    <div class="kpi" style="--accent:${overdue.length?'var(--bad)':'var(--good)'}"><div class="l">Overdue</div><div class="n" style="font-size:24px;color:${overdue.length?'var(--bad)':'var(--ink)'}">${overdue.length}</div><div class="h" title="${overdue.length?'Needs chasing':'All on track'}">${overdue.length?'Needs chasing':'All on track'}</div></div>
+    <div class="kpi" style="--accent:var(--blue)"><div class="l">Open tasks</div><div class="n" style="font-size:24px">${openTasks}</div><div class="h" title="On the to-do list">On the to-do</div></div>
+    <div class="kpi" style="--accent:var(--good)"><div class="l">Restored</div><div class="n" style="font-size:24px">${s.restored.length}</div><div class="h" title="Bridges repaid">Bridges repaid</div></div>
   </div>
 
   <div class="dsh-side" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;align-items:start">
