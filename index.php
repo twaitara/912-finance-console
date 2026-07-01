@@ -5271,7 +5271,7 @@ function mqListHtml(){
   if(MQ.users.length) filtered=filtered.filter(q=>MQ.users.includes(q.created_by));
   if(MQ.statuses.length){ const ss=mqStatusSet(); filtered=filtered.filter(q=>ss.has(q.status)); }
   const qq=(MQ.q||'').trim().toLowerCase();
-  if(qq) filtered=filtered.filter(q=>((q.zoho_estimate_number||'')+' '+(q.customer_name||'')).toLowerCase().includes(qq));
+  if(qq) filtered=filtered.filter(q=>((q.zoho_estimate_number||'')+' '+(q.customer_name||'')+' '+(q.subject||'')).toLowerCase().includes(qq));
   const pages=Math.max(1,Math.ceil(filtered.length/MQ_PER_PAGE));
   if(MQ.page>pages) MQ.page=pages; if(MQ.page<1) MQ.page=1;
   const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
@@ -5295,6 +5295,7 @@ function mqListHtml(){
       <div class="row" style="align-items:flex-start;gap:12px">
         <div style="min-width:0;flex:1">
           <b style="font-size:14px">${qesc(q.customer_name||'(no customer)')}</b>
+          ${q.subject?`<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${qesc(q.subject)}</div>`:''}
           <div class="muted" style="margin-top:3px;font-size:11.5px">${meta}</div>
         </div>
         <div style="text-align:right;white-space:nowrap">
@@ -5360,7 +5361,7 @@ function vMyQuotes(){
   return `<h2>My quotes</h2>
     ${MQ.msg?`<div class="${MQ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(MQ.msg)}</div>`:''}
     <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="mqSearch" type="text" autocomplete="off" ${tip('Find a quote by its number or the client name')} placeholder="🔍 Search quote # or client…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
+      <input id="mqSearch" type="text" autocomplete="off" ${tip('Find a quote by its number, client, or subject')} placeholder="🔍 Search quote #, client or subject…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
       <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
     </div>
