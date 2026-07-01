@@ -56,7 +56,8 @@ if (!is_dir($cacheDir)) @mkdir($cacheDir, 0775, true);
 $cfg = function_exists('zoho_config') ? zoho_config() : [];
 $fx  = usd_kes_rate($cacheDir, $cfg);   // ['rate'=>float, 'src'=>string, 'asOf'=>iso]
 
-$dueKES = 0.0; $dueUSD = 0.0; $unpaidCount = 0;
+$dueKES = 0.0; $dueUSD = 0.0; $unpaidCount = 0; $unpaidRows = [];
+$today = date('Y-m-d');
 $page = 1;
 do {
     [$ud, $uc] = zoho_api('GET', 'invoices', null, [
@@ -71,10 +72,27 @@ do {
         $cur = strtoupper((string)($iv['currency_code'] ?? 'KES'));
         if ($cur === 'USD') $dueUSD += $bal;
         else                $dueKES += $bal;
+        $due = substr((string)($iv['due_date'] ?? ''), 0, 10);
+        $unpaidRows[] = [
+            'customer' => (string)($iv['customer_name'] ?? ''),
+            'number'   => (string)($iv['invoice_number'] ?? ''),
+            'id'       => (string)($iv['invoice_id'] ?? ''),
+            'date'     => substr((string)($iv['date'] ?? ''), 0, 10),
+            'due'      => $due,
+            'balance'  => round($bal, 2),
+            'currency' => $cur,
+            'overdue'  => ($due && $due < $today) ? (int)floor((strtotime($today) - strtotime($due)) / 86400) : 0,
+        ];
     }
     $more = $ud['page_context']['has_more_page'] ?? false;
     $page++;
 } while ($more && $page <= 15);
+
+// most-overdue first, then biggest balance
+usort($unpaidRows, function($a, $b) {
+    if ($a['overdue'] !== $b['overdue']) return $b['overdue'] <=> $a['overdue'];
+    return $b['balance'] <=> $a['balance'];
+});
 
 $rate = (float)($fx['rate'] ?? 0);
 $dueTotalKES = $dueKES + ($rate > 0 ? $dueUSD * $rate : 0);
@@ -121,5 +139,6 @@ echo json_encode([
         'totalUSD' => round($dueTotalUSD, 2),  // everything expressed in USD
         'rate'     => $rate,
         'rateSrc'  => $fx['src'] ?? '',
+        'list'     => $unpaidRows,             // the individual unpaid invoices
     ],
 ]);

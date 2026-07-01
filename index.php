@@ -1238,7 +1238,8 @@ function render(){
   if(_fid){ const re=document.getElementById(_fid); if(re){ re.focus(); try{re.setSelectionRange(_ss,_se);}catch(e){} } }
 }
 
-let DPAID = {loaded:false, loading:false, data:null};
+let DPAID = {loaded:false, loading:false, data:null, view:null};
+function dashPayView(v){ DPAID.view=v; render(); }
 function dashPaidLoad(){
   if(DPAID.loading) return;
   DPAID.loading=true;
@@ -1629,10 +1630,10 @@ function vDash(){
     if(!d) return `<div class="card" style="padding:16px;display:flex;align-items:center;justify-content:center;min-height:90px"><span class="muted" style="font-size:11.5px">${DPAID.loading?'Loading payments…':'—'}</span></div>`;
     const wht=Math.max(0,Math.round(d.gross-d.net));
     const mo=new Date(d.from+'T00:00:00').toLocaleString('en-KE',{month:'long',year:'numeric'});
-    const allRows=(d.rows||[]).map(row=>{
+    const payRows=(d.rows||[]).map(row=>{
       const invNums=(row.invoices||[]).join(', ');
       const sub=[row.number,invNums,row.ref].filter(Boolean).join(' · ');
-      return `<div class="dsh-pay-row" data-client="${(row.customer||'').toLowerCase().replace(/"/g,'')}" style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
+      return `<div class="dsh-pay-row" data-client="${((row.customer||'')+' '+invNums).toLowerCase().replace(/"/g,'')}" style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
         <div style="flex:1;min-width:0">
           <div style="font-size:11.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.customer}</div>
           ${sub?`<div style="font-size:9.5px;color:var(--mute);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}
@@ -1643,6 +1644,25 @@ function vDash(){
         </div>
       </div>`;
     }).join('');
+    const dueList=(d.unpaid&&d.unpaid.list)||[];
+    const dueRows=dueList.map(iv=>{
+      const od=iv.overdue>0;
+      const sub=iv.number+(od?` · <span style="color:var(--bad);font-weight:600">${iv.overdue}d overdue</span>`:(iv.due?` · due ${iv.due}`:''));
+      return `<div class="dsh-pay-row" data-client="${((iv.customer||'')+' '+(iv.number||'')).toLowerCase().replace(/"/g,'')}" style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${iv.customer||'—'}</div>
+          <div style="font-size:9.5px;color:var(--mute);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>
+        </div>
+        <div style="flex-shrink:0;text-align:right">
+          <div style="font-size:12px;font-weight:700;color:${od?'var(--bad)':'var(--ink)'};white-space:nowrap">${iv.currency} ${Math.round(iv.balance).toLocaleString('en-KE')}</div>
+        </div>
+      </div>`;
+    }).join('');
+    const dueCount=(d.unpaid&&d.unpaid.count)||0;
+    // default to Outstanding when there are no payments this month yet
+    const view = DPAID.view || ((d.count===0 && dueCount>0) ? 'due' : 'pay');
+    const activeRows = view==='due' ? dueRows : payRows;
+    const emptyMsg = view==='due' ? 'No outstanding invoices. 🎉' : 'No payments received yet this month.';
     return `<div class="card" style="padding:0;overflow:hidden">
       <div style="background:var(--grad-orange);padding:12px 14px 11px">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.72);margin-bottom:9px">Payments · ${mo} · ${d.count}</div>
@@ -1653,19 +1673,23 @@ function vDash(){
           <div style="border-left:2px solid rgba(255,255,255,.25);padding-left:10px"><div style="font-size:9px;color:rgba(255,255,255,.6)">Profit</div><div style="font-size:13px;font-weight:800;color:#15202B;line-height:1.2">${d.profit<0?'−':''}KES ${Math.abs(Math.round(d.profit)).toLocaleString('en-KE')}</div></div>
         </div>
       </div>
-      ${d.unpaid?`<div style="background:#15202B;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      ${d.unpaid?`<div onclick="dashPayView('due')" title="View outstanding invoices" style="cursor:pointer;background:#15202B;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94A3B8">Outstanding · ${d.unpaid.count} unpaid<div style="font-size:8.5px;font-weight:500;text-transform:none;letter-spacing:0;color:#5B6B7D;margin-top:1px">@ 1 USD = KES ${(+d.unpaid.rate).toLocaleString('en-KE',{maximumFractionDigits:2})}${d.unpaid.rateSrc==='fallback'?' (set)':''}</div></div>
         <div style="text-align:right;display:flex;gap:14px;align-items:baseline">
           <div><span style="font-size:13.5px;font-weight:800;color:#fff">KES ${Math.round(d.unpaid.totalKES).toLocaleString('en-KE')}</span></div>
           <div><span style="font-size:13.5px;font-weight:800;color:#5BD68A">USD ${Math.round(d.unpaid.totalUSD).toLocaleString('en-US')}</span></div>
         </div>
       </div>`:''}
-      ${allRows?`<div style="padding:6px 10px 4px 14px;border-bottom:1px solid var(--line)">
-        <input id="dshPayQ" type="text" placeholder="Search payment…" autocomplete="off"
+      <div style="display:flex;border-bottom:1px solid var(--line)">
+        <button onclick="dashPayView('pay')" style="flex:1;background:none;border:none;cursor:pointer;font-family:inherit;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:8px 6px;color:${view==='pay'?'var(--orange)':'var(--mute)'};border-bottom:2px solid ${view==='pay'?'var(--orange)':'transparent'}">Received (${d.count})</button>
+        <button onclick="dashPayView('due')" style="flex:1;background:none;border:none;cursor:pointer;font-family:inherit;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:8px 6px;color:${view==='due'?'var(--orange)':'var(--mute)'};border-bottom:2px solid ${view==='due'?'var(--orange)':'transparent'}">Outstanding (${dueCount})</button>
+      </div>
+      <div style="padding:6px 10px 4px 14px;border-bottom:1px solid var(--line)">
+        <input id="dshPayQ" type="text" placeholder="${view==='due'?'Search outstanding invoice or client…':'Search payment…'}" autocomplete="off"
           style="width:100%;box-sizing:border-box;border:none;outline:none;font-size:11.5px;padding:5px 0;background:transparent;font-family:inherit;color:var(--ink)"
           oninput="(function(v){const q=v.toLowerCase();document.querySelectorAll('.dsh-pay-row').forEach(r=>{r.style.display=r.dataset.client.includes(q)?'flex':'none'});})(this.value)">
       </div>
-      <div style="max-height:260px;overflow-y:auto;padding:0 14px 10px">${allRows}</div>`:''}
+      <div style="max-height:260px;overflow-y:auto;padding:0 14px 10px">${activeRows||`<div class="muted" style="text-align:center;padding:20px 10px;font-size:11.5px">${emptyMsg}</div>`}</div>
     </div>`;
   })();
 
