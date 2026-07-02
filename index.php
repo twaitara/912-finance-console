@@ -5021,7 +5021,10 @@ function vNewQuote(){
   const rows=QB.items.map((it,i)=>`
     <div class="qbrow${ME.admin?'':' qb-noac'}">
       <div class="qbc-item">
-        <input type="text" placeholder="Item name" value="${qesc(it.name)}" oninput="qbItem(${i},'name',this.value)" style="margin-bottom:4px;font-weight:600">
+        <div style="position:relative;margin-bottom:4px">
+          <input id="qbIN${i}" type="text" autocomplete="off" placeholder="Item name" value="${qesc(it.name)}" oninput="qbItemName(${i},this.value)" onfocus="qbItemNameFocus(${i})" onblur="qbItemNameBlur(${i})" style="margin-bottom:0;font-weight:600;width:100%">
+          <div id="qbIND${i}" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:190px;overflow-y:auto;z-index:60"></div>
+        </div>
         <input type="text" placeholder="Add a description to your item" value="${qesc(it.description)}" oninput="qbItem(${i},'description',this.value)" style="margin-bottom:0;font-size:11px;color:var(--mute)">
       </div>
       <div class="qbc-qty"><span class="qbc-lab">Qty</span><input type="number" step="0.01" min="0" value="${qesc(it.qty)}" oninput="qbItem(${i},'qty',this.value)" style="margin-bottom:0;text-align:right"></div>
@@ -5105,6 +5108,27 @@ function qbTotalsHtml(){
 function qbItem(i,field,val){ if(!QB.items[i])return; QB.items[i][field]=val;
   const a=document.getElementById('qbAmt'+i); if(a) a.innerHTML=qbAmtCellHtml(QB.items[i]);
   const t=document.getElementById('qbTotals'); if(t) t.innerHTML=qbTotalsHtml(); }
+
+/* ---- Shared item-name autocomplete (cached across all users) ---- */
+let ITEMNAMES = [];
+function itemNamesLoad(){
+  fetch('api/item_names.php?action=list',{credentials:'same-origin'}).then(r=>r.json())
+    .then(j=>{ if(j.ok) ITEMNAMES=j.names||[]; }).catch(()=>{});
+}
+function itemNamesAdd(names){
+  const clean=[...new Set((names||[]).map(n=>String(n||'').trim()).filter(Boolean))];
+  if(!clean.length) return;
+  // merge locally so this session autocompletes new names immediately
+  const seen=new Set(ITEMNAMES.map(n=>n.toLowerCase()));
+  clean.forEach(n=>{ if(!seen.has(n.toLowerCase())){ ITEMNAMES.push(n); seen.add(n.toLowerCase()); } });
+  fetch('api/item_names.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',names:clean})}).catch(()=>{});
+}
+function qbItemMatches(i){ const q=String((QB.items[i]||{}).name||'').trim().toLowerCase(); let l=ITEMNAMES; if(q) l=ITEMNAMES.filter(n=>n.toLowerCase().includes(q)); return l.slice(0,40); }
+function qbItemNameDD(i){ const list=qbItemMatches(i); if(!list.length) return ''; return list.map(n=>`<div data-name="${qesc(n)}" onmousedown="event.preventDefault();qbItemPickEl(${i},this)" style="padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line);background:#fff" onmouseover="this.style.background='#F1F4F8'" onmouseout="this.style.background='#fff'">${qesc(n)}</div>`).join(''); }
+function qbItemName(i,v){ if(QB.items[i]) QB.items[i].name=v; const dd=document.getElementById('qbIND'+i); if(dd){ dd.innerHTML=qbItemNameDD(i); dd.style.display=dd.innerHTML?'block':'none'; } }
+function qbItemNameFocus(i){ const dd=document.getElementById('qbIND'+i); if(dd){ dd.innerHTML=qbItemNameDD(i); dd.style.display=dd.innerHTML?'block':'none'; } }
+function qbItemNameBlur(i){ setTimeout(()=>{ const dd=document.getElementById('qbIND'+i); if(dd) dd.style.display='none'; },150); }
+function qbItemPickEl(i,el){ const n=el.getAttribute('data-name'); if(QB.items[i]) QB.items[i].name=n; const inp=document.getElementById('qbIN'+i); if(inp) inp.value=n; const dd=document.getElementById('qbIND'+i); if(dd) dd.style.display='none'; }
 function qbDisc(field,val){ QB[field]=val; const t=document.getElementById('qbTotals'); if(t) t.innerHTML=qbTotalsHtml(); }
 function qbAddRow(){ QB.items.push({name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
 function qbDelRow(i){ QB.items.splice(i,1); if(!QB.items.length) QB.items.push({name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
@@ -5162,7 +5186,7 @@ function qbReqOk(){
 function qbSave(cb){ if(!qbReqOk())return; QB.busy=true; QB.msg=''; render();
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:'save'},qbPayload()))})
   .then(r=>r.json()).then(j=>{ QB.busy=false;
-    if(j.ok){ QB.id=j.quote.id; QB.msg='Saved draft #'+j.quote.id+'.'; QB.err=false; MQ.loaded=false; if(cb){cb();return;} render(); }
+    if(j.ok){ itemNamesAdd(QB.items.map(it=>it.name)); QB.id=j.quote.id; QB.msg='Saved draft #'+j.quote.id+'.'; QB.err=false; MQ.loaded=false; if(cb){cb();return;} render(); }
     else { QB.msg=j.error||'Save failed.'; QB.err=true; render(); }
   }).catch(e=>{ QB.busy=false; QB.msg='Error: '+e; QB.err=true; render(); });
 }
@@ -5564,6 +5588,7 @@ else { render(); }
 loadDashTasks();
 loadDashQuotes();
 dashPaidLoad();
+itemNamesLoad();
 if(ME.admin && !USERS.loaded) usersLoad();
 if(ME.admin) expLoadAccounts();
 </script>
