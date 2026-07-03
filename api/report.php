@@ -74,7 +74,7 @@ try {
     // ---- 24-hour file cache (keyed by period). Bypass with ?refresh=1 ----
     $cacheDir  = __DIR__ . '/../data';
     if (!is_dir($cacheDir)) @mkdir($cacheDir, 0775, true);
-    $cacheFile = $cacheDir . '/report_v5_' . ($year ?: 'all') . '_' . $mkey . '.json';
+    $cacheFile = $cacheDir . '/report_v6_' . ($year ?: 'all') . '_' . $mkey . '.json';
     $force     = isset($_GET['refresh']) && $_GET['refresh'] == '1';
 
     if (!$force && is_file($cacheFile) && (time() - filemtime($cacheFile) < 86400)) {
@@ -177,7 +177,7 @@ try {
             'vat'           => $taxK,                    // KES
             'cost'          => $cost,                    // KES
             'hasCost'       => $cost > 0,
-            'profit'        => $subK - $cost,            // profit excludes VAT, in KES
+            'profit'        => $totalK - $cost,          // profit = invoice total (incl VAT) − cost, per house rule
         ];
     }
 
