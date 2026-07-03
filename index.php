@@ -110,7 +110,8 @@ if (empty($_SESSION['auth'])):
 })();
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{--orange:#F56F00;--blue:#2350C5;--ink:#15202B;--mute:#64748B;--line:#E6EAF0;--bg:#F7F8FB;--good:#16A34A;--bad:#D64933}
   *{box-sizing:border-box}
@@ -768,6 +769,85 @@ if (empty($_SESSION['auth'])):
   @keyframes spin{to{transform:rotate(360deg)}}
   #globalRefreshBtn.spinning .ricon{display:inline-block;animation:spin .6s linear}
   @media print{#globalRefreshBtn{display:none}}
+
+  /* ============================================================
+     ▚ EXECUTIVE THEME — quiet canvas, Inter type, tabular figures,
+       report-grade tables & restrained depth. Loaded last so it wins.
+     ============================================================ */
+  :root{
+    --ink:#0F1B2D; --mute:#5B6B7F; --line:#E8EDF3; --bg:#F5F7FA;
+    --good:#0E9F6E; --bad:#E02424;
+    --hair:#EDF1F6; --surface:#FFFFFF; --surface-2:#FAFBFD;
+    --sh-sm:0 1px 2px rgba(15,27,45,.05);
+    --sh-md:0 4px 16px -6px rgba(15,27,45,.12),0 2px 6px -4px rgba(15,27,45,.08);
+    --sh-lg:0 24px 60px -20px rgba(15,27,45,.24);
+  }
+  body{font-family:'Inter',system-ui,-apple-system,sans-serif;
+       font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1,'cv05' 1,'ss01' 1;letter-spacing:-.005em;
+       background:
+         radial-gradient(1100px 620px at 100% -8%,rgba(35,80,197,.035),transparent 62%),
+         var(--bg)}
+  ::selection{background:rgba(245,111,0,.18)}
+
+  /* Typography — report-grade headings & aligned numerals */
+  h2{font-family:'Inter',sans-serif;text-transform:none;letter-spacing:-.02em;font-size:19px;font-weight:700;
+     color:var(--ink);margin:2px 0 16px}
+  .dsh-hero .big,.kpi .n,table.rpt td,table.rpt th,.val,#exposure,#available,.big{
+     font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1}
+  .dsh-hero .big{font-weight:800;letter-spacing:-1px}
+  .kpi .n{letter-spacing:-.8px;color:var(--ink)}
+
+  /* Surfaces — hairline cards, restrained depth (executive = quiet) */
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--sh-sm)}
+  .cardgrid > .card:hover{transform:translateY(-2px);box-shadow:var(--sh-md)}
+  @media (min-width:820px){
+    .wrap{border-radius:20px;box-shadow:0 1px 3px rgba(15,27,45,.05),0 30px 70px -32px rgba(15,27,45,.28);
+          border:1px solid var(--hair)}
+    .pane{padding:24px 28px}
+  }
+
+  /* Buttons — confident, low-gloss */
+  .btn{border-radius:10px;font-weight:600;letter-spacing:-.01em;box-shadow:var(--sh-sm)}
+  .btn:hover{filter:brightness(1.02);box-shadow:0 6px 18px -6px rgba(245,111,0,.5)}
+  .btn.sec{border:1px solid var(--line);color:var(--ink);box-shadow:none}
+  .btn.sec:hover{background:var(--surface-2);border-color:#D5DEE9;box-shadow:var(--sh-sm)}
+
+  /* Inputs — calmer focus ring */
+  input,select,textarea{border-color:var(--line);border-radius:10px}
+  input:focus,select:focus,textarea:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(15,27,45,.08)}
+
+  /* Navigation — quiet segmented bar */
+  .tabs{background:rgba(255,255,255,.9);box-shadow:inset 0 -1px 0 var(--hair)}
+  .tabs button{background:transparent;color:var(--mute);font-weight:600;letter-spacing:-.01em}
+  .tabs button:hover{background:var(--surface-2);color:var(--ink);transform:none;box-shadow:none;filter:none}
+  .tabs > button.active,.tabs button.active{background:var(--ink);color:#fff;box-shadow:var(--sh-md)}
+  .navgroup .grp{background:transparent;color:var(--mute)}
+  .navgroup.open .grp{background:var(--ink);color:#fff}
+
+  /* Report tables — the heart of a finance tool: crisp, aligned, calm */
+  .rptwrap{border:1px solid var(--hair);border-radius:12px;box-shadow:var(--sh-sm)}
+  table.rpt th{background:var(--surface-2);color:var(--mute);font-weight:600;letter-spacing:.4px;
+    border-bottom:1px solid var(--line);padding:8px 10px}
+  table.rpt td{padding:7px 10px;border-bottom:1px solid var(--hair)}
+  table.rpt tbody tr:not(.tot):nth-child(even){background:var(--surface)}
+  table.rpt tbody tr:not(.tot):nth-child(odd){background:var(--surface-2)}
+  table.rpt tbody tr:not(.tot):hover{background:#F0F5FF;box-shadow:inset 3px 0 0 var(--orange)}
+  table.rpt tr.tot td{border-top:2px solid var(--ink);background:var(--surface)}
+  table.rpt td.pos{color:var(--good)} table.rpt td.neg{color:var(--bad)}
+
+  /* Section labels — refined small-caps rhythm */
+  .sect b{color:var(--mute);font-weight:700;letter-spacing:.6px}
+  .muted{color:var(--mute)}
+  .pill{font-weight:600;letter-spacing:-.01em}
+
+  /* Hero & KPI — calmer, executive depth */
+  .dsh-hero{background:linear-gradient(150deg,#16273B 0%,#0F1B2D 60%,#0A1524 100%);border-radius:18px;
+    box-shadow:0 20px 48px -22px rgba(10,21,36,.55)}
+  .dsh-hero::after{opacity:.7}
+  .kpi{border:1px solid var(--hair);border-radius:14px;box-shadow:var(--sh-sm)}
+
+  /* Softer, slower meter shimmer — less "consumer app" sparkle */
+  .meter>div::after{animation-duration:3.6s;background:linear-gradient(90deg,transparent,rgba(255,255,255,.32),transparent)}
 </style></head>
 <body>
 <div class="wrap">
