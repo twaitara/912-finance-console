@@ -1432,8 +1432,39 @@ function vDashTeamQuotes(){
 }
 
 /* ---- Dashboard quick-expense widget ---- */
-let DEXP = { amount:'', desc:'', date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), accQ:'', saving:false, msg:'', err:false };
+let DEXP = { amount:'', desc:'', date:(()=>{const d=new Date();return d.toISOString().slice(0,10);})(), accQ:'', invoice:'', invQ:'', invResults:[], invLoading:false, invFor:'', saving:false, msg:'', err:false };
 function dexpField(k,v){ DEXP[k]=v; }
+/* first Cost-of-Goods-Sold account in the chart (used when a cost is assigned to an invoice) */
+function dexpCogs(){ const a=(EXP.accounts&&EXP.accounts.expense)||[]; return a.find(x=>x.type==='cost_of_goods_sold')||null; }
+/* ---- assign-to-invoice search ---- */
+let _dexpInvTimer=null;
+function dexpInvSearch(v){
+  DEXP.invQ=v; DEXP.invoice='';
+  const dd=document.getElementById('dexpInvDD'); if(dd){ dd.innerHTML=dexpInvResultsHtml(); dd.style.display='block'; }
+  clearTimeout(_dexpInvTimer);
+  const q=String(v||'').trim();
+  if(q.length<2){ DEXP.invResults=[]; DEXP.invFor=''; return; }
+  _dexpInvTimer=setTimeout(()=>dexpInvFetch(q),350);
+}
+function dexpInvFetch(q){
+  DEXP.invLoading=true; const dd=document.getElementById('dexpInvDD'); if(dd) dd.innerHTML=dexpInvResultsHtml();
+  fetch('api/invoice_search.php?q='+encodeURIComponent(q),{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    DEXP.invLoading=false; DEXP.invFor=q; DEXP.invResults=(j&&j.ok)?(j.invoices||[]):[];
+    if(String(DEXP.invQ||'').trim()===q){ const e=document.getElementById('dexpInvDD'); if(e){ e.innerHTML=dexpInvResultsHtml(); e.style.display='block'; } }
+  }).catch(()=>{ DEXP.invLoading=false; const e=document.getElementById('dexpInvDD'); if(e) e.innerHTML=dexpInvResultsHtml(); });
+}
+function dexpInvResultsHtml(){
+  const q=String(DEXP.invQ||'').trim();
+  if(q.length<2) return '';
+  if(DEXP.invLoading && DEXP.invFor!==q) return `<div style="padding:8px 11px;color:var(--mute);font-size:11.5px">Searching Zoho…</div>`;
+  const res=DEXP.invResults||[];
+  if(!res.length) return `<div style="padding:8px 11px;color:var(--mute);font-size:11.5px">No match. <span style="color:var(--blue);cursor:pointer;font-weight:600" onmousedown="event.preventDefault();dexpInvUseTyped()">Use “${qesc(q)}” anyway</span></div>`;
+  return res.map(iv=>`<div data-num="${qesc(iv.number)}" onmousedown="event.preventDefault();dexpInvPickEl(this)" style="padding:8px 11px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line);background:#fff" onmouseover="this.style.background='#F1F4F8'" onmouseout="this.style.background='#fff'"><b style="color:var(--orange)">${qesc(iv.number)}</b> · ${qesc(iv.client||'')}</div>`).join('');
+}
+function dexpInvPickEl(el){ DEXP.invoice=el.getAttribute('data-num'); DEXP.invQ=DEXP.invoice; const dd=document.getElementById('dexpInvDD'); if(dd) dd.style.display='none'; render(); }
+function dexpInvUseTyped(){ const q=String(DEXP.invQ||'').trim(); if(q){ DEXP.invoice=q; const dd=document.getElementById('dexpInvDD'); if(dd) dd.style.display='none'; render(); } }
+function dexpInvClear(){ DEXP.invoice=''; DEXP.invQ=''; DEXP.invResults=[]; render(); }
+function dexpInvBlur(){ setTimeout(()=>{ const dd=document.getElementById('dexpInvDD'); if(dd) dd.style.display='none'; },160); }
 function dexpFmt(){ const a=String(DEXP.amount||''); const dot=a.indexOf('.'); const intp=dot>=0?a.slice(0,dot):a; const decp=dot>=0?a.slice(dot+1):null; return intp.replace(/\B(?=(\d{3})+(?!\d))/g,',') + (decp!==null?'.'+decp:''); }
 function dexpAmount(el){
   const v=el.value, pos=el.selectionStart||0;
@@ -1476,14 +1507,26 @@ function dexpAccBlur(){ setTimeout(()=>{ const dd=document.getElementById('dexpA
 async function dexpSave(){
   const amt=parseFloat(DEXP.amount)||0;
   if(amt<=0){ DEXP.msg='Enter an amount.'; DEXP.err=true; render(); return; }
-  if(!EXP.acc){ DEXP.msg='Pick an expense account.'; DEXP.err=true; render(); return; }
+  const toInvoice = !!String(DEXP.invoice||'').trim();
+  let endpoint, body;
+  if(toInvoice){
+    // cost tied to an invoice always books as Cost of Goods Sold
+    const cogs=dexpCogs();
+    if(!cogs){ DEXP.msg='No “Cost of Goods Sold” account found in Zoho — create one to book invoice costs.'; DEXP.err=true; render(); return; }
+    endpoint='api/expense_add.php';
+    body={ invoice_number:DEXP.invoice.trim(), amount:amt, account_id:cogs.id, paid_through_account_id:EXP.paid, date:DEXP.date||today(), description:DEXP.desc||('Cost for '+DEXP.invoice.trim()) };
+  } else {
+    if(!EXP.acc){ DEXP.msg='Pick an expense account (or assign the cost to an invoice).'; DEXP.err=true; render(); return; }
+    endpoint='api/expense_quick.php';
+    body={ amount:amt, description:DEXP.desc, account_id:EXP.acc, paid_through_account_id:EXP.paid, date:DEXP.date||today() };
+  }
   DEXP.saving=true; DEXP.msg=''; render();
   try{
-    const r=await fetch('api/expense_quick.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ amount:amt, description:DEXP.desc, account_id:EXP.acc, paid_through_account_id:EXP.paid, date:DEXP.date||today() })});
+    const r=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json();
     DEXP.saving=false;
-    if(j.ok){ DEXP.msg='Expense logged in Zoho ✓'; DEXP.err=false; DEXP.amount=''; DEXP.desc=''; DPAID.loaded=false; DPAID.data=null; dashPaidLoad(); render(); }
+    if(j.ok){ DEXP.msg = toInvoice ? ('Cost booked to '+DEXP.invoice.trim()+' as Cost of Goods Sold ✓') : 'Expense logged in Zoho ✓'; DEXP.err=false;
+      DEXP.amount=''; DEXP.desc=''; DEXP.invoice=''; DEXP.invQ=''; DEXP.invResults=[]; DPAID.loaded=false; DPAID.data=null; dashPaidLoad(); render(); }
     else { DEXP.msg='Error: '+(j.error||'failed'); DEXP.err=true; render(); }
   }catch(e){ DEXP.saving=false; DEXP.msg='Error: '+e; DEXP.err=true; render(); }
 }
@@ -1502,9 +1545,18 @@ function vDashQuickExpense(){
     <input type="text" placeholder="What for? (description)" value="${(DEXP.desc||'').replace(/"/g,'&quot;')}" oninput="dexpField('desc',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:8px">
     <input type="date" value="${DEXP.date}" onchange="dexpField('date',this.value)" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:8px">
     <div style="position:relative;margin-bottom:8px">
-      <input id="dexpAccInp" type="text" autocomplete="off" placeholder="🔍 Search expense account…" value="${(DEXP.accQ||'').replace(/"/g,'&quot;')}" oninput="dexpAccSearch(this.value)" onfocus="dexpAccFocus()" onblur="dexpAccBlur()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid ${EXP.acc?'var(--line)':'#F7C99A'};border-radius:9px;font-size:12.5px;font-family:inherit">
-      <div id="dexpAccDD" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:200px;overflow-y:auto;z-index:40"></div>
+      <input id="dexpInvInp" type="text" autocomplete="off" placeholder="🔍 Assign to invoice # (optional)" value="${qesc(DEXP.invoice||DEXP.invQ||'')}" oninput="dexpInvSearch(this.value)" onblur="dexpInvBlur()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid ${DEXP.invoice?'#C7D2FE':'var(--line)'};border-radius:9px;font-size:12.5px;font-family:inherit">
+      <div id="dexpInvDD" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:200px;overflow-y:auto;z-index:41"></div>
     </div>
+    ${DEXP.invoice
+      ? `<div style="display:flex;align-items:center;gap:8px;background:#EEF2FE;border:1px solid #C7D2FE;border-radius:9px;padding:8px 11px;margin-bottom:8px">
+           <span style="font-size:11.5px;color:var(--ink)">→ Books as <b>Cost of Goods Sold</b> on <b>${qesc(DEXP.invoice)}</b></span>
+           <span style="margin-left:auto;cursor:pointer;color:var(--bad);font-weight:700" onclick="dexpInvClear()" title="Remove invoice">×</span>
+         </div>`
+      : `<div style="position:relative;margin-bottom:8px">
+           <input id="dexpAccInp" type="text" autocomplete="off" placeholder="🔍 Search expense account…" value="${(DEXP.accQ||'').replace(/"/g,'&quot;')}" oninput="dexpAccSearch(this.value)" onfocus="dexpAccFocus()" onblur="dexpAccBlur()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid ${EXP.acc?'var(--line)':'#F7C99A'};border-radius:9px;font-size:12.5px;font-family:inherit">
+           <div id="dexpAccDD" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:200px;overflow-y:auto;z-index:40"></div>
+         </div>`}
     <select onchange="EXP.paid=this.value;render()" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:12.5px;font-family:inherit;margin-bottom:10px">${paidOpts}</select>
     <button class="btn" style="width:100%" onclick="dexpSave()" ${DEXP.saving?'disabled':''}>${DEXP.saving?'Saving…':'＋ Log expense'}</button>
     ${DEXP.msg?`<div class="${DEXP.err?'warn':'ok'}" style="margin-top:8px;font-size:11.5px">${DEXP.msg}</div>`:''}`}
