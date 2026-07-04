@@ -1,11 +1,9 @@
-config.php
+# stray/other-project files that shouldn't live in this repo
+.claude/
+912-console-overview.*
+sales-diagnostic-scorecard.html
+fleet_schema.sql
+wms_schema.sql
+make_blueprint_pdf.py
+make_features_pdf.py
 data/
-mail_token.php
-mail_token.old
-*.old
-*.zip
-index_backup_*.php
-api/error_log
-.htaccess1
-.DS_Store
-Thumbs.db
