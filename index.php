@@ -14,14 +14,33 @@ session_start();
 $cfg = require __DIR__ . '/config.php';
 require_once __DIR__ . '/settings_store.php';
 require_once __DIR__ . '/users_store.php';
+require_once __DIR__ . '/remember.php';
 $cfg = array_merge($cfg, app_settings_effective($cfg));   // user settings (with defaults) override config
 
+// Persistent "stay signed in" is issued only on mobile devices.
+$IS_MOBILE  = !empty($_SERVER['HTTP_USER_AGENT']) && preg_match('/Mobile|Android|iPhone|iPad|iPod|Windows Phone/i', $_SERVER['HTTP_USER_AGENT']);
+$RMB_SECURE = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+
+// Restore a session from the remember-me cookie (keeps mobile signed in across visits/app restarts).
+if (empty($_SESSION['auth']) && !empty($_COOKIE['rmb912'])) {
+    $rv = remember_lookup($_COOKIE['rmb912']);
+    if ($rv) {
+        $_SESSION['auth']     = true;
+        $_SESSION['user']     = $rv['user'];
+        $_SESSION['email']    = $rv['email'] ?? '';
+        $_SESSION['is_admin'] = (int)($rv['is_admin'] ?? 0) ? 1 : 0;
+        $_SESSION['tabs']     = $rv['tabs'] ?? '';
+    }
+}
+
 // --- login gate (master password = admin; or a per-user account) ---
+$justLoggedIn = false;
 if (isset($_POST['app_password'])) {
     $pw = $_POST['app_password'];
     $un = trim($_POST['app_user'] ?? '');
     if (hash_equals($cfg['app_password'], $pw)) {
         $_SESSION['auth'] = true; $_SESSION['user'] = 'admin'; $_SESSION['is_admin'] = 1; $_SESSION['tabs'] = '*';
+        $justLoggedIn = true;
         try { require_once __DIR__ . '/db.php'; require_once __DIR__ . '/activity_store.php'; activity_log(db(), 'admin', 'logged in', 'master'); } catch (Exception $e) {}
     } else {
         $row = false;
@@ -32,19 +51,43 @@ if (isset($_POST['app_password'])) {
             $_SESSION['email'] = $row['email'] ?? '';
             $_SESSION['is_admin'] = (int)$row['is_admin'] ? 1 : 0;
             $_SESSION['tabs'] = (int)$row['is_admin'] ? '*' : (string)($row['tabs'] ?? '');
+            $justLoggedIn = true;
             try { require_once __DIR__ . '/activity_store.php'; activity_log(db(), $row['username'], 'logged in', (int)$row['is_admin'] ? 'admin' : 'staff'); } catch (Exception $e) {}
         } else {
             $loginError = 'Wrong username or password.';
         }
     }
+    // On a fresh mobile login, mint a 90-day remember token so the app stays signed in.
+    if ($justLoggedIn && $IS_MOBILE) {
+        $tok = remember_issue([
+            'user'     => $_SESSION['user'],
+            'email'    => $_SESSION['email'] ?? '',
+            'is_admin' => $_SESSION['is_admin'],
+            'tabs'     => $_SESSION['tabs'],
+        ], 90);
+        setcookie('rmb912', $tok, ['expires'=>time()+90*86400, 'path'=>'/', 'secure'=>$RMB_SECURE, 'httponly'=>true, 'samesite'=>'Lax']);
+    }
 }
-if (isset($_GET['logout'])) { session_destroy(); header('Location: index.php'); exit; }
+if (isset($_GET['logout'])) {
+    if (!empty($_COOKIE['rmb912'])) {
+        remember_forget($_COOKIE['rmb912']);
+        setcookie('rmb912', '', ['expires'=>time()-3600, 'path'=>'/', 'secure'=>$RMB_SECURE, 'httponly'=>true, 'samesite'=>'Lax']);
+    }
+    session_destroy(); header('Location: index.php'); exit;
+}
 
 if (empty($_SESSION['auth'])):
 ?><!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#15202B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="912 Console">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box}
@@ -112,6 +155,13 @@ if (empty($_SESSION['auth'])):
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#15202B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="912 Console">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script>(function(){try{if(localStorage.getItem('theme912')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();</script>
 <style>
   :root{--orange:#F56F00;--blue:#2350C5;--ink:#15202B;--mute:#64748B;--line:#E6EAF0;--bg:#F7F8FB;--good:#16A34A;--bad:#D64933}
@@ -5817,6 +5867,7 @@ document.addEventListener('click', function(e){
 }, true);
 
 applyPerms();
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }); }
 if(ME.admin){ loadDeployments(); loadLoans(); loadCacheMeta(); loadBackupStatus(); }
 else { render(); }
 loadDashTasks();
