@@ -928,6 +928,18 @@ if (empty($_SESSION['auth'])):
     border-radius:9px;width:34px;height:32px;font-size:15px;cursor:pointer;line-height:1;font-family:inherit;
     display:inline-flex;align-items:center;justify-content:center;transition:background .15s}
   #themeBtn:hover{background:rgba(255,255,255,.2)}
+
+  /* ▚ Row hover — orange with black text, high-contrast in BOTH themes. Last + !important so nothing overrides. */
+  table.rpt tbody tr:not(.tot):hover,
+  table.rpt tbody tr:not(.tot):hover td,
+  html.dark table.rpt tbody tr:not(.tot):hover,
+  html.dark table.rpt tbody tr:not(.tot):hover td{
+    background:#F56F00!important;
+    color:#000!important;
+    box-shadow:inset 3px 0 0 #7A3800!important;
+  }
+  table.rpt tbody tr:not(.tot):hover td *,
+  html.dark table.rpt tbody tr:not(.tot):hover td *{color:#000!important}
 </style></head>
 <body>
 <div class="wrap">
