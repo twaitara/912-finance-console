@@ -85,7 +85,7 @@ if (empty($_SESSION['auth'])):
 <meta name="theme-color" content="#15202B">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="912 Console">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -159,7 +159,7 @@ if (empty($_SESSION['auth'])):
 <meta name="theme-color" content="#15202B">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="912 Console">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script>(function(){try{if(localStorage.getItem('theme912')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();</script>
