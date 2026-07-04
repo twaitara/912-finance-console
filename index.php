@@ -905,15 +905,17 @@ if (empty($_SESSION['auth'])):
   html.dark .btn.sec{background:var(--surface);color:var(--ink);border-color:var(--line)}
   html.dark .btn.sec:hover{background:#1B2636;border-color:#33445C}
 
-  /* Tables */
-  html.dark table.rpt th{background:var(--surface-2);color:var(--mute);border-color:var(--line)}
-  html.dark table.rpt td{border-color:var(--hair)}
-  html.dark table.rpt tbody tr:not(.tot):nth-child(odd){background:var(--surface-2)}
-  html.dark table.rpt tbody tr:not(.tot):nth-child(even){background:var(--surface)}
-  html.dark table.rpt tbody tr:not(.tot):hover{background:#1D2A40;box-shadow:inset 3px 0 0 var(--orange)}
-  html.dark table.rpt tr.tot td{background:var(--surface-2);border-top-color:#3A4C64}
+  /* Tables — forced with !important so no earlier light layer / inline hover can override */
+  html.dark table.rpt th{background:var(--surface-2)!important;color:var(--mute)!important;border-color:var(--line)!important}
+  html.dark table.rpt td{border-color:var(--hair)!important;color:var(--ink)}
+  html.dark table.rpt tbody tr:not(.tot){color:var(--ink)}
+  html.dark table.rpt tbody tr:not(.tot):nth-child(odd){background:var(--surface-2)!important}
+  html.dark table.rpt tbody tr:not(.tot):nth-child(even){background:var(--surface)!important}
+  html.dark table.rpt tbody tr:not(.tot):hover,
+  html.dark table.rpt tbody tr:not(.tot):hover td{background:#1D2A40!important;color:var(--ink)!important;box-shadow:inset 3px 0 0 var(--orange)}
+  html.dark table.rpt tr.tot td{background:var(--surface-2)!important;border-top-color:#3A4C64!important;color:var(--ink)!important}
   html.dark .rptwrap,html.dark .invrow{border-color:var(--hair)}
-  html.dark .invrow:hover{background:#1B2636}
+  html.dark .invrow:hover{background:#1B2636!important}
 
   /* Popovers I build with inline #fff — flip via generic dropdown selector */
   html.dark [id$="DD"],html.dark [id^="qbIND"],html.dark [id^="bexpDD"]{
