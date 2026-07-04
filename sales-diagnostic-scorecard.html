@@ -1,0 +1,478 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>912 Sales Diagnostic Scorecard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e6e9f2;
+  --brand:#4f46e5; --brand-d:#4338ca; --brand-soft:#eef2ff;
+  --s1:#ef4444; --s2:#f97316; --s3:#f59e0b; --s4:#84cc16; --s5:#16a34a;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.06);
+  --radius:16px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);
+  -webkit-font-smoothing:antialiased;line-height:1.5}
+.wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px}
+.brandrow{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+.logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--brand),#7c3aed);
+  display:grid;place-items:center;color:#fff;font-weight:800;font-size:17px;letter-spacing:.5px;box-shadow:var(--shadow)}
+.brandrow h1{font-size:19px;margin:0;font-weight:700}
+.brandrow p{margin:0;font-size:13px;color:var(--muted)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+
+/* progress */
+.progress{display:flex;gap:6px;margin:0 0 22px}
+.progress .seg{flex:1;height:7px;border-radius:99px;background:#e7eaf3;overflow:hidden;position:relative}
+.progress .seg i{position:absolute;inset:0;background:var(--brand);transform:scaleX(0);transform-origin:left;transition:transform .4s ease;border-radius:99px}
+.progress .seg.done i{transform:scaleX(1)}
+.progress .seg.active i{transform:scaleX(1);background:linear-gradient(90deg,var(--brand),#818cf8)}
+
+/* intro */
+.intro{padding:34px}
+.intro h2{margin:.2em 0 .3em;font-size:26px}
+.intro .sub{color:var(--muted);font-size:15px;max-width:620px}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:26px 0 8px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}
+.field input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:11px;font:inherit;font-size:14.5px;background:#fbfcfe}
+.field input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0}
+.legend .chip{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);background:#f8fafc;border:1px solid var(--line);padding:7px 11px;border-radius:99px}
+.dot{width:11px;height:11px;border-radius:50%}
+
+/* section */
+.section{padding:30px 30px 26px}
+.section-head{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.sec-ico{width:46px;height:46px;border-radius:13px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;flex:none}
+.sec-ico svg{width:23px;height:23px}
+.section-head h2{margin:0;font-size:20px}
+.section-head .kicker{font-size:12px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.6px}
+.section-desc{color:var(--muted);font-size:14px;margin:2px 0 20px}
+
+.q{padding:18px 0;border-top:1px solid var(--line)}
+.q:first-of-type{border-top:none}
+.q-top{display:flex;justify-content:space-between;align-items:baseline;gap:14px}
+.q-title{font-weight:600;font-size:15.5px}
+.q-target{font-size:12.5px;color:var(--muted);margin-top:3px}
+.q-target b{color:var(--s5);font-weight:600}
+.scale{display:flex;gap:8px;margin-top:13px}
+.scale button{flex:1;padding:11px 4px;border:1.5px solid var(--line);background:#fbfcfe;border-radius:11px;cursor:pointer;
+  font:inherit;font-weight:700;font-size:16px;color:var(--muted);transition:.15s;position:relative}
+.scale button small{display:block;font-size:9.5px;font-weight:600;letter-spacing:.3px;margin-top:2px;color:#94a3b8;text-transform:uppercase}
+.scale button:hover{border-color:#c7cde0;transform:translateY(-1px)}
+.scale button.sel{color:#fff;border-color:transparent;box-shadow:0 6px 16px rgba(79,70,229,.25)}
+.scale button.sel[data-v="1"]{background:var(--s1)} .scale button.sel[data-v="2"]{background:var(--s2)}
+.scale button.sel[data-v="3"]{background:var(--s3)} .scale button.sel[data-v="4"]{background:var(--s4)}
+.scale button.sel[data-v="5"]{background:var(--s5)}
+.anchor{margin-top:11px;font-size:13px;background:#f8fafc;border:1px solid var(--line);border-left:3px solid var(--brand);
+  padding:10px 13px;border-radius:9px;display:none}
+.anchor.show{display:block;animation:fade .25s ease}
+.anchor b{color:var(--ink)}
+@keyframes fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
+
+/* section result */
+.secresult{margin-top:22px;border-radius:14px;padding:18px 20px;display:none;align-items:center;gap:18px;color:#fff}
+.secresult.show{display:flex;animation:fade .3s ease}
+.secresult .big{font-size:34px;font-weight:800;line-height:1}
+.secresult .big span{font-size:16px;opacity:.8;font-weight:600}
+.secresult .msg{font-size:14px;font-weight:500}
+.secresult .band{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;opacity:.9}
+
+/* nav */
+.nav{display:flex;justify-content:space-between;gap:12px;margin-top:26px}
+.btn{padding:13px 22px;border-radius:12px;font:inherit;font-weight:600;font-size:14.5px;cursor:pointer;border:1px solid var(--line);
+  background:#fff;color:var(--ink);display:inline-flex;align-items:center;gap:8px;transition:.15s}
+.btn:hover{background:#f8fafc}
+.btn svg{width:17px;height:17px}
+.btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn.primary:hover{background:var(--brand-d)}
+.btn.primary:disabled{background:#c7cde0;border-color:#c7cde0;cursor:not-allowed;box-shadow:none}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+
+/* results */
+.results{padding:32px}
+.gauge-wrap{display:flex;flex-wrap:wrap;gap:26px;align-items:center;justify-content:center;text-align:center}
+.gauge{position:relative;width:200px;height:200px;flex:none}
+.gauge .num{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.gauge .num b{font-size:44px;font-weight:800;line-height:1}
+.gauge .num span{font-size:14px;color:var(--muted)}
+.verdict{max-width:340px;text-align:left}
+.verdict .badge{display:inline-block;padding:6px 14px;border-radius:99px;font-weight:700;font-size:13px;color:#fff;margin-bottom:10px}
+.verdict h2{margin:0 0 8px;font-size:24px}
+.verdict p{margin:0;color:var(--muted);font-size:14px}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:30px}
+.panel{padding:22px}
+.panel h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:8px}
+.panel h3 svg{width:18px;height:18px;color:var(--brand)}
+.panel .hint{font-size:12.5px;color:var(--muted);margin:0 0 16px}
+
+.catbar{margin:12px 0}
+.catbar .lab{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.catbar .lab b{font-weight:600}
+.catbar .lab span{color:var(--muted);font-variant-numeric:tabular-nums}
+.track{height:9px;background:#eef1f7;border-radius:99px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:99px;transition:width .8s cubic-bezier(.2,.8,.2,1)}
+
+.fix{display:flex;gap:12px;padding:13px 0;border-top:1px solid var(--line)}
+.fix:first-child{border-top:none}
+.fix .rank{width:26px;height:26px;border-radius:8px;background:var(--s1);color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;flex:none}
+.fix .rank.r2{background:var(--s2)} .fix .rank.r3{background:var(--s3)}
+.fix .t{font-weight:600;font-size:14px}
+.fix .d{font-size:12.5px;color:var(--muted);margin-top:2px}
+
+.radar-card{padding:22px;margin-top:22px;text-align:center}
+svg.radar{max-width:460px;width:100%;height:auto}
+.actions{display:flex;gap:12px;justify-content:center;margin-top:26px;flex-wrap:wrap}
+.small{font-size:12px;color:var(--muted);text-align:center;margin-top:22px}
+
+@media(max-width:680px){
+  .fields,.grid2{grid-template-columns:1fr}
+  .scale button small{display:none}
+  .section,.intro,.results{padding:22px 18px}
+  .gauge-wrap{flex-direction:column}
+}
+@media print{.nav,.actions,.progress,.brandrow p{display:none}body{background:#fff}}
+</style>
+
+<div class="wrap">
+  <div class="brandrow">
+    <div class="logo">912</div>
+    <div>
+      <h1>Sales Diagnostic Scorecard</h1>
+      <p>Score each area honestly — you'll get a live diagnosis after every section.</p>
+    </div>
+  </div>
+
+  <div class="progress" id="progress"></div>
+  <div id="app"></div>
+</div>
+
+<script>
+/* ============================================================
+   DATA — 10 categories × 4 criteria, each with 1/3/5 anchors.
+   "a1"=what a 1 looks like, "a3"=a 3, "a5"=what a 5 looks like.
+   ============================================================ */
+const SECTIONS = [
+ {cat:"Sales Strategy", icon:"target", desc:"Do you have a clear, deliberate plan for who you sell to and how you hit your numbers?",
+  q:[
+   {t:"Clear sales goals", a1:'No targets — the goal is "sell as much as possible."', a3:"An annual revenue target exists, but it isn't broken down by quarter, month, rep or product.", a5:"Specific, time-bound targets cascaded to quarter/month/rep/product, reviewed regularly — everyone knows their number."},
+   {t:"Defined target customers", a1:"You'll sell to anyone with a pulse.", a3:"A general idea of the ideal customer, but nothing documented.", a5:"A documented ICP (industry, size, buyer, pain, budget) — reps can name it and confidently disqualify poor-fit leads."},
+   {t:"Clear sales channels", a1:"You rely on random referrals and walk-ins.", a3:"One or two channels work, but none are deliberately managed.", a5:"A deliberate channel mix (inbound, outbound, partners…), each with known cost and yield, actively prioritised."},
+   {t:"Sales & marketing alignment", a1:"Sales and marketing work in silos and blame each other.", a3:"Occasional coordination, but no shared definitions.", a5:"Shared lead definitions (MQL/SQL), response SLAs, joint pipeline reviews and closed-loop feedback."},
+  ]},
+ {cat:"Sales Process", icon:"git-branch", desc:"Is there one repeatable way deals move forward — or does every rep improvise?",
+  q:[
+   {t:"Documented sales process", a1:"Every rep does it their own way; nothing is written down.", a3:"Steps are loosely understood and only partly documented.", a5:"The end-to-end process is documented, taught and followed — a new hire could learn it from the doc."},
+   {t:"Consistent lead handling", a1:"Leads are handled ad hoc and often dropped.", a3:"Most leads get handled, but inconsistently.", a5:"Every lead follows the same intake, qualification and routing rules, regardless of which rep gets it."},
+   {t:"Defined pipeline stages", a1:'No stages — deals are just "in progress."', a3:"Stages exist but their definitions are fuzzy.", a5:"Clear stages with entry/exit criteria — a deal only advances when the criteria are genuinely met."},
+   {t:"Stage ownership clarity", a1:"It's unclear who owns a deal at any given point.", a3:"Ownership is generally known but hand-offs are messy.", a5:"Every stage has a named owner with clean hand-off rules — nothing falls through the cracks."},
+  ]},
+ {cat:"Lead Management", icon:"filter", desc:"How predictably do leads arrive, and how well do you work them?",
+  q:[
+   {t:"Reliable lead sources", a1:"Lead flow is unpredictable — feast or famine.", a3:"A source or two, but volume swings a lot.", a5:"Multiple predictable sources producing a steady, forecastable volume of leads."},
+   {t:"Speed of response", a1:"It takes days to respond, or you never do.", a3:"Leads are contacted within a day.", a5:"Inbound leads are contacted within minutes / the first hour, consistently — and it's tracked."},
+   {t:"Follow-up consistency", a1:"One touch, then you give up.", a3:"A few follow-ups, but no set cadence.", a5:"A defined multi-touch cadence over days/weeks, executed for every lead, with automated reminders."},
+   {t:"Conversion tracking", a1:"You have no idea of your conversion rates.", a3:"A rough sense of the overall close rate.", a5:"Conversion is measured at every stage — you know lead→close rates by source and by rep."},
+  ]},
+ {cat:"Sales Team", icon:"users", desc:"Can your people actually sell — knowledge, benefits, objections, discovery?",
+  q:[
+   {t:"Product knowledge", a1:"Reps are unsure of product details.", a3:"Reps know the product's features.", a5:"Deep command of product, use cases and competitor comparisons — reps answer any question confidently."},
+   {t:"Benefit-based selling", a1:"Reps just list features.", a3:"Reps mention some benefits.", a5:"Reps consistently translate features into quantified customer outcomes and ROI."},
+   {t:"Objection handling", a1:"Reps freeze or discount the moment they're challenged.", a3:"Common objections are handled adequately.", a5:"Reps anticipate objections and respond with a proven framework plus proof, keeping deals moving."},
+   {t:"Consultative skills", a1:"Reps pitch immediately and don't listen.", a3:"Reps ask some questions.", a5:"Reps diagnose before prescribing — strong discovery questions and a tailored solution."},
+  ]},
+ {cat:"Messaging", icon:"message-square", desc:"Is your value clear, differentiated and told the same way by everyone?",
+  q:[
+   {t:"Clear value proposition", a1:"You can't clearly articulate why someone should buy.", a3:"A value statement exists, but it's generic.", a5:"A sharp, specific value prop tied to customer outcomes — everyone delivers it the same way."},
+   {t:"Customer pain clarity", a1:"You don't really know the customer's real pains.", a3:"A general understanding of customer pains.", a5:"You can state the customer's top pains in their own words, and messaging leads with them."},
+   {t:"Differentiation", a1:'Just "we\'re cheaper/better," with no proof.', a3:"Some differentiators are named.", a5:"Clear, defensible differentiation vs named competitors, backed by proof."},
+   {t:"Consistent messaging", a1:"Every rep says something different.", a3:"Messaging is broadly similar.", a5:"Unified messaging across every rep, the website and all materials."},
+  ]},
+ {cat:"Objections", icon:"shield", desc:"Are objections anticipated, answered with proof, and price defended on value?",
+  q:[
+   {t:"Objection identification", a1:"You're regularly surprised by objections.", a3:"You know the common ones.", a5:"A documented list of every common objection with root causes, updated over time."},
+   {t:"Structured responses", a1:"You improvise a response every time.", a3:"You have a few go-to lines.", a5:"A tested response framework for each objection — trained and rehearsed by the team."},
+   {t:"Use of proof", a1:"No evidence is offered.", a3:"You occasionally cite a case or result.", a5:"A ready library of case studies, testimonials, data and guarantees used at the right moment."},
+   {t:"Price confidence", a1:"You cave to discounts quickly.", a3:"You hold price some of the time.", a5:"You defend price on value, rarely discount, and can justify the ROI clearly."},
+  ]},
+ {cat:"Sales Tools", icon:"wrench", desc:"Do reps have the scripts, materials and onboarding to sell well from day one?",
+  q:[
+   {t:"Sales scripts", a1:"There are none.", a3:"A rough script exists.", a5:"Proven call/discovery/demo scripts and talk tracks that the team actually uses."},
+   {t:"Brochures / materials", a1:"None, or badly outdated.", a3:"Some materials exist.", a5:"Professional, current collateral mapped to each stage of the buying journey."},
+   {t:"FAQs", a1:"No FAQ resource.", a3:"Answers are handled informally.", a5:"A maintained FAQ covering common questions and objections, accessible to every rep."},
+   {t:"Onboarding tools", a1:"New reps sink or swim.", a3:"Some onboarding docs exist.", a5:"A structured onboarding program (playbook, training, ramp plan) that gets reps productive fast."},
+  ]},
+ {cat:"CRM & Data", icon:"database", desc:"Is every lead captured, visible, followed up and reported on — reliably?",
+  q:[
+   {t:"Lead tracking", a1:"Leads live in people's heads, notebooks or scattered sheets.", a3:"A CRM exists but is under-used.", a5:"Every lead is captured in the CRM with source and status, and kept current."},
+   {t:"Pipeline visibility", a1:"No visibility into where deals stand.", a3:"Some pipeline view exists, but it isn't trusted.", a5:"A real-time, trusted pipeline by stage, value and owner."},
+   {t:"Follow-up reminders", a1:"You rely on memory.", a3:"Reminders are set manually.", a5:"Automated tasks and reminders ensure no follow-up is ever missed."},
+   {t:"Reporting", a1:"No reports.", a3:"Basic reports pulled manually.", a5:"Automated dashboards on activity, conversion and forecast, reviewed regularly."},
+  ]},
+ {cat:"Management", icon:"clipboard-check", desc:"Are reps reviewed, coached and held accountable to the right KPIs?",
+  q:[
+   {t:"Sales reviews", a1:"They never really happen.", a3:"Occasional check-ins.", a5:"Regular, structured pipeline and deal reviews on a set cadence."},
+   {t:"Coaching", a1:"No coaching at all.", a3:"Ad hoc feedback.", a5:"Ongoing 1:1 coaching against skills and real calls, with development plans."},
+   {t:"KPI usage", a1:"No KPIs are tracked.", a3:"You track revenue only.", a5:"Balanced KPIs (activity, conversion, pipeline, revenue) actually drive decisions."},
+   {t:"Accountability", a1:"No consequences for missed targets.", a3:"Some accountability.", a5:"Clear ownership of numbers, a transparent scoreboard and consistent follow-through."},
+  ]},
+ {cat:"Scalability", icon:"trending-up", desc:"Could you double the volume without the whole thing breaking?",
+  q:[
+   {t:"Process independence", a1:"Everything depends on the owner or one star rep.", a3:"There's some independence.", a5:"Sales runs on process, not heroics — it doesn't depend on any single person."},
+   {t:"Onboarding ease", a1:"Adding reps takes forever, if it works at all.", a3:"You can onboard, but slowly.", a5:"New reps ramp quickly and predictably through a repeatable system."},
+   {t:"Revenue predictability", a1:"You can't predict next month.", a3:"You have a rough forecast.", a5:"An accurate, repeatable forecast you can plan and invest against."},
+   {t:"Scalability readiness", a1:"Growth would break the system.", a3:"You could grow, but with real strain.", a5:"People, process and systems are ready to double volume without breaking."},
+  ]},
+];
+
+/* Recommended first action for each weak category */
+const FIX = {
+ "Sales Strategy":"Write a one-page ICP and cascade a revenue target down to monthly numbers per rep.",
+ "Sales Process":"Map your deal stages with entry/exit criteria and assign an owner to each.",
+ "Lead Management":"Set a response-time rule (e.g. under 1 hour) and a fixed multi-touch follow-up cadence.",
+ "Sales Team":"Run role-plays on discovery and objection handling; build a benefit/ROI cheat-sheet.",
+ "Messaging":"Lock a single value proposition and rewrite pitch + website to say it the same way.",
+ "Objections":"Document your top 10 objections with a tested response and a proof point for each.",
+ "Sales Tools":"Ship a starter kit: call script, updated one-pager, FAQ and a 30-day onboarding plan.",
+ "CRM & Data":"Get every live lead into the CRM with source + stage, and turn on follow-up reminders.",
+ "Management":"Start a weekly pipeline review and monthly 1:1 coaching against a short KPI set.",
+ "Scalability":"Remove single points of failure — document the playbook so anyone can run it.",
+};
+
+const SCOLORS=['','var(--s1)','var(--s2)','var(--s3)','var(--s4)','var(--s5)'];
+const MAX = SECTIONS.length*4*5; // 200
+
+/* ---------- state ---------- */
+let state = JSON.parse(localStorage.getItem('scorecard912')||'{}');
+state.answers = state.answers||{};      // key "s-q" -> 1..5
+state.meta = state.meta||{name:'',company:''};
+let step = state.step||0;                // 0=intro, 1..10 sections, 11=results
+const save=()=>localStorage.setItem('scorecard912',JSON.stringify({...state,step}));
+
+const app=document.getElementById('app');
+const prog=document.getElementById('progress');
+
+function renderProgress(){
+  prog.innerHTML='';
+  SECTIONS.forEach((s,i)=>{
+    const seg=document.createElement('div');
+    seg.className='seg'+(step>i+1?' done':'')+(step===i+1?' active':'');
+    seg.innerHTML='<i></i>'; prog.appendChild(seg);
+  });
+  prog.style.display = (step===0||step>SECTIONS.length)?'none':'flex';
+}
+
+function sectionScore(si){
+  let sum=0,ans=0;
+  SECTIONS[si].q.forEach((_,qi)=>{const v=state.answers[si+'-'+qi]; if(v){sum+=v;ans++;}});
+  return {sum,ans,full:ans===4};
+}
+function bandFor(pct){
+  if(pct>=0.8) return {t:"Strong",c:"var(--s5)",msg:"This area is a real strength — protect and leverage it."};
+  if(pct>=0.6) return {t:"Solid",c:"var(--s4)",msg:"Good foundation with room to sharpen a couple of things."};
+  if(pct>=0.4) return {t:"Developing",c:"var(--s3)",msg:"Partly there — inconsistency is costing you deals here."};
+  if(pct>=0.2) return {t:"Weak",c:"var(--s2)",msg:"A clear gap. Fixing this should be near the top of the list."};
+  return {t:"Critical",c:"var(--s1)",msg:"High risk — this is likely leaking revenue right now."};
+}
+
+/* ---------- intro ---------- */
+function renderIntro(){
+  app.innerHTML=`<div class="card intro">
+    <h2>Where is your sales engine leaking?</h2>
+    <p class="sub">Score your business across <b>10 areas</b> and <b>40 questions</b>. After each section you'll get an instant score and diagnosis, then a full breakdown with your priority fixes. Takes about 6 minutes.</p>
+    <div class="fields">
+      <div class="field"><label>Your name</label><input id="f-name" placeholder="Jane Doe" value="${state.meta.name||''}"></div>
+      <div class="field"><label>Company</label><input id="f-co" placeholder="Acme Ltd" value="${state.meta.company||''}"></div>
+    </div>
+    <div class="legend">
+      <span class="chip"><span class="dot" style="background:var(--s1)"></span>1 · Not in place</span>
+      <span class="chip"><span class="dot" style="background:var(--s3)"></span>3 · Partly / inconsistent</span>
+      <span class="chip"><span class="dot" style="background:var(--s5)"></span>5 · Best practice</span>
+    </div>
+    <div class="nav" style="justify-content:flex-end">
+      <button class="btn primary" onclick="startForm()">Start diagnostic <i data-lucide="arrow-right"></i></button>
+    </div>
+  </div>`;
+  lucide.createIcons();
+}
+function startForm(){
+  state.meta.name=document.getElementById('f-name').value;
+  state.meta.company=document.getElementById('f-co').value;
+  step=1; save(); render();
+}
+
+/* ---------- section ---------- */
+function renderSection(si){
+  const S=SECTIONS[si];
+  app.innerHTML=`<div class="card section">
+    <div class="section-head">
+      <div class="sec-ico"><i data-lucide="${S.icon}"></i></div>
+      <div><div class="kicker">Section ${si+1} of ${SECTIONS.length}</div><h2>${S.cat}</h2></div>
+    </div>
+    <p class="section-desc">${S.desc}</p>
+    <div id="qs"></div>
+    <div class="secresult" id="secres"></div>
+    <div class="nav">
+      <button class="btn" onclick="goto(${si})">${si===0?'<i data-lucide=\"arrow-left\"></i> Intro':'<i data-lucide=\"arrow-left\"></i> Back'}</button>
+      <button class="btn primary" id="nextbtn" onclick="goto(${si+2})" disabled>${si===SECTIONS.length-1?'See my results':'Next section'} <i data-lucide="arrow-right"></i></button>
+    </div>
+  </div>`;
+  const qs=document.getElementById('qs');
+  S.q.forEach((q,qi)=>{
+    const key=si+'-'+qi, cur=state.answers[key];
+    const el=document.createElement('div'); el.className='q';
+    el.innerHTML=`<div class="q-top">
+        <div><div class="q-title">${q.t}</div><div class="q-target">Aim for a <b>5</b>: ${q.a5}</div></div>
+      </div>
+      <div class="scale">${[1,2,3,4,5].map(v=>`<button data-v="${v}" class="${cur===v?'sel':''}" onclick="pick(${si},${qi},${v})">${v}<small>${['','No','','Partly','','Yes'][v]||''}</small></button>`).join('')}</div>
+      <div class="anchor" id="anc-${key}"></div>`;
+    qs.appendChild(el);
+    if(cur) showAnchor(si,qi,cur);
+  });
+  lucide.createIcons();
+  refreshSection(si);
+}
+function showAnchor(si,qi,v){
+  const q=SECTIONS[si].q[qi], box=document.getElementById('anc-'+si+'-'+qi);
+  const label={1:'Score 1',2:'Score 2',3:'Score 3',4:'Score 4',5:'Score 5'}[v];
+  let txt = v<=1?q.a1 : v===2?`Between "${q.a1}" and "${q.a3}"` : v===3?q.a3 : v===4?`Close to best practice — nearly: ${q.a5}` : q.a5;
+  box.innerHTML=`<b style="color:${SCOLORS[v]}">${label}.</b> ${txt}`;
+  box.classList.add('show');
+}
+function pick(si,qi,v){
+  state.answers[si+'-'+qi]=v; save();
+  document.querySelectorAll('#qs .q')[qi].querySelectorAll('.scale button')
+    .forEach(b=>b.classList.toggle('sel',+b.dataset.v===v));
+  showAnchor(si,qi,v);
+  refreshSection(si);
+}
+function refreshSection(si){
+  const {sum,full}=sectionScore(si);
+  const box=document.getElementById('secres');
+  const nb=document.getElementById('nextbtn');
+  if(full){
+    const pct=sum/20, b=bandFor(pct);
+    box.style.background=`linear-gradient(135deg,${b.c},${b.c})`;
+    box.classList.add('show');
+    box.innerHTML=`<div class="big">${sum}<span>/20</span></div>
+      <div><div class="band">${b.t}</div><div class="msg">${b.msg}</div></div>`;
+    nb.disabled=false;
+  }else{
+    box.classList.remove('show'); nb.disabled=true;
+  }
+}
+
+/* ---------- navigation ---------- */
+function goto(n){
+  if(n<0){n=0;}
+  step=Math.max(0,Math.min(n,SECTIONS.length+1));
+  save(); render(); window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* ---------- results ---------- */
+function renderResults(){
+  const cats=SECTIONS.map((s,si)=>({name:s.cat,score:sectionScore(si).sum}));
+  const total=cats.reduce((a,c)=>a+c.score,0);
+  const pct=total/MAX;
+  let verdict;
+  if(pct>=0.8) verdict={t:"Scalable Engine",c:"var(--s5)",p:"Your sales system is strong and repeatable. Focus on optimising and scaling — you can add people and volume with confidence."};
+  else if(pct>=0.6) verdict={t:"Strong Foundation",c:"var(--s4)",p:"Solid fundamentals with clear pockets to tighten. Close the gaps below and you're ready to scale."};
+  else if(pct>=0.4) verdict={t:"Needs Structure",c:"var(--s3)",p:"The pieces exist but inconsistency is costing you deals. Systemise your process and follow-up next."};
+  else verdict={t:"High Risk",c:"var(--s1)",p:"Sales is running on heroics and luck. Prioritise the critical areas below before investing in more leads."};
+
+  const sorted=[...cats].map((c,i)=>({...c,idx:i})).sort((a,b)=>a.score-b.score);
+  const weakest=sorted.slice(0,3);
+  const strongest=[...sorted].reverse().slice(0,3).filter(c=>c.score>=14);
+  const R=circ(pct,verdict.c);
+
+  app.innerHTML=`<div class="card results">
+    <div class="gauge-wrap">
+      <div class="gauge">${R}<div class="num"><b>${total}</b><span>out of ${MAX}</span></div></div>
+      <div class="verdict">
+        <span class="badge" style="background:${verdict.c}">${Math.round(pct*100)}% · ${verdict.t}</span>
+        <h2>${state.meta.company?state.meta.company+"'s":"Your"} sales engine</h2>
+        <p>${verdict.p}</p>
+      </div>
+    </div>
+
+    <div class="radar-card card" style="box-shadow:none;border-color:var(--line)">
+      <h3 style="justify-content:center;margin-bottom:14px"><i data-lucide="radar"></i> Balance across all 10 areas</h3>
+      ${radar(cats)}
+    </div>
+
+    <div class="grid2">
+      <div class="panel card" style="box-shadow:none">
+        <h3><i data-lucide="bar-chart-3"></i> Score by area</h3>
+        <p class="hint">Each area is out of 20.</p>
+        ${cats.map(c=>{const p=c.score/20;return `<div class="catbar"><div class="lab"><b>${c.name}</b><span>${c.score}/20</span></div><div class="track"><i style="width:${p*100}%;background:${bandFor(p).c}"></i></div></div>`;}).join('')}
+      </div>
+      <div class="panel card" style="box-shadow:none">
+        <h3><i data-lucide="flame"></i> Your 3 priority fixes</h3>
+        <p class="hint">Lowest-scoring areas — biggest, fastest wins.</p>
+        ${weakest.map((c,i)=>`<div class="fix"><div class="rank r${i+1}">${i+1}</div><div><div class="t">${c.name} · ${c.score}/20</div><div class="d">${FIX[c.name]}</div></div></div>`).join('')}
+        ${strongest.length?`<h3 style="margin-top:20px"><i data-lucide="award"></i> Strengths to leverage</h3>${strongest.map(c=>`<div class="fix"><div class="rank" style="background:var(--s5)"><i data-lucide="check" style="width:14px"></i></div><div><div class="t">${c.name} · ${c.score}/20</div></div></div>`).join('')}`:''}
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" onclick="goto(${SECTIONS.length})"><i data-lucide="arrow-left"></i> Review answers</button>
+      <button class="btn" onclick="window.print()"><i data-lucide="printer"></i> Print / Save PDF</button>
+      <button class="btn primary" onclick="resetAll()"><i data-lucide="rotate-ccw"></i> Start over</button>
+    </div>
+    <p class="small">${state.meta.name?state.meta.name+" · ":""}${state.meta.company||""} — 912 Sales Diagnostic. Your answers are saved on this device only.</p>
+  </div>`;
+  lucide.createIcons();
+}
+
+/* circular gauge */
+function circ(pct,color){
+  const r=88,c=2*Math.PI*r,off=c*(1-pct);
+  return `<svg width="200" height="200" viewBox="0 0 200 200">
+    <circle cx="100" cy="100" r="${r}" fill="none" stroke="#eef1f7" stroke-width="16"/>
+    <circle cx="100" cy="100" r="${r}" fill="none" stroke="${color}" stroke-width="16" stroke-linecap="round"
+      stroke-dasharray="${c}" stroke-dashoffset="${c}" transform="rotate(-90 100 100)">
+      <animate attributeName="stroke-dashoffset" from="${c}" to="${off}" dur="1s" fill="freeze" calcMode="spline" keySplines="0.2 0.8 0.2 1" keyTimes="0;1"/>
+    </circle></svg>`;
+}
+/* radar chart */
+function radar(cats){
+  const n=cats.length,cx=230,cy=190,R=150;
+  const pt=(i,rad)=>{const a=-Math.PI/2+i*2*Math.PI/n;return[cx+rad*Math.cos(a),cy+rad*Math.sin(a)];};
+  let rings='';
+  [0.25,0.5,0.75,1].forEach(f=>{
+    rings+=`<polygon points="${cats.map((_,i)=>pt(i,R*f).join(',')).join(' ')}" fill="none" stroke="#e6e9f2" stroke-width="1"/>`;
+  });
+  let axes='',labels='';
+  cats.forEach((c,i)=>{
+    const[x,y]=pt(i,R); axes+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#e6e9f2"/>`;
+    const[lx,ly]=pt(i,R+24);
+    const anchor=Math.abs(lx-cx)<8?'middle':(lx>cx?'start':'end');
+    labels+=`<text x="${lx}" y="${ly}" font-size="11" fill="#64748b" text-anchor="${anchor}" dominant-baseline="middle" font-weight="600">${c.name}</text>`;
+  });
+  const poly=cats.map((c,i)=>pt(i,R*(c.score/20)).join(',')).join(' ');
+  return `<svg class="radar" viewBox="0 0 460 380">${rings}${axes}
+    <polygon points="${poly}" fill="rgba(79,70,229,.18)" stroke="var(--brand)" stroke-width="2" stroke-linejoin="round"/>
+    ${cats.map((c,i)=>{const[x,y]=pt(i,R*(c.score/20));return `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--brand)"/>`;}).join('')}
+    ${labels}</svg>`;
+}
+
+function resetAll(){
+  if(!confirm('Clear all answers and start over?'))return;
+  localStorage.removeItem('scorecard912');
+  state={answers:{},meta:{name:'',company:''}}; step=0; render();
+}
+
+/* ---------- router ---------- */
+function render(){
+  renderProgress();
+  if(step===0) renderIntro();
+  else if(step<=SECTIONS.length) renderSection(step-1);
+  else renderResults();
+}
+render();
+</script>

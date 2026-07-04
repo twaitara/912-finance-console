@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hse (PHP)",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8002", "-t", "C:/hse"],
+      "port": 8002
+    },
+    {
+      "name": "fleetmanager (PHP)",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8001", "-t", "C:/fleetmanager"],
+      "port": 8001
+    },
+    {
+      "name": "912app (PHP)",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8000", "-t", "C:/912app"],
+      "port": 8000
+    },
+    {
+      "name": "hse (gulp + BrowserSync)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["gulp", "watch"],
+      "port": 3000
+    },
+    {
+      "name": "fleetmanager (gulp + BrowserSync)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["gulp", "watch"],
+      "port": 3001
+    }
+  ]
+}

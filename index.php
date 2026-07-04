@@ -1,4 +1,58 @@
 <?php
+/* ============================================================================
+   Self-hosted PWA assets — served straight from THIS file via ?pwa=… so that a
+   partial deploy (uploading only index.php) can never leave the manifest,
+   service worker or icons missing. Public: no session/auth required.
+   ============================================================================ */
+if (isset($_GET['pwa'])) {
+    $pwa = $_GET['pwa'];
+    if ($pwa === 'manifest') {
+        header('Content-Type: application/manifest+json; charset=utf-8');
+        echo json_encode([
+            'name'             => '912 Finance Console',
+            'short_name'       => '912',
+            'description'      => 'Waitara Holdings Group — finance console',
+            'start_url'        => 'index.php',
+            'scope'            => './',
+            'display'          => 'standalone',
+            'orientation'      => 'portrait',
+            'background_color' => '#0F1B2D',
+            'theme_color'      => '#15202B',
+            'icons' => [
+                ['src' => 'index.php?pwa=icon&s=192',        'sizes' => '192x192', 'type' => 'image/svg+xml', 'purpose' => 'any'],
+                ['src' => 'index.php?pwa=icon&s=512',        'sizes' => '512x512', 'type' => 'image/svg+xml', 'purpose' => 'any'],
+                ['src' => 'index.php?pwa=icon&s=512&mask=1', 'sizes' => '512x512', 'type' => 'image/svg+xml', 'purpose' => 'maskable'],
+            ],
+        ], JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    if ($pwa === 'icon') {
+        header('Content-Type: image/svg+xml; charset=utf-8');
+        header('Cache-Control: public, max-age=604800');
+        if (!empty($_GET['mask'])) {   // maskable: full-bleed orange, logo inside the safe zone
+            echo '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#F56F00"/><text x="256" y="322" font-family="Arial,Helvetica,sans-serif" font-size="168" font-weight="700" fill="#fff" text-anchor="middle">912</text></svg>';
+        } else {
+            echo '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#F56F00"/><text x="256" y="332" font-family="Arial,Helvetica,sans-serif" font-size="210" font-weight="700" fill="#fff" text-anchor="middle">912</text></svg>';
+        }
+        exit;
+    }
+    if ($pwa === 'sw') {
+        header('Content-Type: application/javascript; charset=utf-8');
+        header('Service-Worker-Allowed: ./');
+        echo <<<'JS'
+/* 912 Console service worker (served from index.php?pwa=sw). Install-only: never
+   caches index.php or /api, so auth + live data stay fresh. */
+var OFFLINE='<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><style>body{font-family:Inter,system-ui,sans-serif;background:#0F1B2D;color:#E7EDF5;display:grid;place-items:center;height:100vh;margin:0;text-align:center}b{color:#F56F00}</style><div><h2><b>912</b> Console</h2><p>You appear to be offline. Reconnect and reopen the app.</p></div>';
+self.addEventListener('install',function(e){self.skipWaiting();});
+self.addEventListener('activate',function(e){e.waitUntil(self.clients.claim());});
+self.addEventListener('fetch',function(e){var r=e.request;if(r.mode==='navigate'){e.respondWith(fetch(r).catch(function(){return new Response(OFFLINE,{headers:{'Content-Type':'text/html'}});}));}});
+JS;
+        exit;
+    }
+    http_response_code(404);
+    exit;
+}
+
 /* harden the session cookie before it is created (Secure only over HTTPS so HTTP isn't locked out) */
 if (session_status() === PHP_SESSION_NONE) {
     @ini_set('session.use_strict_mode', '1');
@@ -16,10 +70,28 @@ require_once __DIR__ . '/settings_store.php';
 require_once __DIR__ . '/users_store.php';
 $cfg = array_merge($cfg, app_settings_effective($cfg));   // user settings (with defaults) override config
 
-// ---- Persistent "stay signed in" on mobile (remember-me cookie). Fully guarded so it can never
-//      break page load: if remember.php is missing or anything throws, the app runs normally. ----
-$RMB_OK = false;
-if (is_file(__DIR__ . '/remember.php')) { try { require_once __DIR__ . '/remember.php'; $RMB_OK = function_exists('remember_lookup'); } catch (\Throwable $e) { $RMB_OK = false; } }
+// ---- Persistent "stay signed in" on mobile (remember-me cookie). Functions are defined inline
+//      here (not a separate file) so a partial deploy of only index.php still works. ----
+if (!function_exists('remember_lookup')) {
+    function _remember_file() { $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true); return $d . '/remember_tokens.json'; }
+    function _remember_load() { $f = _remember_file(); if (is_file($f)) { $j = json_decode(@file_get_contents($f), true); if (is_array($j)) return $j; } return []; }
+    function _remember_save($a) { @file_put_contents(_remember_file(), json_encode($a)); }
+    function remember_issue($data, $days = 90) {
+        $token = bin2hex(random_bytes(32)); $h = hash('sha256', $token); $now = time(); $all = _remember_load();
+        foreach ($all as $k => $v) { if (($v['exp'] ?? 0) < $now) unset($all[$k]); }
+        $all[$h] = ['user'=>(string)($data['user']??''),'email'=>(string)($data['email']??''),'is_admin'=>(int)($data['is_admin']??0)?1:0,'tabs'=>(string)($data['tabs']??''),'exp'=>$now + $days*86400];
+        _remember_save($all); return $token;
+    }
+    function remember_lookup($token) {
+        if (!$token) return null; $h = hash('sha256', $token); $all = _remember_load(); $v = $all[$h] ?? null;
+        if (!$v) return null; if (($v['exp'] ?? 0) < time()) { unset($all[$h]); _remember_save($all); return null; } return $v;
+    }
+    function remember_forget($token) {
+        if (!$token) return; $h = hash('sha256', $token); $all = _remember_load();
+        if (isset($all[$h])) { unset($all[$h]); _remember_save($all); }
+    }
+}
+$RMB_OK = function_exists('remember_lookup');
 $IS_MOBILE  = !empty($_SERVER['HTTP_USER_AGENT']) && preg_match('/Mobile|Android|iPhone|iPad|iPod|Windows Phone/i', (string)$_SERVER['HTTP_USER_AGENT']);
 $RMB_SECURE = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
 
@@ -86,13 +158,13 @@ if (empty($_SESSION['auth'])):
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="manifest.php">
+<link rel="manifest" href="index.php?pwa=manifest">
 <meta name="theme-color" content="#15202B">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="912 Console">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" href="index.php?pwa=icon&s=180">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box}
@@ -160,13 +232,13 @@ if (empty($_SESSION['auth'])):
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="manifest" href="manifest.php">
+<link rel="manifest" href="index.php?pwa=manifest">
 <meta name="theme-color" content="#15202B">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="912 Console">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" href="index.php?pwa=icon&s=180">
 <script>(function(){try{if(localStorage.getItem('theme912')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();</script>
 <style>
   :root{--orange:#F56F00;--blue:#2350C5;--ink:#15202B;--mute:#64748B;--line:#E6EAF0;--bg:#F7F8FB;--good:#16A34A;--bad:#D64933}
@@ -5934,7 +6006,7 @@ document.addEventListener('click', function(e){
 }, true);
 
 applyPerms();
-if('serviceWorker' in navigator){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }); }
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('index.php?pwa=sw').catch(()=>{}); }); }
 if(ME.admin){ loadDeployments(); loadLoans(); loadCacheMeta(); loadBackupStatus(); }
 else { render(); }
 loadDashTasks();
