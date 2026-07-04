@@ -112,6 +112,7 @@ if (empty($_SESSION['auth'])):
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>(function(){try{if(localStorage.getItem('theme912')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();</script>
 <style>
   :root{--orange:#F56F00;--blue:#2350C5;--ink:#15202B;--mute:#64748B;--line:#E6EAF0;--bg:#F7F8FB;--good:#16A34A;--bad:#D64933}
   *{box-sizing:border-box}
@@ -848,6 +849,83 @@ if (empty($_SESSION['auth'])):
 
   /* Softer, slower meter shimmer — less "consumer app" sparkle */
   .meter>div::after{animation-duration:3.6s;background:linear-gradient(90deg,transparent,rgba(255,255,255,.32),transparent)}
+
+  /* ============================================================
+     🌙 DARK MODE — token overrides + surface class fixes.
+       Activated by class "dark" on <html>. 912 orange kept as accent.
+     ============================================================ */
+  html.dark{
+    --ink:#E7EDF5; --mute:#93A2B7; --line:#2A3A4E; --bg:#0B121E;
+    --good:#2FBE7E; --bad:#F26D6D; --blue:#6B8CFF;
+    --hair:#20293A; --surface:#131C2B; --surface-2:#0F1826;
+    --orange-50:#2A1E12; --blue-50:#182238;
+    --ink-2:#1B2636; --ink-3:#212E40;
+    --sh-sm:0 1px 2px rgba(0,0,0,.35);
+    --sh-md:0 6px 18px -8px rgba(0,0,0,.55);
+    --sh-lg:0 24px 60px -20px rgba(0,0,0,.7);
+    color-scheme:dark;
+  }
+  html.dark body{
+    color:var(--ink);
+    background:
+      radial-gradient(1100px 620px at 100% -8%,rgba(107,140,255,.06),transparent 60%),
+      radial-gradient(900px 560px at -6% 6%,rgba(245,111,0,.05),transparent 58%),
+      var(--bg);
+  }
+  html.dark ::selection{background:rgba(245,111,0,.32)}
+  html.dark *{scrollbar-color:#31415A transparent}
+  html.dark *::-webkit-scrollbar-thumb{background:#31415A;border-color:var(--bg)}
+
+  /* Framed shell + surfaces */
+  html.dark .wrap{background:var(--bg)}
+  @media (min-width:820px){ html.dark .wrap{border-color:var(--hair);box-shadow:0 1px 3px rgba(0,0,0,.5),0 40px 90px -40px rgba(0,0,0,.8)} }
+  html.dark .card,html.dark .kpi,html.dark .linktile,html.dark .tool details,html.dark .wchip{
+    background:var(--surface);border-color:var(--hair)}
+  html.dark .fundbar{background:linear-gradient(180deg,#131C2B,#0F1826);border-color:var(--hair)}
+  html.dark .meter{background:#0A1120;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+
+  /* Nav */
+  html.dark .tabs{background:rgba(15,24,38,.92);box-shadow:inset 0 -1px 0 var(--hair)}
+  html.dark .tabs button{background:transparent;color:var(--mute)}
+  html.dark .tabs button:hover{background:#1B2636;color:var(--ink)}
+  html.dark .tabs > button.active,html.dark .tabs button.active{background:#F1F4F8;color:#0B121E}
+  html.dark .navgroup .grp{color:var(--mute)}
+  html.dark .navgroup.open .grp{background:#F1F4F8;color:#0B121E}
+  html.dark .submenu{background:var(--surface);border-color:var(--hair)}
+  html.dark .submenu button{background:transparent;color:var(--ink)}
+  html.dark .submenu button:hover{background:#1B2636;color:var(--orange)}
+
+  /* Inputs */
+  html.dark input,html.dark select,html.dark textarea{
+    background:var(--surface-2);color:var(--ink);border-color:var(--line)}
+  html.dark input::placeholder,html.dark textarea::placeholder{color:#5E6E82}
+  html.dark input:focus,html.dark select:focus,html.dark textarea:focus{
+    border-color:var(--orange);box-shadow:0 0 0 3px rgba(245,111,0,.22)}
+  html.dark option{background:var(--surface)}
+  html.dark .btn.sec{background:var(--surface);color:var(--ink);border-color:var(--line)}
+  html.dark .btn.sec:hover{background:#1B2636;border-color:#33445C}
+
+  /* Tables */
+  html.dark table.rpt th{background:var(--surface-2);color:var(--mute);border-color:var(--line)}
+  html.dark table.rpt td{border-color:var(--hair)}
+  html.dark table.rpt tbody tr:not(.tot):nth-child(odd){background:var(--surface-2)}
+  html.dark table.rpt tbody tr:not(.tot):nth-child(even){background:var(--surface)}
+  html.dark table.rpt tbody tr:not(.tot):hover{background:#1D2A40;box-shadow:inset 3px 0 0 var(--orange)}
+  html.dark table.rpt tr.tot td{background:var(--surface-2);border-top-color:#3A4C64}
+  html.dark .rptwrap,html.dark .invrow{border-color:var(--hair)}
+  html.dark .invrow:hover{background:#1B2636}
+
+  /* Popovers I build with inline #fff — flip via generic dropdown selector */
+  html.dark [id$="DD"],html.dark [id^="qbIND"],html.dark [id^="bexpDD"]{
+    background:var(--surface)!important;border-color:var(--hair)!important;color:var(--ink)}
+  html.dark [id$="DD"] > div,html.dark [id^="qbIND"] > div,html.dark [id^="bexpDD"] > div{
+    background:var(--surface)!important;border-color:var(--hair)!important}
+
+  /* Theme toggle button */
+  #themeBtn{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);color:#fff;
+    border-radius:9px;width:34px;height:32px;font-size:15px;cursor:pointer;line-height:1;font-family:inherit;
+    display:inline-flex;align-items:center;justify-content:center;transition:background .15s}
+  #themeBtn:hover{background:rgba(255,255,255,.2)}
 </style></head>
 <body>
 <div class="wrap">
@@ -857,6 +935,7 @@ if (empty($_SESSION['auth'])):
       <div class="livepill"><span class="livedot"></span>LIVE FROM ZOHO BOOKS</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
+      <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
       <button id="mobMenuBtn" onclick="openMobileNav()" aria-label="Open menu">☰</button>
       <a class="logout" href="?logout=1">Sign out</a>
     </div>
@@ -5045,6 +5124,15 @@ function vTodo(){
     </div>${TASK.showDone? done.map(todoTaskCard).join('') : ''}`:''}`;
 }
 /* ================= end To-Do ================= */
+
+function themeIsDark(){ return document.documentElement.classList.contains('dark'); }
+function syncThemeBtn(){ const b=document.getElementById('themeBtn'); if(b) b.textContent = themeIsDark()?'☀️':'🌙'; }
+function toggleTheme(){
+  const dark=document.documentElement.classList.toggle('dark');
+  try{ localStorage.setItem('theme912', dark?'dark':'light'); }catch(e){}
+  syncThemeBtn();
+}
+syncThemeBtn();
 
 function closeNavGroups(){ document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open')); }
 function openMobileNav(){ document.getElementById('mobDrawer').classList.add('open'); document.getElementById('mobOverlay').classList.add('open'); document.body.style.overflow='hidden'; }
