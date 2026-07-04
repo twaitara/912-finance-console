@@ -1023,7 +1023,7 @@ if (empty($_SESSION['auth'])):
       <div class="livepill"><span class="livedot"></span>LIVE FROM ZOHO BOOKS</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <button id="installBtn" onclick="installClick()" title="Install this app" aria-label="Install app" style="display:none">⬇ Install app</button>
+      <button id="installBtn" onclick="installClick()" title="Install this app" aria-label="Install app" style="display:none">⬇ Get app</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
       <button id="mobMenuBtn" onclick="openMobileNav()" aria-label="Open menu">☰</button>
       <a class="logout" href="?logout=1">Sign out</a>
@@ -1117,14 +1117,12 @@ if (empty($_SESSION['auth'])):
   <div class="pane" id="pane"></div>
 </div>
 
-<!-- ── iOS "add to home screen" help sheet ── -->
+<!-- ── "add to home screen" help sheet (steps injected per platform) ── -->
 <div id="iosHelp" onclick="if(event.target===this)iosHelpClose()">
   <div class="sheet">
     <h3>📲 Install 912 Console</h3>
     <p>Add the app to your Home Screen so it opens full-screen and stays signed in.</p>
-    <div class="step"><span style="font-size:20px">1️⃣</span><div>Tap the <b>Share</b> button <span style="font-size:16px">􀈂</span> at the bottom of Safari</div></div>
-    <div class="step"><span style="font-size:20px">2️⃣</span><div>Scroll and tap <b>Add to Home Screen</b> <span style="font-size:15px">➕</span></div></div>
-    <div class="step"><span style="font-size:20px">3️⃣</span><div>Tap <b>Add</b> — the 912 icon appears on your Home Screen</div></div>
+    <div id="installSteps"></div>
     <button class="btn" style="margin-top:14px" onclick="iosHelpClose()">Got it</button>
   </div>
 </div>
@@ -1569,8 +1567,8 @@ function vDashTeamQuotes(){
     const pct=genVal>0?Math.round(invVal/genVal*100):0;
     const barColor=pct>=50?'var(--good)':pct>=25?'var(--orange)':'#E2E8F0';
     const isMe=name.toLowerCase()===String(ME.user||'').toLowerCase();
-    return `<tr style="${isMe?'background:#FFFBF5':''}">
-      <td style="padding:8px 10px;font-size:12px;font-weight:${isMe?700:500};white-space:nowrap">${shortName(name)}${isMe?' 👤':''}</td>
+    return `<tr style="${isMe?'background:rgba(245,111,0,.08)':''}">
+      <td style="padding:8px 10px;font-size:12px;font-weight:${isMe?700:500};white-space:nowrap;color:var(--ink)">${shortName(name)}${isMe?' 👤':''}</td>
       <td style="padding:8px 10px;font-size:13px;font-weight:700;text-align:center">${uq.length}</td>
       <td style="padding:8px 10px;font-size:13px;font-weight:700;color:${inv.length?'var(--good)':'var(--mute)'};text-align:center">${inv.length}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--mute);text-align:right">KES ${Math.round(genVal).toLocaleString('en-KE')}</td>
@@ -1599,7 +1597,7 @@ function vDashTeamQuotes(){
       </div>
     </div>
     <table style="width:100%;border-collapse:collapse">
-      <thead><tr style="background:#F8FAFC">
+      <thead><tr style="background:var(--surface-2)">
         <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:left">Staff</th>
         <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:center">Generated</th>
         <th style="padding:6px 10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:center">Converted</th>
@@ -5242,18 +5240,29 @@ function pwaIsMobile(){ return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator
 function pwaIsIOS(){ return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1); }
 function showInstallBtn(){ const b=document.getElementById('installBtn'); if(b) b.style.display='inline-flex'; }
 function hideInstallBtn(){ const b=document.getElementById('installBtn'); if(b) b.style.display='none'; }
-function iosHelpOpen(){ const m=document.getElementById('iosHelp'); if(m) m.classList.add('open'); }
+function iosHelpOpen(){
+  const steps=document.getElementById('installSteps');
+  if(steps){
+    steps.innerHTML = pwaIsIOS()
+      ? `<div class="step"><span style="font-size:20px">1️⃣</span><div>Tap the <b>Share</b> button at the bottom of Safari</div></div>`
+        + `<div class="step"><span style="font-size:20px">2️⃣</span><div>Scroll down and tap <b>Add to Home Screen</b> ➕</div></div>`
+        + `<div class="step"><span style="font-size:20px">3️⃣</span><div>Tap <b>Add</b> — the 912 icon appears on your Home Screen</div></div>`
+      : `<div class="step"><span style="font-size:20px">1️⃣</span><div>Tap the <b>⋮ menu</b> (top-right of your browser)</div></div>`
+        + `<div class="step"><span style="font-size:20px">2️⃣</span><div>Tap <b>Install app</b> or <b>Add to Home screen</b></div></div>`
+        + `<div class="step"><span style="font-size:20px">3️⃣</span><div>Confirm — the 912 icon appears on your Home Screen</div></div>`;
+  }
+  const m=document.getElementById('iosHelp'); if(m) m.classList.add('open');
+}
 function iosHelpClose(){ const m=document.getElementById('iosHelp'); if(m) m.classList.remove('open'); }
 async function installClick(){
   if(_deferredInstall){ _deferredInstall.prompt(); try{ await _deferredInstall.userChoice; }catch(e){} _deferredInstall=null; hideInstallBtn(); return; }
-  if(pwaIsIOS()) iosHelpOpen();
+  iosHelpOpen();   // no native prompt available → show platform-specific steps
 }
 window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); _deferredInstall=e; if(pwaIsMobile() && !pwaStandalone()) showInstallBtn(); });
 window.addEventListener('appinstalled', function(){ _deferredInstall=null; hideInstallBtn(); });
 (function pwaInit(){
-  if(pwaStandalone() || !pwaIsMobile()){ hideInstallBtn(); return; }   // installed or desktop → don't show
-  if(pwaIsIOS()) showInstallBtn();                                     // iOS: no prompt event; tap shows steps
-  // Android: the button appears when beforeinstallprompt fires
+  if(pwaStandalone() || !pwaIsMobile()){ hideInstallBtn(); return; }   // already installed or desktop → hide
+  showInstallBtn();                                                    // always offer install on mobile
 })();
 
 function closeNavGroups(){ document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open')); }
