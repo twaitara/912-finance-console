@@ -979,6 +979,25 @@ if (empty($_SESSION['auth'])):
     display:inline-flex;align-items:center;justify-content:center;transition:background .15s}
   #themeBtn:hover{background:rgba(255,255,255,.2)}
 
+  /* Install-app button (only shown on mobile when not installed) */
+  #installBtn{background:var(--grad-orange);color:#fff;border:none;border-radius:9px;
+    padding:7px 12px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;
+    box-shadow:0 4px 12px rgba(245,111,0,.4);align-items:center;gap:5px}
+  #installBtn:active{transform:scale(.96)}
+  @media(min-width:681px){ #installBtn{display:none!important} }   /* app-install prompt is a mobile affordance */
+  /* iOS "add to home screen" help sheet */
+  #iosHelp{position:fixed;inset:0;z-index:200;display:none;background:rgba(0,0,0,.55);backdrop-filter:blur(3px)}
+  #iosHelp.open{display:block}
+  #iosHelp .sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:18px 18px 0 0;
+    padding:20px 22px calc(22px + env(safe-area-inset-bottom));box-shadow:0 -20px 60px rgba(0,0,0,.4);
+    animation:sheetUp .28s cubic-bezier(.22,.61,.36,1) both}
+  html.dark #iosHelp .sheet{background:#131C2B;color:var(--ink)}
+  @keyframes sheetUp{from{transform:translateY(100%)}to{transform:none}}
+  #iosHelp h3{margin:0 0 6px;font-size:16px}
+  #iosHelp p{margin:0 0 12px;font-size:13px;color:var(--mute);line-height:1.5}
+  #iosHelp .step{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--hair);font-size:13px}
+  #iosHelp .step b{color:var(--orange)}
+
   /* ▚ Row hover — orange with black text, high-contrast in BOTH themes. Last + !important so nothing overrides. */
   table.rpt tbody tr:not(.tot):hover,
   table.rpt tbody tr:not(.tot):hover td,
@@ -999,6 +1018,7 @@ if (empty($_SESSION['auth'])):
       <div class="livepill"><span class="livedot"></span>LIVE FROM ZOHO BOOKS</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
+      <button id="installBtn" onclick="installClick()" title="Install this app" aria-label="Install app" style="display:none">⬇ Install app</button>
       <button id="themeBtn" onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
       <button id="mobMenuBtn" onclick="openMobileNav()" aria-label="Open menu">☰</button>
       <a class="logout" href="?logout=1">Sign out</a>
@@ -1090,6 +1110,18 @@ if (empty($_SESSION['auth'])):
   </div>
 
   <div class="pane" id="pane"></div>
+</div>
+
+<!-- ── iOS "add to home screen" help sheet ── -->
+<div id="iosHelp" onclick="if(event.target===this)iosHelpClose()">
+  <div class="sheet">
+    <h3>📲 Install 912 Console</h3>
+    <p>Add the app to your Home Screen so it opens full-screen and stays signed in.</p>
+    <div class="step"><span style="font-size:20px">1️⃣</span><div>Tap the <b>Share</b> button <span style="font-size:16px">􀈂</span> at the bottom of Safari</div></div>
+    <div class="step"><span style="font-size:20px">2️⃣</span><div>Scroll and tap <b>Add to Home Screen</b> <span style="font-size:15px">➕</span></div></div>
+    <div class="step"><span style="font-size:20px">3️⃣</span><div>Tap <b>Add</b> — the 912 icon appears on your Home Screen</div></div>
+    <button class="btn" style="margin-top:14px" onclick="iosHelpClose()">Got it</button>
+  </div>
 </div>
 
 <!-- ── Mobile slide-in nav drawer ── -->
@@ -5197,6 +5229,27 @@ function toggleTheme(){
   syncThemeBtn();
 }
 syncThemeBtn();
+
+/* ---- Install-app affordance (mobile, when not already installed) ---- */
+let _deferredInstall=null;
+function pwaStandalone(){ return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone===true; }
+function pwaIsMobile(){ return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
+function pwaIsIOS(){ return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1); }
+function showInstallBtn(){ const b=document.getElementById('installBtn'); if(b) b.style.display='inline-flex'; }
+function hideInstallBtn(){ const b=document.getElementById('installBtn'); if(b) b.style.display='none'; }
+function iosHelpOpen(){ const m=document.getElementById('iosHelp'); if(m) m.classList.add('open'); }
+function iosHelpClose(){ const m=document.getElementById('iosHelp'); if(m) m.classList.remove('open'); }
+async function installClick(){
+  if(_deferredInstall){ _deferredInstall.prompt(); try{ await _deferredInstall.userChoice; }catch(e){} _deferredInstall=null; hideInstallBtn(); return; }
+  if(pwaIsIOS()) iosHelpOpen();
+}
+window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); _deferredInstall=e; if(pwaIsMobile() && !pwaStandalone()) showInstallBtn(); });
+window.addEventListener('appinstalled', function(){ _deferredInstall=null; hideInstallBtn(); });
+(function pwaInit(){
+  if(pwaStandalone() || !pwaIsMobile()){ hideInstallBtn(); return; }   // installed or desktop → don't show
+  if(pwaIsIOS()) showInstallBtn();                                     // iOS: no prompt event; tap shows steps
+  // Android: the button appears when beforeinstallprompt fires
+})();
 
 function closeNavGroups(){ document.querySelectorAll('.navgroup.open').forEach(g=>g.classList.remove('open')); }
 function openMobileNav(){ document.getElementById('mobDrawer').classList.add('open'); document.getElementById('mobOverlay').classList.add('open'); document.body.style.overflow='hidden'; }
