@@ -14,23 +14,26 @@ session_start();
 $cfg = require __DIR__ . '/config.php';
 require_once __DIR__ . '/settings_store.php';
 require_once __DIR__ . '/users_store.php';
-require_once __DIR__ . '/remember.php';
 $cfg = array_merge($cfg, app_settings_effective($cfg));   // user settings (with defaults) override config
 
-// Persistent "stay signed in" is issued only on mobile devices.
-$IS_MOBILE  = !empty($_SERVER['HTTP_USER_AGENT']) && preg_match('/Mobile|Android|iPhone|iPad|iPod|Windows Phone/i', $_SERVER['HTTP_USER_AGENT']);
+// ---- Persistent "stay signed in" on mobile (remember-me cookie). Fully guarded so it can never
+//      break page load: if remember.php is missing or anything throws, the app runs normally. ----
+$RMB_OK = false;
+if (is_file(__DIR__ . '/remember.php')) { try { require_once __DIR__ . '/remember.php'; $RMB_OK = function_exists('remember_lookup'); } catch (\Throwable $e) { $RMB_OK = false; } }
+$IS_MOBILE  = !empty($_SERVER['HTTP_USER_AGENT']) && preg_match('/Mobile|Android|iPhone|iPad|iPod|Windows Phone/i', (string)$_SERVER['HTTP_USER_AGENT']);
 $RMB_SECURE = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
 
-// Restore a session from the remember-me cookie (keeps mobile signed in across visits/app restarts).
-if (empty($_SESSION['auth']) && !empty($_COOKIE['rmb912'])) {
-    $rv = remember_lookup($_COOKIE['rmb912']);
-    if ($rv) {
-        $_SESSION['auth']     = true;
-        $_SESSION['user']     = $rv['user'];
-        $_SESSION['email']    = $rv['email'] ?? '';
-        $_SESSION['is_admin'] = (int)($rv['is_admin'] ?? 0) ? 1 : 0;
-        $_SESSION['tabs']     = $rv['tabs'] ?? '';
-    }
+if ($RMB_OK && empty($_SESSION['auth']) && !empty($_COOKIE['rmb912'])) {
+    try {
+        $rv = remember_lookup($_COOKIE['rmb912']);
+        if ($rv) {
+            $_SESSION['auth']     = true;
+            $_SESSION['user']     = $rv['user'];
+            $_SESSION['email']    = $rv['email'] ?? '';
+            $_SESSION['is_admin'] = (int)($rv['is_admin'] ?? 0) ? 1 : 0;
+            $_SESSION['tabs']     = $rv['tabs'] ?? '';
+        }
+    } catch (\Throwable $e) { /* ignore — never block login */ }
 }
 
 // --- login gate (master password = admin; or a per-user account) ---
@@ -58,19 +61,21 @@ if (isset($_POST['app_password'])) {
         }
     }
     // On a fresh mobile login, mint a 90-day remember token so the app stays signed in.
-    if ($justLoggedIn && $IS_MOBILE) {
-        $tok = remember_issue([
-            'user'     => $_SESSION['user'],
-            'email'    => $_SESSION['email'] ?? '',
-            'is_admin' => $_SESSION['is_admin'],
-            'tabs'     => $_SESSION['tabs'],
-        ], 90);
-        setcookie('rmb912', $tok, ['expires'=>time()+90*86400, 'path'=>'/', 'secure'=>$RMB_SECURE, 'httponly'=>true, 'samesite'=>'Lax']);
+    if ($RMB_OK && $justLoggedIn && $IS_MOBILE && function_exists('remember_issue')) {
+        try {
+            $tok = remember_issue([
+                'user'     => $_SESSION['user'],
+                'email'    => $_SESSION['email'] ?? '',
+                'is_admin' => $_SESSION['is_admin'],
+                'tabs'     => $_SESSION['tabs'],
+            ], 90);
+            setcookie('rmb912', $tok, ['expires'=>time()+90*86400, 'path'=>'/', 'secure'=>$RMB_SECURE, 'httponly'=>true, 'samesite'=>'Lax']);
+        } catch (\Throwable $e) { /* ignore */ }
     }
 }
 if (isset($_GET['logout'])) {
-    if (!empty($_COOKIE['rmb912'])) {
-        remember_forget($_COOKIE['rmb912']);
+    if ($RMB_OK && !empty($_COOKIE['rmb912']) && function_exists('remember_forget')) {
+        try { remember_forget($_COOKIE['rmb912']); } catch (\Throwable $e) {}
         setcookie('rmb912', '', ['expires'=>time()-3600, 'path'=>'/', 'secure'=>$RMB_SECURE, 'httponly'=>true, 'samesite'=>'Lax']);
     }
     session_destroy(); header('Location: index.php'); exit;
