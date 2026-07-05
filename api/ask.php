@@ -24,7 +24,7 @@ if ($question === '') { echo json_encode(['ok'=>false,'error'=>'Ask a question a
 
 /* ---------- Build (and cache) the books context ---------- */
 $dir = __DIR__ . '/../data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-$ctxFile = $dir . '/ask_context.json';
+$ctxFile = $dir . '/ask_context_v2.json';   // v2 = full-history context; ignore any old 120-day cache
 $context = null;
 if (empty($in['refresh']) && is_file($ctxFile) && (time() - filemtime($ctxFile) < 900)) {
     $j = json_decode(@file_get_contents($ctxFile), true);
