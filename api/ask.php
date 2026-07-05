@@ -32,55 +32,62 @@ if (empty($in['refresh']) && is_file($ctxFile) && (time() - filemtime($ctxFile) 
 }
 
 if ($context === null) {
-    $to   = date('Y-m-d');
-    $from = date('Y-m-d', strtotime('-120 days'));
     $fx   = usd_kes_rate($dir, $cfg);
     $rate = (float)($fx['rate'] ?? 0);
     $toK  = function($amt, $cur) use ($rate) { return (strtoupper((string)$cur) === 'USD' && $rate > 0) ? (float)$amt * $rate : (float)$amt; };
+    $trunc = false;
 
-    // Invoices in the window
-    $rev = []; $invRows = []; $page = 1;
+    // ALL invoices (full history, aggregated by month + year; per-invoice kept for the loss list)
+    $revM = []; $revY = []; $invRows = []; $minDate = '9999-99-99'; $maxDate = ''; $page = 1;
     do {
-        [$d, $c] = zoho_api('GET', 'invoices', null, ['created_date_start'=>$from, 'created_date_end'=>$to, 'per_page'=>200, 'page'=>$page, 'sort_column'=>'date']);
+        [$d, $c] = zoho_api('GET', 'invoices', null, ['per_page'=>200, 'page'=>$page, 'sort_column'=>'date']);
         if ($c >= 400) break;
         foreach ($d['invoices'] ?? [] as $iv) {
             if (($iv['status'] ?? '') === 'void' || ($iv['status'] ?? '') === 'draft') continue;
             $cur = strtoupper((string)($iv['currency_code'] ?? 'KES'));
             $tK  = $toK((float)($iv['total'] ?? 0), $cur);
-            $date= substr((string)($iv['date'] ?? ''), 0, 10);
-            $m   = substr($date, 0, 7);
-            $rev[$m] = ($rev[$m] ?? 0) + $tK;
+            $date= substr((string)($iv['date'] ?? ''), 0, 10); if ($date === '') continue;
+            $m = substr($date, 0, 7); $y = substr($date, 0, 4);
+            $revM[$m] = ($revM[$m] ?? 0) + $tK; $revY[$y] = ($revY[$y] ?? 0) + $tK;
+            if ($date < $minDate) $minDate = $date; if ($date > $maxDate) $maxDate = $date;
             $num = (string)($iv['invoice_number'] ?? '');
-            $invRows[$num] = ['num'=>$num, 'client'=>(string)($iv['customer_name'] ?? ''), 'total'=>$tK, 'date'=>$date, 'status'=>(string)($iv['status'] ?? '')];
+            $invRows[$num] = ['num'=>$num, 'client'=>(string)($iv['customer_name'] ?? ''), 'total'=>$tK, 'date'=>$date];
         }
         $more = $d['page_context']['has_more_page'] ?? false; $page++;
-    } while ($more && $page <= 10);
+        if (!$more) break; if ($page > 50) { $trunc = true; break; }
+    } while (true);
 
-    // Expenses in the window — by month, by account, and matched to invoices
-    $exp = []; $expByAcct = []; $costByInv = []; $page = 1;
+    // ALL expenses (by month, by year, by account, matched to invoices)
+    $expM = []; $expY = []; $expByAcct = []; $costByInv = []; $page = 1;
     do {
-        [$ed, $ec] = zoho_api('GET', 'expenses', null, ['date_start'=>$from, 'date_end'=>$to, 'per_page'=>200, 'page'=>$page, 'sort_column'=>'date']);
+        [$ed, $ec] = zoho_api('GET', 'expenses', null, ['per_page'=>200, 'page'=>$page, 'sort_column'=>'date']);
         if ($ec >= 400) break;
         foreach ($ed['expenses'] ?? [] as $e) {
             $amt = (float)($e['total_without_tax'] ?? $e['total'] ?? 0);
-            $m   = substr((string)($e['date'] ?? ''), 0, 7);
-            $exp[$m] = ($exp[$m] ?? 0) + $amt;
+            $date= substr((string)($e['date'] ?? ''), 0, 10);
+            $m = substr($date, 0, 7); $y = substr($date, 0, 4);
+            $expM[$m] = ($expM[$m] ?? 0) + $amt; $expY[$y] = ($expY[$y] ?? 0) + $amt;
             $acct = (string)($e['account_name'] ?? 'Uncategorised');
             $expByAcct[$acct] = ($expByAcct[$acct] ?? 0) + $amt;
             $ref = trim((string)($e['reference_number'] ?? ''));
             if ($ref !== '') $costByInv[$ref] = ($costByInv[$ref] ?? 0) + $amt;
         }
         $more = $ed['page_context']['has_more_page'] ?? false; $page++;
-    } while ($more && $page <= 10);
+        if (!$more) break; if ($page > 50) { $trunc = true; break; }
+    } while (true);
 
-    // Payments received in the window
-    $payTotal = 0; $payCount = 0; $page = 1;
+    // ALL payments (by year + total)
+    $payY = []; $payTotal = 0; $payCount = 0; $page = 1;
     do {
-        [$pd, $pc] = zoho_api('GET', 'customerpayments', null, ['date_start'=>$from, 'date_end'=>$to, 'per_page'=>200, 'page'=>$page]);
+        [$pd, $pc] = zoho_api('GET', 'customerpayments', null, ['per_page'=>200, 'page'=>$page]);
         if ($pc >= 400) break;
-        foreach ($pd['customerpayments'] ?? [] as $p) { $payTotal += (float)($p['amount'] ?? 0); $payCount++; }
+        foreach ($pd['customerpayments'] ?? [] as $p) {
+            $a = (float)($p['amount'] ?? 0); $payTotal += $a; $payCount++;
+            $y = substr((string)($p['date'] ?? ''), 0, 4); if ($y !== '') $payY[$y] = ($payY[$y] ?? 0) + $a;
+        }
         $more = $pd['page_context']['has_more_page'] ?? false; $page++;
-    } while ($more && $page <= 8);
+        if (!$more) break; if ($page > 40) { $trunc = true; break; }
+    } while (true);
 
     // Outstanding (unpaid) totals
     $dueK = 0; $dueU = 0; $dueN = 0; $page = 1;
@@ -93,22 +100,23 @@ if ($context === null) {
             if (strtoupper((string)($iv['currency_code'] ?? 'KES')) === 'USD') $dueU += $b; else $dueK += $b;
         }
         $more = $ud['page_context']['has_more_page'] ?? false; $page++;
-    } while ($more && $page <= 12);
+    } while ($more && $page <= 20);
 
     // Compose the text context
-    ksort($rev); ksort($exp);
-    $months = array_values(array_unique(array_merge(array_keys($rev), array_keys($exp)))); sort($months);
     $kfmt = fn($n) => number_format(round($n), 0);
+    $allYears  = array_values(array_unique(array_merge(array_keys($revY), array_keys($expY)))); sort($allYears);
+    $allMonths = array_values(array_unique(array_merge(array_keys($revM), array_keys($expM)))); sort($allMonths);
     $lines = [];
-    $lines[] = "PERIOD: $from to $to. Currency KES. USD invoices converted at 1 USD = KES " . round($rate, 2) . ".";
+    $lines[] = "COVERAGE: full Zoho history" . ($maxDate !== '' ? " ($minDate to $maxDate)" : "") . ". Currency KES. USD converted at 1 USD = KES " . round($rate, 2) . ".";
+    if ($trunc) $lines[] = "NOTE: very large dataset — a small number of the oldest records may be omitted.";
     $lines[] = "PROFIT RULE (house rule): profit = invoice total − cost booked against it. VAT is NOT netted out.";
     $lines[] = "";
+    $lines[] = "YEARLY P&L (KES):";
+    foreach ($allYears as $y) { $r = $revY[$y] ?? 0; $x = $expY[$y] ?? 0; $lines[] = "  $y  revenue " . $kfmt($r) . "  costs+expenses " . $kfmt($x) . "  profit " . $kfmt($r - $x); }
+    $lines[] = "";
     $lines[] = "MONTHLY P&L (KES):";
-    foreach ($months as $m) {
-        $r = $rev[$m] ?? 0; $x = $exp[$m] ?? 0; $p = $r - $x;
-        $lines[] = "  $m  revenue " . $kfmt($r) . "  costs+expenses " . $kfmt($x) . "  profit " . $kfmt($p);
-    }
-    // Per-invoice profit → top losses
+    foreach ($allMonths as $m) { $r = $revM[$m] ?? 0; $x = $expM[$m] ?? 0; $lines[] = "  $m  revenue " . $kfmt($r) . "  costs+expenses " . $kfmt($x) . "  profit " . $kfmt($r - $x); }
+    // Per-invoice profit → lowest all-time
     $perInv = [];
     foreach ($invRows as $num => $iv) {
         $cost = $costByInv[$num] ?? 0;
@@ -116,16 +124,20 @@ if ($context === null) {
     }
     usort($perInv, fn($a, $b) => $a['profit'] <=> $b['profit']);
     $lines[] = "";
-    $lines[] = "LOWEST-PROFIT INVOICES IN PERIOD (revenue − cost, KES):";
-    foreach (array_slice($perInv, 0, 8) as $r) {
+    $lines[] = "LOWEST-PROFIT INVOICES, ALL TIME (revenue − cost, KES):";
+    foreach (array_slice($perInv, 0, 12) as $r) {
         $lines[] = "  {$r['num']}  {$r['client']}  {$r['date']}  rev " . $kfmt($r['rev']) . "  cost " . $kfmt($r['cost']) . "  profit " . $kfmt($r['profit']);
     }
     arsort($expByAcct);
     $lines[] = "";
-    $lines[] = "TOP EXPENSE CATEGORIES IN PERIOD (KES):";
-    foreach (array_slice($expByAcct, 0, 10, true) as $acct => $amt) $lines[] = "  " . $acct . "  " . $kfmt($amt);
+    $lines[] = "EXPENSE CATEGORIES, ALL TIME (KES):";
+    foreach (array_slice($expByAcct, 0, 15, true) as $acct => $amt) $lines[] = "  " . $acct . "  " . $kfmt($amt);
     $lines[] = "";
-    $lines[] = "PAYMENTS RECEIVED IN PERIOD: KES " . $kfmt($payTotal) . " across $payCount payments.";
+    $lines[] = "PAYMENTS RECEIVED BY YEAR (KES):";
+    ksort($payY);
+    foreach ($payY as $y => $a) $lines[] = "  $y  " . $kfmt($a);
+    $lines[] = "  TOTAL: KES " . $kfmt($payTotal) . " across $payCount payments.";
+    $lines[] = "";
     $lines[] = "OUTSTANDING (unpaid invoices, all-time): $dueN invoices, KES " . $kfmt($dueK) . " + USD " . number_format(round($dueU)) . ".";
 
     $context = implode("\n", $lines);

@@ -4058,7 +4058,7 @@ function vAsk(){
     <div style="text-align:center;padding:24px 10px">
       <div style="font-size:34px">🤖</div>
       <div style="font-weight:700;font-size:15px;margin-top:6px">Ask your books anything</div>
-      <div class="muted" style="font-size:12px;margin-top:4px;max-width:420px;margin-left:auto;margin-right:auto">Plain-English answers grounded in your live Zoho data — revenue, costs, profit, expenses and receivables from the last ~4 months.</div>
+      <div class="muted" style="font-size:12px;margin-top:4px;max-width:440px;margin-left:auto;margin-right:auto">Plain-English answers grounded in your full Zoho history — revenue, costs, profit, expenses and receivables across every year on record.</div>
       <div style="display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-top:14px">
         ${ASK_SUGGESTIONS.map(s=>`<button class="btn sec" style="width:auto;padding:7px 12px;font-size:11.5px" onclick="askPick('${s.replace(/'/g,"\\'")}')">${s}</button>`).join('')}
       </div>
@@ -4077,7 +4077,7 @@ function vAsk(){
       <textarea id="askInput" rows="1" placeholder="Ask about profit, costs, invoices, who owes you…" oninput="askInput(this.value)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askSend();}" style="flex:1;box-sizing:border-box;padding:11px 13px;border:1px solid var(--line);border-radius:11px;font-size:13px;font-family:inherit;resize:none;max-height:120px">${askEsc(ASK.input)}</textarea>
       <button class="btn" style="width:auto;padding:11px 18px;flex-shrink:0" onclick="askSend()" ${ASK.busy?'disabled':''}>${ASK.busy?'…':'Ask'}</button>
     </div>
-    <div class="muted" style="font-size:10.5px;margin-top:6px">Answers are AI-generated from a summary of your Zoho books (last ~120 days) and may contain mistakes — verify before acting. Admin only.</div>
+    <div class="muted" style="font-size:10.5px;margin-top:6px">Answers are AI-generated from a summary of your full Zoho history and may contain mistakes — verify before acting. Admin only.</div>
   </div>`;
 }
 /* ================= end Ask your books ================= */
