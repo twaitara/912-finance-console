@@ -1554,7 +1554,7 @@ function render(){
   if(TAB==='stmtbuild'){ p.innerHTML = vStmtBuild(); if(!SB.loaded && !SB.loading) sbLoad(); }
   if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
-  if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); }
+  if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -4009,7 +4009,7 @@ function vBulkExp(){
 /* ================= end Bulk Expenses ================= */
 
 /* ================= Ask your books (admin AI advisor) ================= */
-let ASK = { msgs:[], input:'', busy:false, err:'' };
+let ASK = { msgs:[], input:'', busy:false, err:'', saved:[], savedOpen:false, savedLoaded:false, currentId:null, saveMsg:'' };
 const ASK_SUGGESTIONS = [
   'Why did my profit fall recently?',
   'Which invoices lost me money and why?',
@@ -4047,7 +4047,33 @@ async function askSend(){
     render(); askScrollDown();
   }catch(e){ ASK.busy=false; ASK.err='Request failed: '+e; render(); }
 }
-function askClear(){ ASK.msgs=[]; ASK.err=''; render(); }
+function askNewChat(){ ASK.msgs=[]; ASK.currentId=null; ASK.err=''; ASK.savedOpen=false; ASK.saveMsg=''; render(); }
+function askConvosLoad(){
+  fetch('api/ask_convos.php?action=list',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{ if(j&&j.ok){ ASK.saved=j.convos||[]; if(TAB==='ask') render(); } }).catch(()=>{});
+}
+function askToggleSaved(){ ASK.savedOpen=!ASK.savedOpen; if(ASK.savedOpen) askConvosLoad(); render(); }
+async function askSaveConvo(){
+  if(!ASK.msgs.length){ ASK.saveMsg='Nothing to save yet.'; render(); return; }
+  ASK.saveMsg='Saving…'; render();
+  try{
+    const r=await fetch('api/ask_convos.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',id:ASK.currentId,messages:ASK.msgs})});
+    const j=await r.json();
+    if(j&&j.ok){ ASK.currentId=j.id; ASK.saveMsg='Saved ✓ — kept for 7 days'; askConvosLoad(); }
+    else ASK.saveMsg='Save failed: '+((j&&j.error)||'error');
+    render();
+    setTimeout(()=>{ ASK.saveMsg=''; if(TAB==='ask') render(); },3000);
+  }catch(e){ ASK.saveMsg='Error saving: '+e; render(); }
+}
+function askOpenConvo(id){
+  fetch('api/ask_convos.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',id})}).then(r=>r.json()).then(j=>{
+    if(j&&j.ok){ ASK.msgs=(j.convo.messages||[]).map(m=>({role:m.role,content:m.content})); ASK.currentId=id; ASK.savedOpen=false; ASK.err=''; ASK.saveMsg=''; render(); askScrollDown(); }
+    else { ASK.err=(j&&j.error)||'Could not open that conversation.'; render(); }
+  }).catch(e=>{ ASK.err='Could not open: '+e; render(); });
+}
+function askDeleteConvo(id){
+  fetch('api/ask_convos.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})}).then(r=>r.json()).then(()=>{ if(ASK.currentId===id) ASK.currentId=null; askConvosLoad(); }).catch(()=>{});
+}
+function askExpiryTxt(ts){ try{ const d=new Date(ts*1000); const days=Math.max(0,Math.ceil((ts*1000-Date.now())/86400000)); return 'expires in '+days+'d ('+d.toLocaleDateString()+')'; }catch(e){ return ''; } }
 function vAsk(){
   if(!ME.admin) return `<div class="card muted" style="text-align:center">Admins only.</div>`;
   const bubbles=ASK.msgs.map(m=>{
@@ -4063,11 +4089,30 @@ function vAsk(){
         ${ASK_SUGGESTIONS.map(s=>`<button class="btn sec" style="width:auto;padding:7px 12px;font-size:11.5px" onclick="askPick('${s.replace(/'/g,"\\'")}')">${s}</button>`).join('')}
       </div>
     </div>` : '';
+  const savedPanel = ASK.savedOpen ? `
+    <div class="card" style="padding:10px 12px;margin-bottom:10px">
+      <div style="font-size:11px;color:var(--orange);font-weight:600;margin-bottom:8px">⚠️ Saved chats are kept for 7 days, then automatically deleted.</div>
+      ${ASK.saved.length ? ASK.saved.map(c=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--hair)">
+          <div style="flex:1;min-width:0;cursor:pointer" onclick="askOpenConvo('${c.id}')">
+            <div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${askEsc(c.title)}</div>
+            <div class="muted" style="font-size:10px;margin-top:1px">${c.count} message${c.count===1?'':'s'} · ${askExpiryTxt(c.expires)}</div>
+          </div>
+          <button class="btn sec" style="width:auto;padding:4px 11px;font-size:11px" onclick="askOpenConvo('${c.id}')">Open</button>
+          <span title="Delete" onclick="askDeleteConvo('${c.id}')" style="cursor:pointer;color:var(--bad);font-weight:800;font-size:16px;line-height:1;padding:0 4px">×</span>
+        </div>`).join('') : `<div class="muted" style="font-size:11.5px;padding:6px 0">No saved conversations yet — start chatting, then hit <b>💾 Save</b>.</div>`}
+    </div>` : '';
   return `<div class="em-compact" style="display:flex;flex-direction:column;height:calc(100vh - 180px);min-height:420px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
       <h2 style="margin:0">Ask your books 🤖</h2>
-      ${ASK.msgs.length?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:11px" onclick="askClear()">Clear chat</button>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        ${ASK.saveMsg?`<span class="muted" style="font-size:11px">${askEsc(ASK.saveMsg)}</span>`:''}
+        <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="askSaveConvo()" ${ASK.msgs.length?'':'disabled'}>💾 Save</button>
+        <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="askToggleSaved()">📁 Saved${ASK.saved.length?` (${ASK.saved.length})`:''}</button>
+        <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="askNewChat()">＋ New</button>
+      </div>
     </div>
+    ${savedPanel}
     <div id="askScroll" class="card" style="flex:1;overflow-y:auto;padding:12px 14px;margin-bottom:10px">
       ${empty}${bubbles}
       ${ASK.busy?`<div style="display:flex;justify-content:flex-start;margin:8px 0"><div style="background:var(--surface-2);border:1px solid var(--hair);padding:10px 14px;border-radius:14px;font-size:12.5px;color:var(--mute)">Analysing your books…</div></div>`:''}
