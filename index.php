@@ -1136,6 +1136,7 @@ if (empty($_SESSION['auth'])):
         <button data-tab="stmtbuild">📑 Statement Builder</button>
         <button data-tab="latepay">⏰ Late Payers</button>
         <button data-tab="bulkexp">🧾 Log Expenses</button>
+        <button data-tab="ask">🤖 Ask your books</button>
       </div>
     </div>
 
@@ -1228,6 +1229,7 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-tab="stmtbuild">📑 Statement Builder</button>
     <button class="mob-item mob-sub" data-tab="latepay">⏰ Late Payers</button>
     <button class="mob-item mob-sub" data-tab="bulkexp">🧾 Log Expenses</button>
+    <button class="mob-item mob-sub" data-tab="ask">🤖 Ask your books</button>
 
     <div class="mob-sect">🗂️ Quotes / Invoices</div>
     <button class="mob-item mob-sub" data-tab="qlist">📋 Quotes Browser</button>
@@ -1467,7 +1469,7 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
@@ -1532,7 +1534,7 @@ function render(){
   const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
   const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
-  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers',bulkexp:'Log Expenses'};
+  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers',bulkexp:'Log Expenses',ask:'Ask your books'};
   document.title = (ME.user||'Console') + ' · ' + (_tabNames[TAB]||TAB) + ' · 912';
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -1550,6 +1552,7 @@ function render(){
   if(TAB==='stmtbuild'){ p.innerHTML = vStmtBuild(); if(!SB.loaded && !SB.loading) sbLoad(); }
   if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
+  if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); }
   if(TAB==='settings') p.innerHTML = vSettings();
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
@@ -4002,6 +4005,80 @@ function vBulkExp(){
   </div>`;
 }
 /* ================= end Bulk Expenses ================= */
+
+/* ================= Ask your books (admin AI advisor) ================= */
+let ASK = { msgs:[], input:'', busy:false, err:'' };
+const ASK_SUGGESTIONS = [
+  'Why did my profit fall recently?',
+  'Which invoices lost me money and why?',
+  'What are my biggest expenses this period?',
+  'Who owes me the most and how overdue are they?',
+  'How is this month compared to last month?'
+];
+function askEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function askFmt(t){
+  // light markdown → HTML: **bold**, bullet lines, paragraphs
+  let h=askEsc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+  const lines=h.split('\n'); let out='', inList=false;
+  lines.forEach(l=>{
+    if(/^\s*[-•]\s+/.test(l)){ if(!inList){out+='<ul style="margin:6px 0;padding-left:18px">';inList=true;} out+='<li style="margin:2px 0">'+l.replace(/^\s*[-•]\s+/,'')+'</li>'; }
+    else { if(inList){out+='</ul>';inList=false;} if(l.trim()==='') out+='<div style="height:6px"></div>'; else out+='<div>'+l+'</div>'; }
+  });
+  if(inList) out+='</ul>';
+  return out;
+}
+function askScrollDown(){ setTimeout(()=>{ const b=document.getElementById('askScroll'); if(b) b.scrollTop=b.scrollHeight; },30); }
+function askInput(v){ ASK.input=v; }
+function askPick(q){ ASK.input=q; askSend(); }
+async function askSend(){
+  const q=(ASK.input||'').trim();
+  if(!q || ASK.busy) return;
+  ASK.msgs.push({role:'user',content:q});
+  ASK.input=''; ASK.busy=true; ASK.err=''; render(); askScrollDown();
+  const history=ASK.msgs.slice(0,-1).map(m=>({role:m.role,content:m.content}));
+  try{
+    const r=await fetch('api/ask.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,history})});
+    const j=await r.json();
+    ASK.busy=false;
+    if(j.ok){ ASK.msgs.push({role:'assistant',content:j.answer}); }
+    else { ASK.err=j.error||'Something went wrong.'; }
+    render(); askScrollDown();
+  }catch(e){ ASK.busy=false; ASK.err='Request failed: '+e; render(); }
+}
+function askClear(){ ASK.msgs=[]; ASK.err=''; render(); }
+function vAsk(){
+  if(!ME.admin) return `<div class="card muted" style="text-align:center">Admins only.</div>`;
+  const bubbles=ASK.msgs.map(m=>{
+    if(m.role==='user') return `<div style="display:flex;justify-content:flex-end;margin:8px 0"><div style="max-width:82%;background:var(--grad-orange);color:#fff;padding:9px 13px;border-radius:14px 14px 4px 14px;font-size:13px;line-height:1.5">${askEsc(m.content)}</div></div>`;
+    return `<div style="display:flex;justify-content:flex-start;margin:8px 0"><div style="max-width:88%;background:var(--surface-2);border:1px solid var(--hair);padding:11px 14px;border-radius:14px 14px 14px 4px;font-size:13px;line-height:1.55;color:var(--ink)">${askFmt(m.content)}</div></div>`;
+  }).join('');
+  const empty = !ASK.msgs.length ? `
+    <div style="text-align:center;padding:24px 10px">
+      <div style="font-size:34px">🤖</div>
+      <div style="font-weight:700;font-size:15px;margin-top:6px">Ask your books anything</div>
+      <div class="muted" style="font-size:12px;margin-top:4px;max-width:420px;margin-left:auto;margin-right:auto">Plain-English answers grounded in your live Zoho data — revenue, costs, profit, expenses and receivables from the last ~4 months.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-top:14px">
+        ${ASK_SUGGESTIONS.map(s=>`<button class="btn sec" style="width:auto;padding:7px 12px;font-size:11.5px" onclick="askPick('${s.replace(/'/g,"\\'")}')">${s}</button>`).join('')}
+      </div>
+    </div>` : '';
+  return `<div class="em-compact" style="display:flex;flex-direction:column;height:calc(100vh - 180px);min-height:420px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <h2 style="margin:0">Ask your books 🤖</h2>
+      ${ASK.msgs.length?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:11px" onclick="askClear()">Clear chat</button>`:''}
+    </div>
+    <div id="askScroll" class="card" style="flex:1;overflow-y:auto;padding:12px 14px;margin-bottom:10px">
+      ${empty}${bubbles}
+      ${ASK.busy?`<div style="display:flex;justify-content:flex-start;margin:8px 0"><div style="background:var(--surface-2);border:1px solid var(--hair);padding:10px 14px;border-radius:14px;font-size:12.5px;color:var(--mute)">Analysing your books…</div></div>`:''}
+      ${ASK.err?`<div class="warn" style="margin:8px 0">${askEsc(ASK.err)}</div>`:''}
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end">
+      <textarea id="askInput" rows="1" placeholder="Ask about profit, costs, invoices, who owes you…" oninput="askInput(this.value)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askSend();}" style="flex:1;box-sizing:border-box;padding:11px 13px;border:1px solid var(--line);border-radius:11px;font-size:13px;font-family:inherit;resize:none;max-height:120px">${askEsc(ASK.input)}</textarea>
+      <button class="btn" style="width:auto;padding:11px 18px;flex-shrink:0" onclick="askSend()" ${ASK.busy?'disabled':''}>${ASK.busy?'…':'Ask'}</button>
+    </div>
+    <div class="muted" style="font-size:10.5px;margin-top:6px">Answers are AI-generated from a summary of your Zoho books (last ~120 days) and may contain mistakes — verify before acting. Admin only.</div>
+  </div>`;
+}
+/* ================= end Ask your books ================= */
 
 /* ================= Settings ================= */
 function vSettings(){
