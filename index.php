@@ -1136,7 +1136,6 @@ if (empty($_SESSION['auth'])):
         <button data-tab="stmtbuild">📑 Statement Builder</button>
         <button data-tab="latepay">⏰ Late Payers</button>
         <button data-tab="bulkexp">🧾 Log Expenses</button>
-        <button data-tab="ask">🤖 Ask your books</button>
       </div>
     </div>
 
@@ -1172,6 +1171,8 @@ if (empty($_SESSION['auth'])):
         <button data-ext="audrey.php">📊 Audrey Reports</button>
       </div>
     </div>
+
+    <button data-tab="ask">🤖 Ask your books</button>
 
     <div class="navgroup">
       <button class="grp">⚙️ Settings <span class="car">▾</span></button>
@@ -1229,7 +1230,6 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-tab="stmtbuild">📑 Statement Builder</button>
     <button class="mob-item mob-sub" data-tab="latepay">⏰ Late Payers</button>
     <button class="mob-item mob-sub" data-tab="bulkexp">🧾 Log Expenses</button>
-    <button class="mob-item mob-sub" data-tab="ask">🤖 Ask your books</button>
 
     <div class="mob-sect">🗂️ Quotes / Invoices</div>
     <button class="mob-item mob-sub" data-tab="qlist">📋 Quotes Browser</button>
@@ -1247,6 +1247,8 @@ if (empty($_SESSION['auth'])):
     <div class="mob-sect">👥 Clients</div>
     <button class="mob-item mob-sub" data-tab="emails">✉️ Emails</button>
     <button class="mob-item mob-sub" data-ext="audrey.php">📊 Audrey Reports</button>
+
+    <button class="mob-item" data-tab="ask">🤖 Ask your books</button>
 
     <div class="mob-sect">⚙️ Settings</div>
     <button class="mob-item mob-sub" data-tab="settings">🔧 App Settings</button>
