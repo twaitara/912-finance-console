@@ -585,7 +585,7 @@ if (empty($_SESSION['auth'])):
   .qbmodal{position:fixed;inset:0;z-index:200;background:rgba(15,23,34,.55);display:none;
     align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
   .qbmodal.open{display:flex}
-  .qbm-card{background:var(--bg);width:100%;max-width:940px;max-height:92vh;border-radius:18px;
+  .qbm-card{background:var(--bg);width:100%;max-width:1180px;max-height:92vh;border-radius:18px;
     box-shadow:0 30px 80px rgba(8,16,24,.5);display:flex;flex-direction:column;overflow:hidden;
     animation:rise .24s cubic-bezier(.22,.61,.36,1) both}
   .qbm-head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:#fff;
@@ -607,14 +607,14 @@ if (empty($_SESSION['auth'])):
   .qbc-del{position:absolute;top:8px;right:8px;width:auto;padding:4px 9px;font-size:12px}
   .qbsplit{display:grid;grid-template-columns:1fr;gap:10px;align-items:start}
   .qbsplit>.card{margin-bottom:0}
-  @media (min-width:820px){
-    .qbhead{display:grid;grid-template-columns:1fr 52px 78px 84px 84px 96px 86px 28px;gap:9px;
+  @media (min-width:1000px){
+    .qbhead{display:grid;grid-template-columns:1fr 64px 108px 104px 108px 104px 116px 30px;gap:9px;
       padding:8px 12px;background:linear-gradient(180deg,#F4F7FB,#EDF1F7);border:1px solid var(--line);
       border-radius:10px;margin-bottom:8px;font-size:9px;text-transform:uppercase;letter-spacing:.3px;color:var(--mute);font-weight:700}
     .qbhead .qbc-qty,.qbhead .qbc-rate,.qbhead .qbc-cost,.qbhead .qbc-acost,.qbhead .qbc-amt{text-align:right}
-    .qbrow{grid-template-columns:1fr 52px 78px 84px 84px 96px 86px 28px;gap:9px;align-items:center;
+    .qbrow{grid-template-columns:1fr 64px 108px 104px 108px 104px 116px 30px;gap:9px;align-items:center;
       border:none;border-bottom:1px solid var(--line);border-radius:0;margin-bottom:0;padding:10px 12px;background:transparent}
-    .qbhead.qb-noac,.qbrow.qb-noac{grid-template-columns:1fr 56px 84px 92px 100px 92px 28px}
+    .qbhead.qb-noac,.qbrow.qb-noac{grid-template-columns:1fr 68px 120px 116px 116px 124px 30px}
     .qbrow:last-of-type{border-bottom:none}
     .qbrow .qbc-item,.qbrow .qbc-amt{grid-column:auto}
     .qbrow .qbc-amt{text-align:right}
