@@ -149,6 +149,31 @@ if ($RMB_OK && empty($_SESSION['auth']) && !empty($_COOKIE['rmb912'])) {
     } catch (\Throwable $e) { /* ignore — never block login */ }
 }
 
+/* Admin-only: Zoho-webhook status JSON for the Settings panel. Inline (not a
+   separate api/ file) so a partial deploy of only index.php still serves it. */
+if (isset($_GET['whstatus'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $configured = trim((string)($cfg['webhook_secret'] ?? '')) !== '';
+    $logF = __DIR__ . '/data/webhook_log.txt';
+    $lastAt = null; $lastEvt = ''; $today = 0; $total = 0; $recent = [];
+    if (is_file($logF)) {
+        $lines = @file($logF, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+        $total = count($lines);
+        $todayStr = date('Y-m-d');
+        foreach ($lines as $ln) { if (strpos($ln, $todayStr) === 0) $today++; }
+        $tail = array_slice($lines, -6);
+        foreach (array_reverse($tail) as $ln) { $recent[] = $ln; }
+        if ($tail) {
+            $last = $tail[count($tail) - 1];
+            $lastAt = substr($last, 0, 25);
+            if (preg_match('/evt=([^ ]*)/', $last, $m)) $lastEvt = $m[1];
+        }
+    }
+    echo json_encode(['ok'=>true, 'configured'=>$configured, 'lastAt'=>$lastAt, 'lastEvt'=>$lastEvt, 'today'=>$today, 'total'=>$total, 'recent'=>$recent]);
+    exit;
+}
+
 // --- login gate (master password = admin; or a per-user account) ---
 $justLoggedIn = false;
 if (isset($_POST['app_password'])) {
@@ -1596,7 +1621,7 @@ function render(){
   if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
-  if(TAB==='settings') p.innerHTML = vSettings();
+  if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin) whLoad(); }
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
@@ -4169,6 +4194,33 @@ function vAsk(){
 /* ================= end Ask your books ================= */
 
 /* ================= Settings ================= */
+function whAgo(iso){
+  if(!iso) return '';
+  const t=new Date(iso).getTime(); if(isNaN(t)) return '';
+  const s=Math.max(0,Math.floor((Date.now()-t)/1000));
+  if(s<60) return s+'s ago';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+function whLoad(){
+  const box=document.getElementById('whStatusBox'); if(!box) return;
+  fetch('?whstatus=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    const b=document.getElementById('whStatusBox'); if(!b) return;
+    if(!j||!j.ok){ b.innerHTML='<span style="color:var(--bad)">Could not read status.</span>'; return; }
+    const dot=(ok,txt)=>`<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:${ok?'var(--good)':'var(--bad)'};flex-shrink:0"></span>${txt}</span>`;
+    let live;
+    if(!j.configured) live=dot(false,'<b>Secret not set</b> — add <code>webhook_secret</code> to config.php on the server');
+    else if(!j.lastAt) live=dot(false,'Secret set — <b>waiting for the first ping from Zoho</b>');
+    else live=dot(true,`Live — last ping <b>${whAgo(j.lastAt)}</b>${j.lastEvt?` (<code>${askEsc(j.lastEvt)}</code>)`:''}`);
+    const recent=(j.recent||[]).slice(0,5).map(l=>`<div style="font-family:monospace;font-size:10.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${askEsc(l)}</div>`).join('');
+    b.innerHTML=`<div style="font-size:12.5px;margin-bottom:6px">${live}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;margin-bottom:${recent?'8px':'0'}">
+        <span>Pings today: <b>${j.today||0}</b></span><span>Total logged: <b>${j.total||0}</b></span>
+      </div>
+      ${recent?`<div style="border-top:1px dashed var(--line);padding-top:6px">${recent}</div>`:''}`;
+  }).catch(()=>{ const b=document.getElementById('whStatusBox'); if(b) b.innerHTML='<span style="color:var(--bad)">Status check failed.</span>'; });
+}
 function vSettings(){
   const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
   const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -4176,6 +4228,16 @@ function vSettings(){
   return `
   <h2>Settings</h2>
   <div class="muted" style="margin:-6px 0 14px;font-size:12px">Everything here saves to <b>data/settings.json</b> and applies across the app instantly. <b>config.php is never touched.</b></div>
+
+  ${ME.admin?`<div class="card" style="border-left:4px solid var(--orange)">
+    ${sec('🔔 Zoho webhooks')}
+    <div class="muted" style="font-size:12px;margin-bottom:10px">When Zoho Books changes (payment, invoice, estimate, expense) it pings the app and the caches refresh instantly — so reports and <b>Ask your books</b> are always live. This panel shows whether pings are arriving.</div>
+    <div id="whStatusBox" class="muted" style="font-size:12px">Checking…</div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn sec" style="width:auto;padding:7px 13px;font-size:12px" onclick="whLoad()">↻ Refresh status</button>
+      <span class="muted" style="font-size:10.5px">Endpoint: <code>index.php?hook=zoho</code> (secret lives in config.php)</span>
+    </div>
+  </div>`:''}
 
   <div class="card" style="border-left:4px solid var(--blue)">
     ${sec('📅 My Zoho Calendar')}
