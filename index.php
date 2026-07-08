@@ -53,6 +53,47 @@ JS;
     exit;
 }
 
+/* ============================================================================
+   Zoho Books webhook receiver — served straight from THIS file via
+   ?hook=zoho&k=SECRET so a partial deploy (only index.php) can never leave the
+   endpoint missing. Public: no session/auth. On ANY change event (payment,
+   invoice, estimate, expense) it clears the Zoho-derived caches so the very next
+   page / report / "Ask your books" pull rebuilds from live Zoho instantly.
+   Set  $config['webhook_secret'] = '…'  in config.php on the server to enable.
+   ============================================================================ */
+if (isset($_GET['hook']) && $_GET['hook'] === 'zoho') {
+    header('Content-Type: application/json; charset=utf-8');
+    $whCfg  = is_file(__DIR__ . '/config.php') ? (require __DIR__ . '/config.php') : [];
+    $secret = is_array($whCfg) ? trim((string)($whCfg['webhook_secret'] ?? '')) : '';
+    $given  = (string)($_GET['k'] ?? ($_SERVER['HTTP_X_912_KEY'] ?? ''));
+    if ($secret === '') { http_response_code(503); echo json_encode(['ok'=>false, 'error'=>'webhook not configured']); exit; }
+    if (!hash_equals($secret, $given)) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'bad key']); exit; }
+
+    // Clear every Zoho-derived cache so the next read pulls fresh. (Auth tokens,
+    // FX, settings and append-caches are deliberately left untouched.)
+    $dir = __DIR__ . '/data';
+    $patterns = [
+        'ask_context_v2.json', 'audrey_unpaid_v4.json', 'email_clients_v6.json',
+        'etr_dups_v2.json', 'etr_v4_*.json', 'quotestatus_v3_*.json',
+        'invstatus_v2_*.json', 'report_v6_*.json',
+    ];
+    $cleared = 0;
+    foreach ($patterns as $pat) { foreach (glob($dir . '/' . $pat) ?: [] as $f) { if (@unlink($f)) $cleared++; } }
+
+    // Best-effort audit trail (self-rotating at ~200 KB).
+    $raw = (string)file_get_contents('php://input');
+    $j   = json_decode($raw, true);
+    $evt = is_array($j) ? (string)($j['event_type'] ?? ($j['eventType'] ?? '')) : '';
+    $logF = $dir . '/webhook_log.txt';
+    if (is_dir($dir) || @mkdir($dir, 0775, true)) {
+        $line = date('c') . "  cleared=$cleared  evt=" . substr($evt, 0, 60) . "  " . substr(preg_replace('/\s+/', ' ', $raw), 0, 300) . "\n";
+        $flags = (is_file($logF) && filesize($logF) < 200000) ? (FILE_APPEND | LOCK_EX) : LOCK_EX;
+        @file_put_contents($logF, $line, $flags);
+    }
+    echo json_encode(['ok'=>true, 'cleared'=>$cleared]);
+    exit;
+}
+
 /* harden the session cookie before it is created (Secure only over HTTPS so HTTP isn't locked out) */
 if (session_status() === PHP_SESSION_NONE) {
     @ini_set('session.use_strict_mode', '1');
