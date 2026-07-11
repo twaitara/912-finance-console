@@ -151,13 +151,18 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         function bp_label($s) {
             $t = strtolower((string)$s);
             if ($t === '') return '';
+            // specific, human-authored overrides (checked first, in priority order)
+            if (strpos($t, 'cloud hosting') !== false) return 'Temporary SAP Server Hosting (Main Server was Down)';
+            if (strpos($t, 'managed sap hosting') !== false) return 'Managed SAP Hosting Environment';
+            if (strpos($t, 'winsvrstdcore') !== false || (strpos($t, 'setup fee') !== false && strpos($t, 'server') !== false)) return 'Server Setup Fee';
+            // generic bucket for any other IT / security / support item
             $svc = ['intrusion', 'prevention', 'duo security', 'firewall', 'antivirus', 'endpoint', 'sql', 'server', 'software', 'licen', 'subscription', 'hosting', 'backup', 'cyber', 'vpn', 'monitoring', 'services offered', 'it support', 'maintenance', 'support', 'office 365', 'microsoft 365', 'ssl certificate', 'domain'];
             foreach ($svc as $kw) { if (strpos($t, $kw) !== false) return 'Support Services'; }
             return (string)$s;
         }
         function bp_build($force) {
             $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-            $cache = $dir . '/ben_invoices_v3.json';
+            $cache = $dir . '/ben_invoices_v4.json';
             if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
             $cfg = zoho_config(); $companies = bp_companies(); $map = [];
             foreach ($companies as $c) $map[bp_key($c)] = $c;
