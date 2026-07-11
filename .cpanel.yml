@@ -1,17 +1,9 @@
 deployment:
   tasks:
     - export DEPLOYPATH=/home4/tonyketter/nineonetwo.online/WORKINGCAPITAL
-    - /bin/cp index.php $DEPLOYPATH
+    # Copy ALL root-level PHP files so new files deploy automatically.
+    # config.php / mail_token.php are gitignored, so they're not in the clone
+    # and can never overwrite the live secrets in $DEPLOYPATH.
+    - /bin/cp *.php $DEPLOYPATH
     - /bin/cp .user.ini $DEPLOYPATH
-    - /bin/cp audrey.php $DEPLOYPATH
-    - /bin/cp ben.php $DEPLOYPATH
-    - /bin/cp calendar_oauth.php $DEPLOYPATH
-    - /bin/cp connect_calendar.php $DEPLOYPATH
-    - /bin/cp fx.php $DEPLOYPATH
-    - /bin/cp mail.php $DEPLOYPATH
-    - /bin/cp settings_store.php $DEPLOYPATH
-    - /bin/cp users_store.php $DEPLOYPATH
-    - /bin/cp activity_store.php $DEPLOYPATH
-    - /bin/cp tasks_board.php $DEPLOYPATH
-    - /bin/cp workdrive.php $DEPLOYPATH
     - /bin/cp -R api $DEPLOYPATH
