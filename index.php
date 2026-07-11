@@ -167,7 +167,7 @@ if (!function_exists('bp_build')) {
             $t = trim((string)($m['content'] ?? '')); if ($t !== '') $messages[] = ['role'=>$role, 'content'=>mb_substr($t, 0, 2000)];
         }
         $messages[] = ['role'=>'user', 'content'=>$question];
-        $payload = ['model'=>'claude-opus-4-8', 'max_tokens'=>1024, 'system'=>$sys, 'messages'=>$messages];
+        $payload = ['model'=>'claude-haiku-4-5', 'max_tokens'=>1024, 'system'=>$sys, 'messages'=>$messages];
         $ch = curl_init('https://api.anthropic.com/v1/messages');
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>60, CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($payload), CURLOPT_HTTPHEADER=>['Content-Type: application/json', 'x-api-key: ' . $key, 'anthropic-version: 2023-06-01']]);
         $res = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = curl_error($ch); curl_close($ch);
@@ -338,8 +338,16 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         $history = is_array($in['history'] ?? null) ? $in['history'] : [];
         if ($q === '') { echo json_encode(['ok'=>false, 'error'=>'Ask a question.']); exit; }
         if (mb_strlen($q) > 500) $q = mb_substr($q, 0, 500);
+        // Daily question cap (shared across all Ben sessions) to keep costs predictable.
+        $AI_DAILY_CAP = 30;
+        $usageFile = __DIR__ . '/data/ben_ai_usage.json';
+        $today = date('Y-m-d');
+        $u = is_file($usageFile) ? (json_decode(@file_get_contents($usageFile), true) ?: []) : [];
+        $cnt = (($u['day'] ?? '') === $today) ? (int)($u['count'] ?? 0) : 0;
+        if ($cnt >= $AI_DAILY_CAP) { echo json_encode(['ok'=>false, 'error'=>'You’ve reached today’s question limit. Please try again tomorrow.']); exit; }
         try {
             $data = bp_build(false); bp_apply_overrides($data, bp_load_overrides(__DIR__ . '/data'));
+            @file_put_contents($usageFile, json_encode(['day'=>$today, 'count'=>$cnt + 1]));   // count this API call
             $ans = bp_ask($key, bp_ai_context($data), $q, $history);
             echo json_encode(['ok'=>true, 'answer'=>$ans]);
         } catch (\Throwable $e) { echo json_encode(['ok'=>false, 'error'=>'The assistant is unavailable right now.']); }
