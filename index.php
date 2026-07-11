@@ -133,6 +133,7 @@ if (!function_exists('bp_build')) {
         return (string)$s;
     }
     function bp_load_overrides($dir) { $f = $dir . '/ben_desc_overrides.json'; return is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; }
+    function bp_prefs($dir) { $f = $dir . '/ben_prefs.json'; $j = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; return ['preview' => array_key_exists('preview', $j) ? (bool)$j['preview'] : true]; }
     function bp_apply_overrides(&$data, $ov) {
         if (empty($data['years'])) return;
         foreach ($data['years'] as $y => &$yd) {
@@ -238,6 +239,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         $bpErr = 'Wrong username or password.';
     }
     $bpAuthed = !empty($_SESSION['ben_auth']);
+    $bpPreviewOn = bp_prefs(__DIR__ . '/data')['preview'];
 
     if (isset($_GET['data'])) {
         header('Content-Type: application/json; charset=utf-8');
@@ -251,6 +253,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     // invoice that belongs to Ben's allowed companies/years (no enumeration).
     if (isset($_GET['pdf'])) {
         if (!$bpAuthed) { http_response_code(403); echo 'Not signed in.'; exit; }
+        if (!$bpPreviewOn) { http_response_code(403); echo 'Preview is turned off.'; exit; }
         $pid = preg_replace('/[^0-9]/', '', (string)$_GET['pdf']);
         $allowed = false;
         if ($pid !== '') {
@@ -391,6 +394,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtC = (cur,n) => Math.round(n||0).toLocaleString('en-US');
 const fmtMap = m => { const k=Object.keys(m||{}); if(!k.length) return '—'; return k.sort().map(c=>fmtC(c,m[c])).join('  ·  '); };
+const PREVIEW = <?php echo $bpPreviewOn ? 'true' : 'false'; ?>;
 let DATA=null, YEAR=null;
 function bar(s){ const b=document.getElementById('bar'); if(!b)return; if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);} }
 async function load(refresh){ bar(true); try{ const r=await fetch('index.php?portal=ben&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'}); DATA=await r.json(); }catch(e){ DATA={ok:false,error:String(e)}; } if(!YEAR&&DATA&&DATA.years){ const y=DATA.years; YEAR=((y['2026']||{}).count>0)?'2026':(((y['2025']||{}).count>0)?'2025':'2026'); } bar(false); render(); }
@@ -424,7 +428,7 @@ function render(){
   if(!cos.length){ html+='<div class="card muted" style="padding:16px">No invoices for '+YEAR+'.</div>'; app.innerHTML=html; return; }
   cos.forEach(c=>{
     const rows=c.invoices.map(iv=>`<tr>
-        <td><span class="pvlink" onclick="openPreview('${esc(iv.id)}','${esc(iv.number)}')">${esc(iv.number)}</span></td>
+        <td>${PREVIEW?`<span class="pvlink" onclick="openPreview('${esc(iv.id)}','${esc(iv.number)}')">${esc(iv.number)}</span>`:esc(iv.number)}</td>
         <td>${esc(iv.date||'')}</td>
         <td class="desc">${esc(iv.desc||'—')}</td>
         <td><span class="pill ${pillClass(iv.status)}">${esc((iv.status||'').replace(/_/g,' '))}</span></td>
@@ -584,6 +588,23 @@ if (isset($_GET['bendesc'])) {
     }
     usort($list, function ($a, $b) { return strcasecmp($a['company'], $b['company']) ?: strcmp($b['date'], $a['date']); });
     echo json_encode(['ok'=>true, 'invoices'=>$list, 'count'=>count($list)]);
+    exit;
+}
+
+/* Admin-only: toggle whether Ben can preview invoice PDFs. Stored in
+   data/ben_prefs.json. */
+if (isset($_GET['benpref'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $pfDir = __DIR__ . '/data'; $pfFile = $pfDir . '/ben_prefs.json';
+    $inP = json_decode(file_get_contents('php://input'), true) ?: [];
+    if (($inP['action'] ?? '') === 'save') {
+        $prev = !empty($inP['preview']);
+        if (!is_dir($pfDir)) @mkdir($pfDir, 0775, true);
+        @file_put_contents($pfFile, json_encode(['preview'=>$prev]));
+        echo json_encode(['ok'=>true, 'preview'=>$prev]); exit;
+    }
+    echo json_encode(['ok'=>true, 'preview'=>bp_prefs($pfDir)['preview']]);
     exit;
 }
 
@@ -2035,7 +2056,7 @@ function render(){
   if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
-  if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); benStatusLoad(); } }
+  if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); benStatusLoad(); benPrevLoad(); } }
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
@@ -4653,6 +4674,8 @@ function benSave(){
   }).catch(e=>alert('Error: '+e));
 }
 function benCopy(btn){ try{ navigator.clipboard.writeText(BEN_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
+function benPrevLoad(){ const c=document.getElementById('benPrevChk'); if(!c) return; fetch('?benpref=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{ const el=document.getElementById('benPrevChk'); if(el&&j&&j.ok) el.checked=!!j.preview; }).catch(()=>{}); }
+function benPrevSave(on){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',preview:on?1:0})}).then(r=>r.json()).catch(()=>{}); }
 let BENDESC = { open:false, loaded:false, loading:false, list:[], msg:'' };
 function benAttr(s){ return askEsc(s).replace(/"/g,'&quot;'); }
 function benJs(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
@@ -4726,6 +4749,9 @@ function vSettings(){
       <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="index.php?portal=ben" target="_blank" rel="noopener">Open portal ↗</a>
       <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benCopy(this)">Copy link</button>
     </div>
+    <label style="display:flex;align-items:center;gap:9px;margin-top:12px;font-size:12.5px;cursor:pointer">
+      <input type="checkbox" id="benPrevChk" onchange="benPrevSave(this.checked)" style="width:auto;margin:0"> Let Ben preview invoice PDFs (click an invoice to open it)
+    </label>
     <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
       <button class="btn sec" style="width:auto;padding:8px 14px" onclick="benDescToggle()">✏️ ${BENDESC.open?'Hide':'Edit'} invoice descriptions</button>
       ${BENDESC.open?benDescPanel():''}
