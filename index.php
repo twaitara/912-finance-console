@@ -307,7 +307,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     // invoice that belongs to Ben's allowed companies/years (no enumeration).
     if (isset($_GET['pdf'])) {
         if (!$bpAuthed) { http_response_code(403); echo 'Not signed in.'; exit; }
-        if (!$bpPreviewOn) { http_response_code(403); echo 'Preview is turned off.'; exit; }
+        if (!$bpPreviewOn) { http_response_code(403); echo 'Preview unavailable — please check your browser plugins.'; exit; }
         $pid = preg_replace('/[^0-9]/', '', (string)$_GET['pdf']);
         $allowed = false;
         if ($pid !== '') {
@@ -321,7 +321,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         $ch = curl_init($url);
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . $token, 'Accept: application/pdf']]);
         $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-        if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Invoice preview is unavailable right now.'; exit; }
+        if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Preview unavailable — please check your browser plugins.'; exit; }
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="invoice-' . $pid . '.pdf"');
         header('X-Content-Type-Options: nosniff');
@@ -827,7 +827,7 @@ if (isset($_GET['invpdf'])) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . $token, 'Accept: application/pdf']]);
     $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-    if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Invoice preview is unavailable right now.'; exit; }
+    if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Preview unavailable — please check your browser plugins.'; exit; }
     header('Content-Type: application/pdf');
     header('Content-Disposition: inline; filename="invoice-' . $pid . '.pdf"');
     header('X-Content-Type-Options: nosniff');
