@@ -345,13 +345,20 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         $u = is_file($usageFile) ? (json_decode(@file_get_contents($usageFile), true) ?: []) : [];
         $cnt = (($u['day'] ?? '') === $today) ? (int)($u['count'] ?? 0) : 0;
         if ($cnt >= $AI_DAILY_CAP) { echo json_encode(['ok'=>false, 'error'=>'You’ve reached today’s question limit. Please try again tomorrow.']); exit; }
+        $resp = null; $logAns = '';
         try {
             $data = bp_build(false); bp_apply_overrides($data, bp_load_overrides(__DIR__ . '/data'));
             @file_put_contents($usageFile, json_encode(['day'=>$today, 'count'=>$cnt + 1]));   // count this API call
             $ans = bp_ask($key, bp_ai_context($data), $q, $history);
-            echo json_encode(['ok'=>true, 'answer'=>$ans]);
-        } catch (\Throwable $e) { echo json_encode(['ok'=>false, 'error'=>'The assistant is unavailable right now.']); }
-        exit;
+            $resp = ['ok'=>true, 'answer'=>$ans]; $logAns = $ans;
+        } catch (\Throwable $e) { $resp = ['ok'=>false, 'error'=>'The assistant is unavailable right now.']; $logAns = '(unavailable)'; }
+        // record the question + answer for the admin to review
+        $logFile = __DIR__ . '/data/ben_ai_log.json';
+        $log = is_file($logFile) ? (json_decode(@file_get_contents($logFile), true) ?: []) : [];
+        $log[] = ['at'=>date('c'), 'user'=>(string)($_SESSION['ben_user'] ?? 'ben'), 'q'=>$q, 'a'=>mb_substr((string)$logAns, 0, 2000)];
+        if (count($log) > 500) $log = array_slice($log, -500);
+        @file_put_contents($logFile, json_encode($log));
+        echo json_encode($resp); exit;
     }
 
     $bpEsc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -789,6 +796,16 @@ if (isset($_GET['benpref'])) {
         echo json_encode(['ok'=>true, 'preview'=>$prev]); exit;
     }
     echo json_encode(['ok'=>true, 'preview'=>bp_prefs($pfDir)['preview']]);
+    exit;
+}
+
+/* Admin-only: the log of questions Ben has asked the "Ask AI" assistant. */
+if (isset($_GET['benailog'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $logFile = __DIR__ . '/data/ben_ai_log.json';
+    $log = is_file($logFile) ? (json_decode(@file_get_contents($logFile), true) ?: []) : [];
+    echo json_encode(['ok'=>true, 'log'=>array_reverse($log), 'count'=>count($log)]);
     exit;
 }
 
@@ -4880,6 +4897,32 @@ function benSave(){
 function benCopy(btn){ try{ navigator.clipboard.writeText(BEN_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
 function benPrevLoad(){ const c=document.getElementById('benPrevChk'); if(!c) return; fetch('?benpref=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{ const el=document.getElementById('benPrevChk'); if(el&&j&&j.ok) el.checked=!!j.preview; }).catch(()=>{}); }
 function benPrevSave(on){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',preview:on?1:0})}).then(r=>r.json()).catch(()=>{}); }
+let BENAI={ open:false, loaded:false, loading:false, list:[], msg:'' };
+function benAiToggle(){ BENAI.open=!BENAI.open; if(BENAI.open) benAiLoad(); render(); }
+function benAiLoad(){
+  BENAI.loading=true; if(TAB==='settings') render();
+  fetch('?benailog=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    BENAI.loading=false;
+    if(j&&j.ok){ BENAI.list=j.log||[]; BENAI.loaded=true; if(!BENAI.list.length) BENAI.msg='Ben hasn’t asked the assistant anything yet.'; }
+    else BENAI.msg=(j&&j.error)||'Failed to load.';
+    if(TAB==='settings') render();
+  }).catch(()=>{ BENAI.loading=false; BENAI.msg='Failed to load.'; if(TAB==='settings') render(); });
+}
+function benAiWhen(iso){ try{ return new Date(iso).toLocaleString('en-GB'); }catch(e){ return iso||''; } }
+function benAiPanel(){
+  if(BENAI.loading) return `<div class="muted" style="font-size:12px;margin-top:10px">Loading…</div>`;
+  if(!BENAI.list.length) return `<div class="muted" style="font-size:12px;margin-top:10px">${askEsc(BENAI.msg||'No questions yet.')}</div>`;
+  return `<div style="margin-top:10px">
+    <div class="muted" style="font-size:10.5px;margin-bottom:6px">${BENAI.list.length} question${BENAI.list.length===1?'':'s'}, newest first.</div>
+    <div style="max-height:360px;overflow-y:auto;border:1px solid var(--hair);border-radius:8px;padding:6px 10px">
+      ${BENAI.list.map(e=>`<div style="padding:8px 0;border-bottom:1px solid var(--hair)">
+        <div style="font-size:10px;color:var(--mute)">${askEsc(benAiWhen(e.at))}</div>
+        <div style="font-size:12.5px;font-weight:600;margin-top:2px">${askEsc(e.q)}</div>
+        <div style="font-size:11.5px;color:var(--mute);margin-top:3px;white-space:pre-wrap">${askEsc(e.a)}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
 let BENDESC = { open:false, loaded:false, loading:false, list:[], msg:'' };
 function benAttr(s){ return askEsc(s).replace(/"/g,'&quot;'); }
 function benJs(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
@@ -4955,7 +4998,9 @@ function vSettings(){
       <button class="btn" style="width:auto;padding:9px 16px" onclick="benSave()">Save access</button>
       <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="index.php?portal=ben" target="_blank" rel="noopener">Open portal ↗</a>
       <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benCopy(this)">Copy link</button>
+      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benAiToggle()">💬 ${BENAI.open?'Hide':'Ask AI'} log${BENAI.loaded&&BENAI.list.length?` (${BENAI.list.length})`:''}</button>
     </div>
+    ${BENAI.open?benAiPanel():''}
     <label style="display:flex;align-items:center;gap:9px;margin-top:12px;font-size:12.5px;cursor:pointer">
       <input type="checkbox" id="benPrevChk" onchange="benPrevSave(this.checked)" style="width:auto;margin:0"> Let Ben preview invoice PDFs (click an invoice to open it)
     </label>
