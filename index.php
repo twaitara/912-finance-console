@@ -101,6 +101,117 @@ if (isset($_GET['hook']) && $_GET['hook'] === 'zoho') {
    SteelRwa group. Own session (BENPORTAL). Credentials set by the admin in
    Settings → Ben Portal access, stored hashed in data/ben_auth.json.
    ============================================================================ */
+/* Ben Portal data helpers — global so BOTH ?portal=ben and the admin ?bendesc
+   editor can use them. Auto-labels invoices, and admins can override any label
+   (stored in data/ben_desc_overrides.json, applied live at render). */
+if (!function_exists('bp_build')) {
+    function bp_companies() {
+        return ['Fabri Metal Congo SARL', 'CIMMETAL Burkina', 'SteelRwa Industries Ltd', 'Fabrimetal Senegal Sebikotane', 'Fabrimetal Burundi', 'Fabrimetal Angola', 'IMAFER Mali', 'Fabrimetal Ghana Ltd.', 'Fabrimetal Benin', 'MMD', 'Fabrimetal Senegal SINDIA'];
+    }
+    function bp_key($s) { return preg_replace('/[^a-z0-9]/', '', strtolower((string)$s)); }
+    function bp_desc_summary($lineItems) {
+        $uniq = []; $seen = [];
+        foreach (($lineItems ?? []) as $li) {
+            $n = trim((string)($li['name'] ?? '')); if ($n === '') $n = trim((string)($li['description'] ?? ''));
+            $n = preg_replace('/\s+/', ' ', $n); if ($n === '') continue;
+            $k = strtolower($n); if (isset($seen[$k])) continue; $seen[$k] = 1; $uniq[] = $n;
+        }
+        if (!$uniq) return '';
+        $shown = array_slice($uniq, 0, 3); $more = count($uniq) - count($shown);
+        $s = implode(', ', $shown); if ($more > 0) $s .= ' +' . $more . ' more';
+        if (mb_strlen($s) > 120) $s = mb_substr($s, 0, 118) . '…';
+        return $s;
+    }
+    function bp_label($s) {
+        $t = strtolower((string)$s);
+        if ($t === '') return '';
+        if (strpos($t, 'cloud hosting') !== false) return 'Temporary SAP Server Hosting (Main Server was Down)';
+        if (strpos($t, 'managed sap hosting') !== false) return 'Managed SAP Hosting Environment';
+        if (strpos($t, 'winsvrstdcore') !== false || (strpos($t, 'setup fee') !== false && strpos($t, 'server') !== false)) return 'Server Setup Fee';
+        $svc = ['intrusion', 'prevention', 'duo security', 'firewall', 'antivirus', 'endpoint', 'sql', 'server', 'software', 'licen', 'subscription', 'hosting', 'backup', 'cyber', 'vpn', 'monitoring', 'services offered', 'it support', 'maintenance', 'support', 'office 365', 'microsoft 365', 'ssl certificate', 'domain'];
+        foreach ($svc as $kw) { if (strpos($t, $kw) !== false) return 'Support Services'; }
+        return (string)$s;
+    }
+    function bp_load_overrides($dir) { $f = $dir . '/ben_desc_overrides.json'; return is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; }
+    function bp_apply_overrides(&$data, $ov) {
+        if (empty($data['years'])) return;
+        foreach ($data['years'] as $y => &$yd) {
+            foreach ($yd['companies'] as &$c) {
+                foreach ($c['invoices'] as &$iv) {
+                    $n = (string)($iv['number'] ?? '');
+                    $o = ($n !== '' && isset($ov[$n])) ? trim((string)$ov[$n]) : '';
+                    $iv['desc'] = ($o !== '') ? $o : (string)($iv['autoDesc'] ?? ($iv['desc'] ?? ''));
+                }
+                unset($iv);
+            }
+            unset($c);
+        }
+        unset($yd);
+    }
+    function bp_build($force) {
+        $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        $cache = $dir . '/ben_invoices_v5.json';
+        if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
+        $cfg = zoho_config(); $companies = bp_companies(); $map = [];
+        foreach ($companies as $c) $map[bp_key($c)] = $c;
+        $rows = []; $page = 1; $stop = false;
+        do {
+            [$d, $code] = zoho_api('GET', 'invoices', null, ['per_page'=>200, 'page'=>$page, 'sort_column'=>'date', 'sort_order'=>'D']);
+            if ($code >= 400) throw new Exception($d['message'] ?? 'Zoho error (invoices)');
+            foreach (($d['invoices'] ?? []) as $inv) {
+                $date = substr((string)($inv['date'] ?? ''), 0, 10); $yr = substr($date, 0, 4);
+                if ($yr !== '' && $yr < '2025') { $stop = true; continue; }
+                if ($yr !== '2025' && $yr !== '2026') continue;
+                $st = (string)($inv['status'] ?? ''); if ($st === 'void' || $st === 'draft') continue;
+                $k = bp_key($inv['customer_name'] ?? ''); if (!isset($map[$k])) continue;
+                $rows[] = ['id'=>(string)($inv['invoice_id'] ?? ''), 'company'=>$map[$k], 'number'=>(string)($inv['invoice_number'] ?? ''), 'date'=>$date, 'year'=>$yr, 'status'=>$st, 'total'=>(float)($inv['total'] ?? 0), 'balance'=>(float)($inv['balance'] ?? 0), 'currency'=>strtoupper((string)($inv['currency_code'] ?? ($cfg['currency'] ?? 'KES')))];
+            }
+            $more = $d['page_context']['has_more_page'] ?? false; $page++;
+        } while ($more && !$stop && $page <= 80);
+
+        $descFile = $dir . '/ben_desc_cache.json';
+        $descCache = is_file($descFile) ? (json_decode(@file_get_contents($descFile), true) ?: []) : [];
+        $descDirty = false; $fetched = 0; $CAP = 250;
+        foreach ($rows as &$r) {
+            $id = $r['id']; $raw = '';
+            if ($id !== '' && array_key_exists($id, $descCache)) { $raw = (string)$descCache[$id]; }
+            elseif ($id !== '' && $fetched < $CAP) {
+                try { [$dv, $dc] = zoho_api('GET', 'invoices/' . rawurlencode($id), null, []); if ($dc < 400) $raw = bp_desc_summary($dv['invoice']['line_items'] ?? []); }
+                catch (Exception $e) { $raw = ''; }
+                $descCache[$id] = $raw; $descDirty = true; $fetched++;
+            }
+            $r['autoDesc'] = bp_label($raw);
+            $r['desc'] = $r['autoDesc'];
+        }
+        unset($r);
+        if ($descDirty) @file_put_contents($descFile, json_encode($descCache));
+
+        $years = [];
+        foreach (['2025', '2026'] as $y) $years[$y] = ['count'=>0, 'invoicedByCur'=>[], 'outstandingByCur'=>[], 'companies'=>[]];
+        $byYC = [];
+        foreach ($rows as $r) {
+            $y = $r['year']; $cn = $r['company']; $cur = $r['currency'];
+            if (!isset($byYC[$y][$cn])) $byYC[$y][$cn] = ['name'=>$cn, 'invoices'=>[], 'invoicedByCur'=>[], 'outstandingByCur'=>[], 'count'=>0];
+            $b = &$byYC[$y][$cn];
+            $b['invoices'][] = $r; $b['count']++;
+            $b['invoicedByCur'][$cur] = ($b['invoicedByCur'][$cur] ?? 0) + $r['total'];
+            $b['outstandingByCur'][$cur] = ($b['outstandingByCur'][$cur] ?? 0) + $r['balance'];
+            unset($b);
+            $years[$y]['count']++;
+            $years[$y]['invoicedByCur'][$cur] = ($years[$y]['invoicedByCur'][$cur] ?? 0) + $r['total'];
+            $years[$y]['outstandingByCur'][$cur] = ($years[$y]['outstandingByCur'][$cur] ?? 0) + $r['balance'];
+        }
+        foreach (['2025', '2026'] as $y) {
+            $cos = array_values($byYC[$y] ?? []);
+            foreach ($cos as &$c) { usort($c['invoices'], fn($a, $b) => strcmp($b['date'], $a['date'])); } unset($c);
+            usort($cos, function ($a, $b) { if ($b['count'] !== $a['count']) return $b['count'] - $a['count']; return strcasecmp($a['name'], $b['name']); });
+            $years[$y]['companies'] = $cos;
+        }
+        $out = ['ok'=>true, 'asOf'=>date('c'), 'cached'=>false, 'years'=>$years];
+        @file_put_contents($cache, json_encode($out));
+        return $out;
+    }
+}
 if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     session_name('BENPORTAL');
     session_start();
@@ -128,108 +239,10 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     }
     $bpAuthed = !empty($_SESSION['ben_auth']);
 
-    if (!function_exists('bp_companies')) {
-        function bp_companies() {
-            return ['Fabri Metal Congo SARL', 'CIMMETAL Burkina', 'SteelRwa Industries Ltd', 'Fabrimetal Senegal Sebikotane', 'Fabrimetal Burundi', 'Fabrimetal Angola', 'IMAFER Mali', 'Fabrimetal Ghana Ltd.', 'Fabrimetal Benin', 'MMD', 'Fabrimetal Senegal SINDIA'];
-        }
-        function bp_key($s) { return preg_replace('/[^a-z0-9]/', '', strtolower((string)$s)); }
-        /* smart plain-English summary of an invoice from its line items */
-        function bp_desc_summary($lineItems) {
-            $uniq = []; $seen = [];
-            foreach (($lineItems ?? []) as $li) {
-                $n = trim((string)($li['name'] ?? '')); if ($n === '') $n = trim((string)($li['description'] ?? ''));
-                $n = preg_replace('/\s+/', ' ', $n); if ($n === '') continue;
-                $k = strtolower($n); if (isset($seen[$k])) continue; $seen[$k] = 1; $uniq[] = $n;
-            }
-            if (!$uniq) return '';
-            $shown = array_slice($uniq, 0, 3); $more = count($uniq) - count($shown);
-            $s = implode(', ', $shown); if ($more > 0) $s .= ' +' . $more . ' more';
-            if (mb_strlen($s) > 120) $s = mb_substr($s, 0, 118) . '…';
-            return $s;
-        }
-        /* collapse noisy technical line items into a clean, client-facing label */
-        function bp_label($s) {
-            $t = strtolower((string)$s);
-            if ($t === '') return '';
-            // specific, human-authored overrides (checked first, in priority order)
-            if (strpos($t, 'cloud hosting') !== false) return 'Temporary SAP Server Hosting (Main Server was Down)';
-            if (strpos($t, 'managed sap hosting') !== false) return 'Managed SAP Hosting Environment';
-            if (strpos($t, 'winsvrstdcore') !== false || (strpos($t, 'setup fee') !== false && strpos($t, 'server') !== false)) return 'Server Setup Fee';
-            // generic bucket for any other IT / security / support item
-            $svc = ['intrusion', 'prevention', 'duo security', 'firewall', 'antivirus', 'endpoint', 'sql', 'server', 'software', 'licen', 'subscription', 'hosting', 'backup', 'cyber', 'vpn', 'monitoring', 'services offered', 'it support', 'maintenance', 'support', 'office 365', 'microsoft 365', 'ssl certificate', 'domain'];
-            foreach ($svc as $kw) { if (strpos($t, $kw) !== false) return 'Support Services'; }
-            return (string)$s;
-        }
-        function bp_build($force) {
-            $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-            $cache = $dir . '/ben_invoices_v4.json';
-            if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
-            $cfg = zoho_config(); $companies = bp_companies(); $map = [];
-            foreach ($companies as $c) $map[bp_key($c)] = $c;
-            $rows = []; $page = 1; $stop = false;
-            do {
-                [$d, $code] = zoho_api('GET', 'invoices', null, ['per_page'=>200, 'page'=>$page, 'sort_column'=>'date', 'sort_order'=>'D']);
-                if ($code >= 400) throw new Exception($d['message'] ?? 'Zoho error (invoices)');
-                foreach (($d['invoices'] ?? []) as $inv) {
-                    $date = substr((string)($inv['date'] ?? ''), 0, 10); $yr = substr($date, 0, 4);
-                    if ($yr !== '' && $yr < '2025') { $stop = true; continue; }
-                    if ($yr !== '2025' && $yr !== '2026') continue;
-                    $st = (string)($inv['status'] ?? ''); if ($st === 'void' || $st === 'draft') continue;
-                    $k = bp_key($inv['customer_name'] ?? ''); if (!isset($map[$k])) continue;
-                    $rows[] = ['id'=>(string)($inv['invoice_id'] ?? ''), 'company'=>$map[$k], 'number'=>(string)($inv['invoice_number'] ?? ''), 'date'=>$date, 'year'=>$yr, 'status'=>$st, 'total'=>(float)($inv['total'] ?? 0), 'balance'=>(float)($inv['balance'] ?? 0), 'currency'=>strtoupper((string)($inv['currency_code'] ?? ($cfg['currency'] ?? 'KES')))];
-                }
-                $more = $d['page_context']['has_more_page'] ?? false; $page++;
-            } while ($more && !$stop && $page <= 80);
-
-            // per-invoice "what it's for" — first line items, cached persistently (they never change)
-            $descFile = $dir . '/ben_desc_cache.json';
-            $descCache = is_file($descFile) ? (json_decode(@file_get_contents($descFile), true) ?: []) : [];
-            $descDirty = false; $fetched = 0; $CAP = 250;
-            foreach ($rows as &$r) {
-                $id = $r['id']; $raw = '';
-                if ($id !== '' && array_key_exists($id, $descCache)) { $raw = (string)$descCache[$id]; }
-                elseif ($id !== '' && $fetched < $CAP) {
-                    try { [$dv, $dc] = zoho_api('GET', 'invoices/' . rawurlencode($id), null, []); if ($dc < 400) $raw = bp_desc_summary($dv['invoice']['line_items'] ?? []); }
-                    catch (Exception $e) { $raw = ''; }
-                    $descCache[$id] = $raw; $descDirty = true; $fetched++;
-                }
-                $r['desc'] = bp_label($raw);
-            }
-            unset($r);
-            if ($descDirty) @file_put_contents($descFile, json_encode($descCache));
-
-            // group by YEAR then company — never bundle the two years together
-            $years = [];
-            foreach (['2025', '2026'] as $y) $years[$y] = ['count'=>0, 'invoicedByCur'=>[], 'outstandingByCur'=>[], 'companies'=>[]];
-            $byYC = [];
-            foreach ($rows as $r) {
-                $y = $r['year']; $cn = $r['company']; $cur = $r['currency'];
-                if (!isset($byYC[$y][$cn])) $byYC[$y][$cn] = ['name'=>$cn, 'invoices'=>[], 'invoicedByCur'=>[], 'outstandingByCur'=>[], 'count'=>0];
-                $b = &$byYC[$y][$cn];
-                $b['invoices'][] = $r; $b['count']++;
-                $b['invoicedByCur'][$cur] = ($b['invoicedByCur'][$cur] ?? 0) + $r['total'];
-                $b['outstandingByCur'][$cur] = ($b['outstandingByCur'][$cur] ?? 0) + $r['balance'];
-                unset($b);
-                $years[$y]['count']++;
-                $years[$y]['invoicedByCur'][$cur] = ($years[$y]['invoicedByCur'][$cur] ?? 0) + $r['total'];
-                $years[$y]['outstandingByCur'][$cur] = ($years[$y]['outstandingByCur'][$cur] ?? 0) + $r['balance'];
-            }
-            foreach (['2025', '2026'] as $y) {
-                $cos = array_values($byYC[$y] ?? []);
-                foreach ($cos as &$c) { usort($c['invoices'], fn($a, $b) => strcmp($b['date'], $a['date'])); } unset($c);
-                usort($cos, function ($a, $b) { if ($b['count'] !== $a['count']) return $b['count'] - $a['count']; return strcasecmp($a['name'], $b['name']); });
-                $years[$y]['companies'] = $cos;
-            }
-            $out = ['ok'=>true, 'asOf'=>date('c'), 'cached'=>false, 'years'=>$years];
-            @file_put_contents($cache, json_encode($out));
-            return $out;
-        }
-    }
-
     if (isset($_GET['data'])) {
         header('Content-Type: application/json; charset=utf-8');
         if (!$bpAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
-        try { echo json_encode(bp_build(isset($_GET['refresh']))); }
+        try { $bpData = bp_build(isset($_GET['refresh'])); bp_apply_overrides($bpData, bp_load_overrides(__DIR__ . '/data')); echo json_encode($bpData); }
         catch (\Throwable $e) { http_response_code(500); echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]); }
         exit;
     }
@@ -481,6 +494,41 @@ if (isset($_GET['bencreds'])) {
         echo json_encode(['ok'=>true, 'configured'=>true, 'user'=>$u]); exit;
     }
     echo json_encode(['ok'=>true, 'configured'=>(!empty($curB['user']) && !empty($curB['hash'])), 'user'=>(string)($curB['user'] ?? '')]);
+    exit;
+}
+
+/* Admin-only: list Ben-portal invoices and edit their descriptions. Overrides
+   are stored in data/ben_desc_overrides.json and applied live at portal render
+   (no cache clear needed). */
+if (isset($_GET['bendesc'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    require_once __DIR__ . '/zoho.php';
+    $bdDir = __DIR__ . '/data'; $bdFile = $bdDir . '/ben_desc_overrides.json';
+    $inD = json_decode(file_get_contents('php://input'), true) ?: [];
+    if (($inD['action'] ?? '') === 'save') {
+        $num = trim((string)($inD['number'] ?? ''));
+        if ($num === '') { echo json_encode(['ok'=>false, 'error'=>'Missing invoice number.']); exit; }
+        $label = trim((string)($inD['label'] ?? ''));
+        $ov = bp_load_overrides($bdDir);
+        if ($label === '') unset($ov[$num]); else $ov[$num] = mb_substr($label, 0, 200);
+        if (!is_dir($bdDir)) @mkdir($bdDir, 0775, true);
+        @file_put_contents($bdFile, json_encode($ov));
+        echo json_encode(['ok'=>true, 'number'=>$num, 'label'=>$label]); exit;
+    }
+    try { $data = bp_build(false); } catch (\Throwable $e) { http_response_code(500); echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]); exit; }
+    $ov = bp_load_overrides($bdDir);
+    $list = [];
+    foreach (($data['years'] ?? []) as $y => $yd) {
+        foreach (($yd['companies'] ?? []) as $c) {
+            foreach (($c['invoices'] ?? []) as $iv) {
+                $num = (string)($iv['number'] ?? '');
+                $list[] = ['number'=>$num, 'company'=>(string)$c['name'], 'year'=>(string)$y, 'date'=>(string)($iv['date'] ?? ''), 'auto'=>(string)($iv['autoDesc'] ?? ''), 'override'=>($num !== '' && isset($ov[$num])) ? (string)$ov[$num] : ''];
+            }
+        }
+    }
+    usort($list, function ($a, $b) { return strcasecmp($a['company'], $b['company']) ?: strcmp($b['date'], $a['date']); });
+    echo json_encode(['ok'=>true, 'invoices'=>$list, 'count'=>count($list)]);
     exit;
 }
 
@@ -4550,6 +4598,48 @@ function benSave(){
   }).catch(e=>alert('Error: '+e));
 }
 function benCopy(btn){ try{ navigator.clipboard.writeText(BEN_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
+let BENDESC = { open:false, loaded:false, loading:false, list:[], msg:'' };
+function benAttr(s){ return askEsc(s).replace(/"/g,'&quot;'); }
+function benJs(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function benDescToggle(){ BENDESC.open=!BENDESC.open; if(BENDESC.open && !BENDESC.loaded && !BENDESC.loading) benDescLoad(); render(); }
+function benDescLoad(){
+  BENDESC.loading=true; BENDESC.msg=''; if(TAB==='settings') render();
+  fetch('?bendesc=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    BENDESC.loading=false;
+    if(j&&j.ok){ BENDESC.list=j.invoices||[]; BENDESC.loaded=true; if(!BENDESC.list.length) BENDESC.msg='No invoices found yet — open the portal once so it loads, or check the company names.'; }
+    else BENDESC.msg=(j&&j.error)||'Failed to load.';
+    if(TAB==='settings') render();
+  }).catch(e=>{ BENDESC.loading=false; BENDESC.msg='Failed to load: '+e; if(TAB==='settings') render(); });
+}
+function benDescRow(iv){
+  return `<div class="bd-row" data-k="${benAttr((iv.number+' '+iv.company+' '+iv.auto+' '+iv.override).toLowerCase())}" style="display:flex;gap:8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--hair)">
+    <div style="flex:0 0 128px;min-width:0">
+      <div style="font-weight:600;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${askEsc(iv.number)}</div>
+      <div class="muted" style="font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${askEsc(iv.company)} · ${askEsc(iv.year)}</div>
+    </div>
+    <input type="text" value="${benAttr(iv.override)}" placeholder="${benAttr(iv.auto||'—')}" onchange="benDescSave('${benJs(iv.number)}',this.value,this)" style="flex:1;margin-bottom:0;font-size:12px;padding:6px 9px">
+    <button class="btn sec" style="width:auto;padding:5px 9px;font-size:11px" title="Use the automatic label" onclick="benDescReset('${benJs(iv.number)}',this)">↺</button>
+  </div>`;
+}
+function benDescPanel(){
+  if(BENDESC.loading) return `<div class="muted" style="font-size:12px;margin-top:10px">Loading invoices…</div>`;
+  if(!BENDESC.list.length) return `<div class="muted" style="font-size:12px;margin-top:10px">${askEsc(BENDESC.msg||'No invoices.')}</div>`;
+  return `<div style="margin-top:10px">
+    <input type="text" placeholder="🔍 Filter by invoice #, company or text…" oninput="benDescFilterDom(this.value)" style="margin-bottom:8px">
+    <div style="max-height:360px;overflow-y:auto;border:1px solid var(--hair);border-radius:8px;padding:4px 8px">${BENDESC.list.map(benDescRow).join('')}</div>
+    <div class="muted" style="font-size:10.5px;margin-top:6px">Type a description and click away to save. The grey text is the automatic label; leave the box blank (or press ↺) to use it. Changes show on Ben's portal immediately.</div>
+  </div>`;
+}
+function benDescFilterDom(v){ v=(v||'').toLowerCase().trim(); document.querySelectorAll('.bd-row').forEach(el=>{ const k=el.getAttribute('data-k')||''; el.style.display=(!v||k.indexOf(v)>=0)?'flex':'none'; }); }
+function benDescSave(num,label,el){
+  if(el) el.disabled=true;
+  fetch('?bendesc=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',number:num,label:label})}).then(r=>r.json()).then(j=>{
+    if(el) el.disabled=false;
+    if(j&&j.ok){ const row=(BENDESC.list||[]).find(x=>x.number===num); if(row) row.override=label; if(el){ el.style.borderColor='var(--good)'; setTimeout(()=>{el.style.borderColor='';},1000); } }
+    else alert((j&&j.error)||'Could not save.');
+  }).catch(e=>{ if(el) el.disabled=false; alert('Error: '+e); });
+}
+function benDescReset(num,btn){ const el=(btn&&btn.parentNode)?btn.parentNode.querySelector('input'):null; if(el) el.value=''; benDescSave(num,'',el); }
 function vSettings(){
   const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
   const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -4580,6 +4670,10 @@ function vSettings(){
       <button class="btn" style="width:auto;padding:9px 16px" onclick="benSave()">Save access</button>
       <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="index.php?portal=ben" target="_blank" rel="noopener">Open portal ↗</a>
       <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benCopy(this)">Copy link</button>
+    </div>
+    <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
+      <button class="btn sec" style="width:auto;padding:8px 14px" onclick="benDescToggle()">✏️ ${BENDESC.open?'Hide':'Edit'} invoice descriptions</button>
+      ${BENDESC.open?benDescPanel():''}
     </div>
   </div>`:''}
 
