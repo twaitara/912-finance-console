@@ -1311,13 +1311,13 @@ if (empty($_SESSION['auth'])):
   .qbmodal{position:fixed;inset:0;z-index:200;background:rgba(15,23,34,.55);display:none;
     align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
   .qbmodal.open{display:flex}
-  .qbm-card{background:var(--bg);width:100%;max-width:1180px;max-height:92vh;border-radius:18px;
+  .qbm-card{background:var(--surface);color:var(--ink);width:100%;max-width:1180px;max-height:92vh;border-radius:18px;
     box-shadow:0 30px 80px rgba(8,16,24,.5);display:flex;flex-direction:column;overflow:hidden;
     animation:rise .24s cubic-bezier(.22,.61,.36,1) both}
-  .qbm-head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:#fff;
+  .qbm-head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;background:var(--surface-2);
     border-bottom:1px solid var(--line);flex:0 0 auto}
   .qbm-head b{font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink)}
-  .qbm-x{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer;
+  .qbm-x{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--surface);cursor:pointer;
     font-size:14px;color:var(--mute);display:grid;place-items:center;transition:background .15s,color .15s,border-color .15s}
   .qbm-x:hover{background:#FDECEA;color:var(--bad);border-color:#F4C7C0}
   .qbm-body{padding:18px;overflow:auto;flex:1 1 auto}
