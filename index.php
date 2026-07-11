@@ -141,7 +141,7 @@ if (!function_exists('bp_build')) {
         return (string)$s;
     }
     function bp_load_overrides($dir) { $f = $dir . '/ben_desc_overrides.json'; return is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; }
-    function bp_prefs($dir) { $f = $dir . '/ben_prefs.json'; $j = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; return ['preview' => array_key_exists('preview', $j) ? (bool)$j['preview'] : true]; }
+    function bp_prefs($dir) { $f = $dir . '/ben_prefs.json'; $j = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; return ['preview' => array_key_exists('preview', $j) ? (bool)$j['preview'] : true, 'disabled' => !empty($j['disabled'])]; }
     /* Compact text of Ben's own invoices for the Ask AI assistant. */
     function bp_ai_context($data) {
         $lines = [];
@@ -277,6 +277,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     $bpCreds = null;
     if (is_file($bpAuthFile)) { $j = json_decode(@file_get_contents($bpAuthFile), true); if (is_array($j) && !empty($j['user']) && !empty($j['hash'])) $bpCreds = ['user'=>$j['user'], 'hash'=>$j['hash'], 'mode'=>'hash']; }
     if (!$bpCreds) { $u = trim((string)($bpCfg['ben_user'] ?? '')); $p = (string)($bpCfg['ben_pass'] ?? ''); if ($u !== '' && $p !== '') $bpCreds = ['user'=>$u, 'pass'=>$p, 'mode'=>'plain']; }
+    $bpPrefs = bp_prefs(__DIR__ . '/data'); $bpDisabled = !empty($bpPrefs['disabled']);
 
     if (isset($_GET['logout'])) { $_SESSION = []; session_destroy(); header('Location: index.php?portal=ben'); exit; }
 
@@ -284,15 +285,15 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ben_login'])) {
         $u = trim((string)($_POST['u'] ?? '')); $p = (string)($_POST['p'] ?? '');
         $ok = false;
-        if ($bpCreds) {
+        if ($bpCreds && !$bpDisabled) {
             if ($bpCreds['mode'] === 'hash') $ok = hash_equals(strtolower($bpCreds['user']), strtolower($u)) && password_verify($p, $bpCreds['hash']);
             else                             $ok = hash_equals($bpCreds['user'], $u) && hash_equals($bpCreds['pass'], $p);
         }
         if ($ok) { session_regenerate_id(true); $_SESSION['ben_auth'] = true; $_SESSION['ben_user'] = $u; header('Location: index.php?portal=ben'); exit; }
-        $bpErr = 'Wrong username or password.';
+        $bpErr = $bpDisabled ? 'This portal is currently disabled.' : 'Wrong username or password.';
     }
-    $bpAuthed = !empty($_SESSION['ben_auth']);
-    $bpPreviewOn = bp_prefs(__DIR__ . '/data')['preview'];
+    $bpAuthed = !$bpDisabled && !empty($_SESSION['ben_auth']);   // disabling instantly cuts active sessions too
+    $bpPreviewOn = $bpPrefs['preview'];
 
     if (isset($_GET['data'])) {
         header('Content-Type: application/json; charset=utf-8');
@@ -491,7 +492,9 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
   <div class="card">
     <h2>Ben Portal</h2>
     <div class="muted">Sign in to view the group's 2025–2026 invoices.</div>
-    <?php if (!$bpCreds): ?>
+    <?php if ($bpDisabled): ?>
+      <div class="err">This portal is currently disabled. Please contact the administrator.</div>
+    <?php elseif (!$bpCreds): ?>
       <div class="err">This portal isn't set up yet. The administrator needs to set a username and password in the console (Settings → Ben Portal access).</div>
     <?php else: ?>
     <form method="post" action="index.php?portal=ben" autocomplete="off">
@@ -790,12 +793,14 @@ if (isset($_GET['benpref'])) {
     $pfDir = __DIR__ . '/data'; $pfFile = $pfDir . '/ben_prefs.json';
     $inP = json_decode(file_get_contents('php://input'), true) ?: [];
     if (($inP['action'] ?? '') === 'save') {
-        $prev = !empty($inP['preview']);
+        $cur = is_file($pfFile) ? (json_decode(@file_get_contents($pfFile), true) ?: []) : [];
+        if (array_key_exists('preview', $inP))  $cur['preview']  = !empty($inP['preview']);
+        if (array_key_exists('disabled', $inP)) $cur['disabled'] = !empty($inP['disabled']);
         if (!is_dir($pfDir)) @mkdir($pfDir, 0775, true);
-        @file_put_contents($pfFile, json_encode(['preview'=>$prev]));
-        echo json_encode(['ok'=>true, 'preview'=>$prev]); exit;
+        @file_put_contents($pfFile, json_encode($cur));
     }
-    echo json_encode(['ok'=>true, 'preview'=>bp_prefs($pfDir)['preview']]);
+    $p = bp_prefs($pfDir);
+    echo json_encode(['ok'=>true, 'preview'=>$p['preview'], 'disabled'=>$p['disabled']]);
     exit;
 }
 
@@ -4895,8 +4900,18 @@ function benSave(){
   }).catch(e=>alert('Error: '+e));
 }
 function benCopy(btn){ try{ navigator.clipboard.writeText(BEN_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
-function benPrevLoad(){ const c=document.getElementById('benPrevChk'); if(!c) return; fetch('?benpref=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{ const el=document.getElementById('benPrevChk'); if(el&&j&&j.ok) el.checked=!!j.preview; }).catch(()=>{}); }
+function benPrevLoad(){
+  fetch('?benpref=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    if(!j||!j.ok) return;
+    const el=document.getElementById('benPrevChk'); if(el) el.checked=!!j.preview;
+    const box=document.getElementById('benAccessBox');
+    if(box){ box.innerHTML = j.disabled
+      ? `<span style="color:var(--bad);font-weight:700;font-size:12.5px">⛔ Ben's access is DISABLED.</span> <button class="btn" style="width:auto;padding:6px 13px;margin-left:6px" onclick="benSetDisabled(false)">Enable access</button>`
+      : `<button class="btn sec" style="width:auto;padding:8px 14px;border-color:var(--bad);color:var(--bad)" onclick="benSetDisabled(true)">⛔ Disable Ben's access</button>`; }
+  }).catch(()=>{});
+}
 function benPrevSave(on){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',preview:on?1:0})}).then(r=>r.json()).catch(()=>{}); }
+function benSetDisabled(v){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>benPrevLoad()).catch(()=>{}); }
 let BENAI={ open:false, loaded:false, loading:false, list:[], msg:'' };
 function benAiToggle(){ BENAI.open=!BENAI.open; if(BENAI.open) benAiLoad(); render(); }
 function benAiLoad(){
@@ -4990,6 +5005,7 @@ function vSettings(){
     ${sec('🔐 Ben Portal access')}
     <div class="muted" style="font-size:12px;margin-bottom:10px">A private, login-protected report for <b>Ben</b> showing <b>all 2025–2026 invoices</b> for the Fabrimetal / CIMMETAL / SteelRwa group. Set the username &amp; password here — leave the password blank to keep the current one.</div>
     <div id="benStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
+    <div id="benAccessBox" style="margin:0 0 10px"></div>
     <div class="grid2" style="gap:10px">
       <div><label>Username</label><input id="benUser" type="text" autocomplete="off" placeholder="e.g. ben" style="margin-bottom:0"></div>
       <div><label>Password</label><input id="benPass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
