@@ -142,6 +142,41 @@ if (!function_exists('bp_build')) {
     }
     function bp_load_overrides($dir) { $f = $dir . '/ben_desc_overrides.json'; return is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; }
     function bp_prefs($dir) { $f = $dir . '/ben_prefs.json'; $j = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; return ['preview' => array_key_exists('preview', $j) ? (bool)$j['preview'] : true]; }
+    /* Compact text of Ben's own invoices for the Ask AI assistant. */
+    function bp_ai_context($data) {
+        $lines = [];
+        foreach (['2025', '2026'] as $y) {
+            $yd = $data['years'][$y] ?? null; if (!$yd) continue;
+            $lines[] = "=== YEAR $y ===";
+            foreach (($yd['companies'] ?? []) as $c) {
+                $lines[] = $c['name'] . ' (' . $c['count'] . ' invoices):';
+                foreach ($c['invoices'] as $iv) {
+                    $lines[] = '  - ' . $iv['number'] . ' | ' . $iv['date'] . ' | ' . (($iv['desc'] ?? '') !== '' ? $iv['desc'] : '(no description)') . ' | ' . number_format((float)($iv['total'] ?? 0)) . ' ' . ($iv['currency'] ?? '') . ' | ' . ($iv['status'] ?? '');
+                }
+            }
+        }
+        $txt = implode("\n", $lines);
+        return mb_strlen($txt) > 60000 ? mb_substr($txt, 0, 60000) : $txt;
+    }
+    /* Call Claude, scoped strictly to the invoice data. */
+    function bp_ask($key, $context, $question, $history) {
+        $sys = "You are \"Ask AI\", a concise, professional assistant for a CIO reviewing his company's invoices in a secure client portal. Answer ONLY from the invoice data below, which covers his group's 2025 and 2026 invoices. If a question falls outside this data, politely say you can only help with these invoices. Keep answers short, clear and businesslike; you may use **bold** and simple lists.\n\nINVOICE DATA:\n" . $context;
+        $messages = [];
+        foreach (array_slice((array)$history, -8) as $m) {
+            $role = (($m['role'] ?? '') === 'assistant') ? 'assistant' : 'user';
+            $t = trim((string)($m['content'] ?? '')); if ($t !== '') $messages[] = ['role'=>$role, 'content'=>mb_substr($t, 0, 2000)];
+        }
+        $messages[] = ['role'=>'user', 'content'=>$question];
+        $payload = ['model'=>'claude-opus-4-8', 'max_tokens'=>1024, 'system'=>$sys, 'messages'=>$messages];
+        $ch = curl_init('https://api.anthropic.com/v1/messages');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>60, CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>json_encode($payload), CURLOPT_HTTPHEADER=>['Content-Type: application/json', 'x-api-key: ' . $key, 'anthropic-version: 2023-06-01']]);
+        $res = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = curl_error($ch); curl_close($ch);
+        if ($err) throw new Exception('request failed');
+        $d = json_decode($res, true);
+        if ($code >= 400) throw new Exception($d['error']['message'] ?? 'ai error');
+        $txt = ''; foreach (($d['content'] ?? []) as $b) { if (($b['type'] ?? '') === 'text') $txt .= $b['text']; }
+        $txt = trim($txt); return $txt !== '' ? $txt : 'No answer.';
+    }
     function bp_apply_overrides(&$data, $ov) {
         if (empty($data['years'])) return;
         foreach ($data['years'] as $y => &$yd) {
@@ -292,78 +327,127 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         echo $body; exit;
     }
 
+    // Ask AI — answers scoped strictly to Ben's own invoices.
+    if (isset($_GET['ai'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$bpAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
+        $key = trim((string)($bpCfg['anthropic_api_key'] ?? ''));
+        if ($key === '') { echo json_encode(['ok'=>false, 'error'=>'The assistant isn’t set up yet.']); exit; }
+        $in = json_decode(file_get_contents('php://input'), true) ?: [];
+        $q = trim((string)($in['question'] ?? ''));
+        $history = is_array($in['history'] ?? null) ? $in['history'] : [];
+        if ($q === '') { echo json_encode(['ok'=>false, 'error'=>'Ask a question.']); exit; }
+        if (mb_strlen($q) > 500) $q = mb_substr($q, 0, 500);
+        try {
+            $data = bp_build(false); bp_apply_overrides($data, bp_load_overrides(__DIR__ . '/data'));
+            $ans = bp_ask($key, bp_ai_context($data), $q, $history);
+            echo json_encode(['ok'=>true, 'answer'=>$ans]);
+        } catch (\Throwable $e) { echo json_encode(['ok'=>false, 'error'=>'The assistant is unavailable right now.']); }
+        exit;
+    }
+
     $bpEsc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
     ?>
 <!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BEN PORTAL — WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Arial' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>(function(){try{if(localStorage.getItem('benTheme')==='light')document.documentElement.classList.add('light');}catch(e){}})();</script>
 <style>
-  :root{--orange:#F56F00;--blue:#2350C5;--ink:#15202B;--mute:#64748B;--line:#E6EAF0;--bg:#F4F6FA;--good:#16A34A;--bad:#D64933;--purple:#7C3AED}
+  :root{
+    --orange:#F56F00;--blue:#5B8DEF;--purple:#8B6EF3;--good:#34D399;--bad:#F87171;
+    --bg:#0E1826;--card:#16212F;--ink:#E7EDF5;--mute:#93A4B8;--line:#273444;--hair:#1F2C3B;
+    --th:#1B2735;--hover:#1B2A3B;--foot:#1B2735;--cohead1:#1A2634;--cohead2:#16212F;--inpbg:#111C29;
+  }
+  html.light{
+    --blue:#2350C5;--purple:#7C3AED;--good:#16A34A;--bad:#D64933;
+    --bg:#F4F6FA;--card:#fff;--ink:#15202B;--mute:#64748B;--line:#E6EAF0;--hair:#EEF1F5;
+    --th:#F8FAFC;--hover:#FFF8F3;--foot:#F4F7FB;--cohead1:#FAFBFE;--cohead2:#F3F6FB;--inpbg:#fff;
+  }
   *{box-sizing:border-box}
-  body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:13px;-webkit-font-smoothing:antialiased}
-  .top{background:linear-gradient(135deg,#1B2A3A,#15202B);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:50;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+  body{margin:0;font-family:'Inter','Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:13px;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
+  .top{background:linear-gradient(135deg,#1B2A3A,#101a27);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:50;box-shadow:0 2px 10px rgba(0,0,0,.3)}
   .b{width:28px;height:28px;border-radius:7px;background:var(--orange);display:grid;place-items:center;font-weight:800;font-size:11px;color:#fff;flex:0 0 auto}
   .top h1{font-size:12px;margin:0;font-weight:700;letter-spacing:.4px}
   .top .sub{font-size:9.5px;color:#9AA7B8;letter-spacing:.4px}
   .top .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
-  .tbtn{border:1px solid rgba(255,255,255,.2);color:#fff;background:rgba(255,255,255,.1);border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;transition:background .15s}
+  .tbtn{border:1px solid rgba(255,255,255,.2);color:#fff;background:rgba(255,255,255,.1);border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;transition:background .15s;display:inline-flex;align-items:center;gap:6px}
   .tbtn:hover{background:rgba(255,255,255,.18)}
+  .tbtn.ico{padding:7px}
   .wrap{max-width:1000px;margin:0 auto;padding:12px 12px 24px}
-  .card{background:#fff;border:1px solid var(--line);border-radius:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px}
   .muted{color:var(--mute);font-size:11px}
   .lab{font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
   .val{font-weight:700;font-size:15px;margin-top:2px;line-height:1.25}
   .sum{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
   .sum .card{flex:1;min-width:150px;padding:10px 13px}
   .co{margin-bottom:10px;overflow:hidden}
-  .cohead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 13px;background:linear-gradient(180deg,#FAFBFE,#F3F6FB);border-bottom:1px solid var(--line)}
+  .cohead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 13px;background:linear-gradient(180deg,var(--cohead1),var(--cohead2));border-bottom:1px solid var(--line)}
   .cohead .nm{font-weight:700;font-size:13px}
   .cohead .cnt{font-size:10px;font-weight:700;color:#fff;background:var(--purple);border-radius:20px;padding:1px 8px}
   .cohead .mtot{margin-left:auto;text-align:right;font-size:11px}
   .cohead .mtot .o{color:var(--bad);font-weight:700}.cohead .mtot .i{color:var(--ink);font-weight:600}
   table{width:100%;border-collapse:collapse;font-size:12px}
-  th,td{padding:7px 10px;border-bottom:1px solid #F0F2F6;text-align:left}
-  th{font-size:9px;text-transform:uppercase;color:var(--mute);letter-spacing:.3px;background:#F8FAFC;font-weight:700}
+  th,td{padding:7px 10px;border-bottom:1px solid var(--hair);text-align:left}
+  th{font-size:9px;text-transform:uppercase;color:var(--mute);letter-spacing:.3px;background:var(--th);font-weight:700}
   td.amt,th.amt{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-  tbody tr:hover{background:#FFF8F3}
-  tfoot td{font-weight:700;border-top:2px solid var(--ink);background:#F4F7FB}
+  tbody tr:hover{background:var(--hover)}
+  tfoot td{font-weight:700;border-top:2px solid var(--line);background:var(--foot)}
   .pill{display:inline-block;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:capitalize}
-  .pill.paid{background:#E7F6EC;color:#0F7A34}.pill.overdue{background:#FDECEA;color:#B42318}
-  .pill.sent,.pill.unpaid{background:#EEF2FE;color:#2350C5}.pill.partially_paid{background:#FFF4E5;color:#B45309}.pill.other{background:#EEF1F5;color:#475569}
+  .pill.paid{background:rgba(52,211,153,.16);color:#34D399}.pill.overdue{background:rgba(248,113,113,.16);color:#F87171}
+  .pill.sent,.pill.unpaid{background:rgba(91,141,239,.18);color:#7FA9F5}.pill.partially_paid{background:rgba(245,158,11,.16);color:#F59E0B}.pill.other{background:rgba(148,164,184,.16);color:var(--mute)}
   .empty td{color:var(--mute);font-style:italic}
   .bar{position:fixed;top:0;left:0;height:3px;background:var(--orange);width:0;transition:width .2s,opacity .3s;opacity:0;box-shadow:0 0 8px var(--orange);z-index:999}
   .pgfoot{text-align:center;padding:16px 12px 20px;line-height:1.7}
-  .pgfoot .cn{font-size:11.5px;color:#64748B}.pgfoot .sc{font-size:11px;color:#F56F00;margin-top:4px}
+  .pgfoot .cn{font-size:11.5px;color:var(--mute)}.pgfoot .sc{font-size:11px;color:var(--orange);margin-top:4px}
   .login{max-width:360px;margin:9vh auto 0;padding:0 16px}
   .login .card{padding:22px}.login h2{margin:0 0 4px;font-size:17px}
-  .login .in{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;margin-top:12px}
-  .login .in:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(245,111,0,.12)}
+  .login .in{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;margin-top:12px;background:var(--inpbg);color:var(--ink)}
+  .login .in:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(245,111,0,.15)}
   .login .go{width:100%;margin-top:14px;border:0;background:var(--orange);color:#fff;padding:12px;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
   .login .go:hover{filter:brightness(1.05)}
-  .login .err{background:#FDECEA;color:#B42318;border-radius:8px;padding:9px 11px;font-size:12px;margin-top:12px}
+  .login .err{background:rgba(248,113,113,.14);color:#F87171;border-radius:8px;padding:9px 11px;font-size:12px;margin-top:12px}
   .ytabs{display:flex;gap:6px;align-items:center;margin:2px 0 12px;flex-wrap:wrap}
-  .ytab{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--mute);display:flex;align-items:center;gap:8px;transition:all .12s}
-  .ytab:hover{border-color:var(--ink)}
-  .ytab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-  .ytab .yc{font-size:10px;font-weight:700;background:rgba(0,0,0,.10);border-radius:20px;padding:1px 8px}
-  .ytab.on .yc{background:rgba(255,255,255,.22)}
-  .prbtn{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--ink)}
-  .prbtn:hover{background:#F4F7FB}
+  .ytab{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--mute);display:flex;align-items:center;gap:8px;transition:all .12s}
+  .ytab:hover{border-color:var(--orange)}
+  .ytab.on{background:var(--orange);color:#fff;border-color:var(--orange)}
+  .ytab .yc{font-size:10px;font-weight:700;background:rgba(128,128,128,.20);border-radius:20px;padding:1px 8px}
+  .ytab.on .yc{background:rgba(255,255,255,.25)}
+  .prbtn{margin-left:auto;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+  .prbtn:hover{background:var(--hover)}
   .yhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 2px 12px;font-size:13.5px}
-  .yhead .yt{font-weight:600;color:#334155}
-  td.desc{color:#334155;max-width:360px;font-size:11.5px}
+  .yhead .yt{font-weight:600;color:var(--ink)}
+  td.desc{color:var(--ink);max-width:360px;font-size:11.5px}
   .pvlink{color:var(--blue);cursor:pointer;font-weight:600;text-decoration:underline;text-decoration-style:dotted}
   .pvlink:hover{color:var(--orange)}
-  .pvmodal{position:fixed;inset:0;z-index:200;background:rgba(15,23,34,.6);display:none;align-items:center;justify-content:center;padding:18px}
+  .pvmodal{position:fixed;inset:0;z-index:200;background:rgba(4,10,18,.72);display:none;align-items:center;justify-content:center;padding:18px}
   .pvmodal.open{display:flex}
-  .pvcard{background:#fff;width:100%;max-width:860px;height:90vh;border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(8,16,24,.5)}
-  .pvhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 15px;border-bottom:1px solid var(--line);background:#FAFBFE}
+  .pvcard{background:var(--card);width:100%;max-width:860px;height:90vh;border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .pvhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 15px;border-bottom:1px solid var(--line);background:var(--cohead1)}
   .pvhead b{font-size:13px}
-  .pvx{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:15px;color:var(--mute)}
-  .pvx:hover{background:#FDECEA;color:var(--bad);border-color:#F4C7C0}
-  @media print{ .top,.ytabs,.pgfoot,.bar,.pvmodal{display:none!important} body{background:#fff;font-size:12px} .card{break-inside:avoid;box-shadow:none} .wrap{max-width:none;padding:0} }
-  @media(max-width:560px){ .sum .card{min-width:120px} .cohead .mtot{width:100%;text-align:left;margin-left:0} td.desc{max-width:none} }
+  .pvx{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-size:15px;color:var(--mute);display:grid;place-items:center}
+  .pvx:hover{background:rgba(248,113,113,.14);color:var(--bad)}
+  .fab{position:fixed;right:18px;bottom:18px;z-index:150;display:inline-flex;align-items:center;gap:8px;background:var(--orange);color:#fff;border:0;border-radius:30px;padding:12px 18px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 10px 28px rgba(245,111,0,.45)}
+  .fab:hover{filter:brightness(1.06)}
+  .aiwrap{position:fixed;right:18px;bottom:78px;z-index:151;width:372px;max-width:calc(100vw - 24px);height:520px;max-height:calc(100vh - 120px);background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:none;flex-direction:column;overflow:hidden}
+  .aiwrap.open{display:flex}
+  .aihead{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,var(--cohead1),var(--cohead2))}
+  .aihead .t{font-weight:700;font-size:13px}
+  .aihead .x{margin-left:auto;cursor:pointer;color:var(--mute);background:transparent;border:0;display:grid;place-items:center;padding:2px}
+  .aibody{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+  .aimsg{max-width:86%;padding:9px 12px;border-radius:13px;font-size:12.5px;line-height:1.5}
+  .aimsg.u{align-self:flex-end;background:var(--orange);color:#fff;border-bottom-right-radius:4px}
+  .aimsg.a{align-self:flex-start;background:var(--th);color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .aifoot{padding:10px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:flex-end}
+  .aifoot textarea{flex:1;resize:none;max-height:90px;border:1px solid var(--line);border-radius:11px;padding:9px 11px;font-family:inherit;font-size:12.5px;background:var(--inpbg);color:var(--ink)}
+  .aifoot textarea:focus{outline:none;border-color:var(--orange)}
+  .aifoot .snd{border:0;background:var(--orange);color:#fff;border-radius:11px;height:38px;width:42px;cursor:pointer;display:grid;place-items:center;flex:0 0 auto}
+  .aiempty{color:var(--mute);font-size:12px;text-align:center;margin:auto;padding:16px}
+  .aichip{display:inline-block;margin:3px;border:1px solid var(--line);border-radius:16px;padding:5px 10px;font-size:11px;cursor:pointer;color:var(--ink);background:var(--card)}
+  .aichip:hover{border-color:var(--orange)}
+  @media print{ .top,.ytabs,.pgfoot,.bar,.pvmodal,.fab,.aiwrap{display:none!important} html{--bg:#fff;--card:#fff;--ink:#15202B;--mute:#64748B;--line:#E6EAF0;--hair:#EEF1F5;--th:#F8FAFC;--hover:#fff;--foot:#F4F7FB} body{font-size:12px} .card{break-inside:avoid;box-shadow:none} .wrap{max-width:none;padding:0} }
+  @media(max-width:560px){ .sum .card{min-width:120px} .cohead .mtot{width:100%;text-align:left;margin-left:0} td.desc{max-width:none} .aiwrap{right:8px;left:8px;width:auto} }
 </style></head>
 <body>
 <div id="bar" class="bar"></div>
@@ -371,7 +455,11 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
   <div class="b">912</div>
   <div><h1>BEN PORTAL</h1><div class="sub">FABRIMETAL GROUP · 2025–2026 INVOICES</div></div>
   <?php if ($bpAuthed): ?>
-  <div class="sp"><button class="tbtn" onclick="load(true)">⟳ Refresh</button><a class="tbtn" href="index.php?portal=ben&logout=1">Sign out</a></div>
+  <div class="sp">
+    <button class="tbtn ico" id="themeBtn" onclick="toggleTheme()" title="Toggle theme"></button>
+    <button class="tbtn" onclick="load(true)" title="Refresh"><span data-ic="refresh" data-s="15"></span> Refresh</button>
+    <a class="tbtn" href="index.php?portal=ben&logout=1" title="Sign out"><span data-ic="logout" data-s="15"></span> Sign out</a>
+  </div>
   <?php endif; ?>
 </div>
 <?php if (!$bpAuthed): ?>
@@ -400,11 +488,20 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     <div class="pvhead">
       <b id="pvTitle">Invoice</b>
       <span style="display:flex;gap:8px;align-items:center">
-        <a id="pvOpen" href="#" target="_blank" rel="noopener" class="tbtn" style="color:var(--ink);border-color:var(--line);background:#fff">Open ↗</a>
+        <a id="pvOpen" href="#" target="_blank" rel="noopener" class="tbtn" style="color:var(--ink);border-color:var(--line);background:var(--card)">Open ↗</a>
         <button class="pvx" onclick="closePreview()">✕</button>
       </span>
     </div>
     <iframe id="pvFrame" src="about:blank" title="Invoice preview" style="flex:1;border:0;width:100%;background:#525659"></iframe>
+  </div>
+</div>
+<button class="fab" onclick="aiToggle()"><span data-ic="spark" data-s="18"></span> Ask AI</button>
+<div class="aiwrap" id="aiWrap">
+  <div class="aihead"><span data-ic="spark" data-s="16" style="color:var(--orange)"></span><span class="t">Ask AI</span><button class="x" onclick="aiToggle()"><span data-ic="close" data-s="16"></span></button></div>
+  <div class="aibody" id="aiBody"></div>
+  <div class="aifoot">
+    <textarea id="aiInput" rows="1" placeholder="Ask about your invoices…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();aiSend();}"></textarea>
+    <button class="snd" onclick="aiSend()"><span data-ic="send" data-s="18"></span></button>
   </div>
 </div>
 <div class="pgfoot"><div class="cn">Waitara Holdings Group of Companies · Ben Portal</div><div class="sc">CONFIDENTIAL</div></div>
@@ -414,6 +511,41 @@ const fmtC = (cur,n) => Math.round(n||0).toLocaleString('en-US');
 const fmtMap = m => { const k=Object.keys(m||{}); if(!k.length) return '—'; return k.sort().map(c=>fmtC(c,m[c])).join('  ·  '); };
 const PREVIEW = <?php echo $bpPreviewOn ? 'true' : 'false'; ?>;
 let DATA=null, YEAR=null;
+/* ---- line icons (Lucide-style) ---- */
+const IC={
+ refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
+ printer:'<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+ logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+ moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+ spark:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+ send:'<path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9z"/>',
+ close:'<path d="M18 6 6 18M6 6l12 12"/>'
+};
+function icon(n,s){ s=s||16; return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px">${IC[n]||''}</svg>`; }
+function fillIcons(root){ (root||document).querySelectorAll('[data-ic]').forEach(el=>{ el.innerHTML=icon(el.getAttribute('data-ic'), +el.getAttribute('data-s')||16); }); }
+function updateThemeIcon(){ const b=document.getElementById('themeBtn'); if(b){ const light=document.documentElement.classList.contains('light'); b.innerHTML=icon(light?'moon':'sun',16); b.title=light?'Switch to dark':'Switch to light'; } }
+function toggleTheme(){ const light=document.documentElement.classList.toggle('light'); try{localStorage.setItem('benTheme', light?'light':'dark');}catch(e){} updateThemeIcon(); }
+/* ---- Ask AI ---- */
+let AICHAT={busy:false,msgs:[]};
+const AISUG=['Which invoices are still open?','How much was billed in 2026?','Summarise Fabrimetal Ghana','What was the Mali server invoice about?'];
+function aiToggle(){ const w=document.getElementById('aiWrap'); const open=w.classList.toggle('open'); if(open){ aiRender(); setTimeout(()=>{const t=document.getElementById('aiInput'); if(t)t.focus();},60); } }
+function aiFmt(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>'); }
+function aiPick(q){ const t=document.getElementById('aiInput'); if(t) t.value=q; aiSend(); }
+function aiRender(){
+  const b=document.getElementById('aiBody'); if(!b) return;
+  if(!AICHAT.msgs.length && !AICHAT.busy){ b.innerHTML=`<div class="aiempty">${icon('spark',26)}<div style="margin-top:8px;font-weight:600;color:var(--ink)">Ask about your invoices</div><div style="margin-top:10px">${AISUG.map(s=>`<span class="aichip" onclick="aiPick('${s.replace(/'/g,"\\'")}')">${esc(s)}</span>`).join('')}</div></div>`; return; }
+  b.innerHTML=AICHAT.msgs.map(m=>`<div class="aimsg ${m.role==='user'?'u':'a'}">${m.role==='user'?esc(m.content):aiFmt(m.content)}</div>`).join('')+(AICHAT.busy?`<div class="aimsg a">…</div>`:'');
+  b.scrollTop=b.scrollHeight;
+}
+async function aiSend(){
+  const t=document.getElementById('aiInput'); const q=(t.value||'').trim(); if(!q||AICHAT.busy) return;
+  AICHAT.msgs.push({role:'user',content:q}); t.value=''; AICHAT.busy=true; aiRender();
+  const history=AICHAT.msgs.slice(0,-1).map(m=>({role:m.role,content:m.content}));
+  try{ const r=await fetch('index.php?portal=ben&ai=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,history})}); const j=await r.json(); AICHAT.busy=false; AICHAT.msgs.push({role:'assistant',content:(j&&j.ok)?j.answer:((j&&j.error)||'Sorry, something went wrong.')}); }
+  catch(e){ AICHAT.busy=false; AICHAT.msgs.push({role:'assistant',content:'Request failed. Please try again.'}); }
+  aiRender();
+}
 function bar(s){ const b=document.getElementById('bar'); if(!b)return; if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);} }
 async function load(refresh){ bar(true); try{ const r=await fetch('index.php?portal=ben&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'}); DATA=await r.json(); }catch(e){ DATA={ok:false,error:String(e)}; } if(!YEAR&&DATA&&DATA.years){ const y=DATA.years; YEAR=((y['2026']||{}).count>0)?'2026':(((y['2025']||{}).count>0)?'2025':'2026'); } bar(false); render(); }
 function pillClass(s){ s=(s||'').toLowerCase(); return ['paid','overdue','sent','unpaid','partially_paid'].includes(s)?s:'other'; }
@@ -437,7 +569,7 @@ function render(){
   if(!YEAR) YEAR=((years['2026']||{}).count>0)?'2026':'2025';
   const yd=years[YEAR]||{count:0,companies:[],invoicedByCur:{},outstandingByCur:{}};
   const tab=y=>`<button class="ytab ${YEAR===y?'on':''}" onclick="setYear('${y}')">${y}<span class="yc">${(years[y]||{}).count||0}</span></button>`;
-  let html=`<div class="ytabs">${tab('2025')}${tab('2026')}<button class="prbtn" onclick="printYear()">🖨 Print ${YEAR}</button></div>`;
+  let html=`<div class="ytabs">${tab('2025')}${tab('2026')}<button class="prbtn" onclick="printYear()">${icon('printer',14)} Print ${YEAR}</button></div>`;
   const cos=yd.companies||[];
   html+=`<div class="yhead">
     <div><b style="font-size:15px">${YEAR}</b> · ${yd.count||0} invoice${yd.count===1?'':'s'} across ${cos.length} compan${cos.length===1?'y':'ies'}</div>
@@ -463,6 +595,7 @@ function render(){
   html+=`<div class="muted" style="margin:10px 2px">Updated ${DATA.asOf?new Date(DATA.asOf).toLocaleString('en-GB'):'now'}.</div>`;
   app.innerHTML=html;
 }
+fillIcons(); updateThemeIcon();
 load(false);
 </script>
 <?php endif; ?>
