@@ -147,9 +147,17 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
             if (mb_strlen($s) > 120) $s = mb_substr($s, 0, 118) . '…';
             return $s;
         }
+        /* collapse noisy technical line items into a clean, client-facing label */
+        function bp_label($s) {
+            $t = strtolower((string)$s);
+            if ($t === '') return '';
+            $svc = ['intrusion', 'prevention', 'duo security', 'firewall', 'antivirus', 'endpoint', 'sql', 'server', 'software', 'licen', 'subscription', 'hosting', 'backup', 'cyber', 'vpn', 'monitoring', 'services offered', 'it support', 'maintenance', 'support', 'office 365', 'microsoft 365', 'ssl certificate', 'domain'];
+            foreach ($svc as $kw) { if (strpos($t, $kw) !== false) return 'Support Services'; }
+            return (string)$s;
+        }
         function bp_build($force) {
             $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-            $cache = $dir . '/ben_invoices_v2.json';
+            $cache = $dir . '/ben_invoices_v3.json';
             if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
             $cfg = zoho_config(); $companies = bp_companies(); $map = [];
             foreach ($companies as $c) $map[bp_key($c)] = $c;
@@ -173,14 +181,14 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
             $descCache = is_file($descFile) ? (json_decode(@file_get_contents($descFile), true) ?: []) : [];
             $descDirty = false; $fetched = 0; $CAP = 250;
             foreach ($rows as &$r) {
-                $id = $r['id'];
-                if ($id !== '' && array_key_exists($id, $descCache)) { $r['desc'] = $descCache[$id]; continue; }
-                $r['desc'] = '';
-                if ($id !== '' && $fetched < $CAP) {
-                    try { [$dv, $dc] = zoho_api('GET', 'invoices/' . rawurlencode($id), null, []); if ($dc < 400) $r['desc'] = bp_desc_summary($dv['invoice']['line_items'] ?? []); }
-                    catch (Exception $e) { $r['desc'] = ''; }
-                    $descCache[$id] = $r['desc']; $descDirty = true; $fetched++;
+                $id = $r['id']; $raw = '';
+                if ($id !== '' && array_key_exists($id, $descCache)) { $raw = (string)$descCache[$id]; }
+                elseif ($id !== '' && $fetched < $CAP) {
+                    try { [$dv, $dc] = zoho_api('GET', 'invoices/' . rawurlencode($id), null, []); if ($dc < 400) $raw = bp_desc_summary($dv['invoice']['line_items'] ?? []); }
+                    catch (Exception $e) { $raw = ''; }
+                    $descCache[$id] = $raw; $descDirty = true; $fetched++;
                 }
+                $r['desc'] = bp_label($raw);
             }
             unset($r);
             if ($descDirty) @file_put_contents($descFile, json_encode($descCache));
