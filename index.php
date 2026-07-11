@@ -318,7 +318,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
 <div class="pgfoot"><div class="cn">Waitara Holdings Group of Companies · Ben Portal</div><div class="sc">CONFIDENTIAL</div></div>
 <script>
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const fmtC = (cur,n) => (cur||'') + ' ' + Math.round(n||0).toLocaleString('en-US');
+const fmtC = (cur,n) => Math.round(n||0).toLocaleString('en-US');
 const fmtMap = m => { const k=Object.keys(m||{}); if(!k.length) return '—'; return k.sort().map(c=>fmtC(c,m[c])).join('  ·  '); };
 let DATA=null, YEAR=null;
 function bar(s){ const b=document.getElementById('bar'); if(!b)return; if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);} }
