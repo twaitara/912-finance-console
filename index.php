@@ -1900,6 +1900,8 @@ if (empty($_SESSION['auth'])):
 
     <button data-tab="ask">🤖 Ask your books</button>
 
+    <button data-tab="portals">🔐 Portals</button>
+
     <div class="navgroup">
       <button class="grp">⚙️ Settings <span class="car">▾</span></button>
       <div class="submenu">
@@ -1975,6 +1977,7 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-ext="audrey.php">📊 Audrey Reports</button>
 
     <button class="mob-item" data-tab="ask">🤖 Ask your books</button>
+    <button class="mob-item" data-tab="portals">🔐 Portals</button>
 
     <div class="mob-sect">⚙️ Settings</div>
     <button class="mob-item mob-sub" data-tab="settings">🔧 App Settings</button>
@@ -2198,7 +2201,7 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
@@ -2263,7 +2266,7 @@ function render(){
   const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
   const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
-  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers',bulkexp:'Log Expenses',ask:'Ask your books'};
+  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers',bulkexp:'Log Expenses',ask:'Ask your books',portals:'Portals'};
   document.title = (ME.user||'Console') + ' · ' + (_tabNames[TAB]||TAB) + ' · 912';
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -2282,7 +2285,8 @@ function render(){
   if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
-  if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); benStatusLoad(); benPrevLoad(); } }
+  if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); } }
+  if(TAB==='portals'){ p.innerHTML = vPortals(); if(ME.admin){ benStatusLoad(); benPrevLoad(); } }
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
@@ -4983,26 +4987,15 @@ function benDescSave(num,label,el){
 }
 function benDescReset(num,btn){ const el=(btn&&btn.parentNode)?btn.parentNode.querySelector('input'):null; if(el) el.value=''; benDescSave(num,'',el); }
 function benDescPreview(id,number){ if(!id) return; window.open('?invpdf='+encodeURIComponent(id),'_blank','noopener'); }
-function vSettings(){
-  const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
-  const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function vPortals(){
+  if(!ME.admin) return `<div class="card muted" style="text-align:center">Admins only.</div>`;
   const sec = (t)=>`<div style="font-weight:700;font-size:12.5px;letter-spacing:.3px;margin:2px 0 10px">${t}</div>`;
   return `
-  <h2>Settings</h2>
-  <div class="muted" style="margin:-6px 0 14px;font-size:12px">Everything here saves to <b>data/settings.json</b> and applies across the app instantly. <b>config.php is never touched.</b></div>
-
-  ${ME.admin?`<div class="card" style="border-left:4px solid var(--orange)">
-    ${sec('🔔 Zoho webhooks')}
-    <div class="muted" style="font-size:12px;margin-bottom:10px">When Zoho Books changes (payment, invoice, estimate, expense) it pings the app and the caches refresh instantly — so reports and <b>Ask your books</b> are always live. This panel shows whether pings are arriving.</div>
-    <div id="whStatusBox" class="muted" style="font-size:12px">Checking…</div>
-    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button class="btn sec" style="width:auto;padding:7px 13px;font-size:12px" onclick="whLoad()">↻ Refresh status</button>
-      <span class="muted" style="font-size:10.5px">Endpoint: <code>index.php?hook=zoho</code> (secret lives in config.php)</span>
-    </div>
-  </div>
+  <h2>Portals</h2>
+  <div class="muted" style="margin:-6px 0 14px;font-size:12px">Manage the external, login-protected report portals you share with clients.</div>
 
   <div class="card" style="border-left:4px solid #7C3AED">
-    ${sec('🔐 Ben Portal access')}
+    ${sec('🔐 Ben Portal')}
     <div class="muted" style="font-size:12px;margin-bottom:10px">A private, login-protected report for <b>Ben</b> showing <b>all 2025–2026 invoices</b> for the Fabrimetal / CIMMETAL / SteelRwa group. Set the username &amp; password here — leave the password blank to keep the current one.</div>
     <div id="benStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
     <div id="benAccessBox" style="margin:0 0 10px"></div>
@@ -5023,6 +5016,33 @@ function vSettings(){
     <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
       <button class="btn sec" style="width:auto;padding:8px 14px" onclick="benDescToggle()">✏️ ${BENDESC.open?'Hide':'Edit'} invoice descriptions</button>
       ${BENDESC.open?benDescPanel():''}
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--orange)">
+    ${sec('📊 Audrey Report')}
+    <div class="muted" style="font-size:12px;margin-bottom:10px">A public unpaid-invoice tracker for the Dunhill client list. No password — share the link with Audrey; she can mark items as followed-up without it affecting Zoho.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <a class="btn" style="width:auto;padding:9px 16px;text-decoration:none" href="audrey.php" target="_blank" rel="noopener">Open Audrey report ↗</a>
+      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="copyAudrey(this)">Copy link</button>
+    </div>
+  </div>`;
+}
+function vSettings(){
+  const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
+  const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const sec = (t)=>`<div style="font-weight:700;font-size:12.5px;letter-spacing:.3px;margin:2px 0 10px">${t}</div>`;
+  return `
+  <h2>Settings</h2>
+  <div class="muted" style="margin:-6px 0 14px;font-size:12px">Everything here saves to <b>data/settings.json</b> and applies across the app instantly. <b>config.php is never touched.</b></div>
+
+  ${ME.admin?`<div class="card" style="border-left:4px solid var(--orange)">
+    ${sec('🔔 Zoho webhooks')}
+    <div class="muted" style="font-size:12px;margin-bottom:10px">When Zoho Books changes (payment, invoice, estimate, expense) it pings the app and the caches refresh instantly — so reports and <b>Ask your books</b> are always live. This panel shows whether pings are arriving.</div>
+    <div id="whStatusBox" class="muted" style="font-size:12px">Checking…</div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn sec" style="width:auto;padding:7px 13px;font-size:12px" onclick="whLoad()">↻ Refresh status</button>
+      <span class="muted" style="font-size:10.5px">Endpoint: <code>index.php?hook=zoho</code> (secret lives in config.php)</span>
     </div>
   </div>`:''}
 
