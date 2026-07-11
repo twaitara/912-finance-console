@@ -600,7 +600,7 @@ if (isset($_GET['bendesc'])) {
         foreach (($yd['companies'] ?? []) as $c) {
             foreach (($c['invoices'] ?? []) as $iv) {
                 $num = (string)($iv['number'] ?? '');
-                $list[] = ['id'=>(string)($iv['id'] ?? ''), 'number'=>$num, 'company'=>(string)$c['name'], 'year'=>(string)$y, 'date'=>(string)($iv['date'] ?? ''), 'auto'=>(string)($iv['autoDesc'] ?? ''), 'override'=>($num !== '' && isset($ov[$num])) ? (string)$ov[$num] : ''];
+                $list[] = ['id'=>(string)($iv['id'] ?? ''), 'number'=>$num, 'company'=>(string)$c['name'], 'year'=>(string)$y, 'date'=>(string)($iv['date'] ?? ''), 'total'=>(float)($iv['total'] ?? 0), 'currency'=>(string)($iv['currency'] ?? ''), 'auto'=>(string)($iv['autoDesc'] ?? ''), 'override'=>($num !== '' && isset($ov[$num])) ? (string)$ov[$num] : ''];
             }
         }
     }
@@ -4734,6 +4734,7 @@ function benDescRow(iv){
       <div class="muted" style="font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${askEsc(iv.company)} · ${askEsc(iv.year)}</div>
     </div>
     <input type="text" value="${benAttr(iv.override)}" placeholder="${benAttr(iv.auto||'—')}" onchange="benDescSave('${benJs(iv.number)}',this.value,this)" style="flex:1;margin-bottom:0;font-size:12px;padding:6px 9px">
+    <div style="flex:0 0 auto;min-width:78px;text-align:right;font-weight:600;font-size:12px;font-variant-numeric:tabular-nums" title="Invoice total">${Math.round(iv.total||0).toLocaleString('en-US')}</div>
     ${iv.id?`<button class="btn sec" style="width:auto;padding:5px 9px;font-size:11px" title="Preview invoice PDF" onclick="benDescPreview('${benJs(iv.id)}','${benJs(iv.number)}')">👁</button>`:''}
     <button class="btn sec" style="width:auto;padding:5px 9px;font-size:11px" title="Use the automatic label" onclick="benDescReset('${benJs(iv.number)}',this)">↺</button>
   </div>`;
