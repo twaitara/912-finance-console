@@ -2024,6 +2024,14 @@ if (empty($_SESSION['auth'])):
   </div>
 </div>
 
+<div id="benAiModal" class="qbmodal" onclick="if(event.target===this)benAiClose()">
+  <div class="qbm-card" style="max-width:680px">
+    <div class="qbm-head"><b>💬 Ask AI — Ben's questions</b>
+      <button class="qbm-x" onclick="benAiClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body" id="benAiBody"></div>
+  </div>
+</div>
+
 <script>
 /* ---- Global progress bar: shows whenever the app is fetching from Zoho/server ---- */
 (function(){
@@ -4916,31 +4924,23 @@ function benPrevLoad(){
 }
 function benPrevSave(on){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',preview:on?1:0})}).then(r=>r.json()).catch(()=>{}); }
 function benSetDisabled(v){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>benPrevLoad()).catch(()=>{}); }
-let BENAI={ open:false, loaded:false, loading:false, list:[], msg:'' };
-function benAiToggle(){ BENAI.open=!BENAI.open; if(BENAI.open) benAiLoad(); render(); }
-function benAiLoad(){
-  BENAI.loading=true; if(TAB==='settings') render();
-  fetch('?benailog=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
-    BENAI.loading=false;
-    if(j&&j.ok){ BENAI.list=j.log||[]; BENAI.loaded=true; if(!BENAI.list.length) BENAI.msg='Ben hasn’t asked the assistant anything yet.'; }
-    else BENAI.msg=(j&&j.error)||'Failed to load.';
-    if(TAB==='settings') render();
-  }).catch(()=>{ BENAI.loading=false; BENAI.msg='Failed to load.'; if(TAB==='settings') render(); });
-}
 function benAiWhen(iso){ try{ return new Date(iso).toLocaleString('en-GB'); }catch(e){ return iso||''; } }
-function benAiPanel(){
-  if(BENAI.loading) return `<div class="muted" style="font-size:12px;margin-top:10px">Loading…</div>`;
-  if(!BENAI.list.length) return `<div class="muted" style="font-size:12px;margin-top:10px">${askEsc(BENAI.msg||'No questions yet.')}</div>`;
-  return `<div style="margin-top:10px">
-    <div class="muted" style="font-size:10.5px;margin-bottom:6px">${BENAI.list.length} question${BENAI.list.length===1?'':'s'}, newest first.</div>
-    <div style="max-height:360px;overflow-y:auto;border:1px solid var(--hair);border-radius:8px;padding:6px 10px">
-      ${BENAI.list.map(e=>`<div style="padding:8px 0;border-bottom:1px solid var(--hair)">
+function benAiOpen(){ const m=document.getElementById('benAiModal'); if(m) m.classList.add('open'); benAiFetch(); }
+function benAiClose(){ const m=document.getElementById('benAiModal'); if(m) m.classList.remove('open'); }
+function benAiFetch(){
+  const b=document.getElementById('benAiBody'); if(b) b.innerHTML='<div class="muted" style="padding:8px">Loading…</div>';
+  fetch('?benailog=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    const bb=document.getElementById('benAiBody'); if(!bb) return;
+    if(!j||!j.ok){ bb.innerHTML='<div class="muted" style="padding:8px">Could not load the log.</div>'; return; }
+    const list=j.log||[];
+    if(!list.length){ bb.innerHTML='<div class="muted" style="padding:8px">Ben hasn’t asked the assistant anything yet.</div>'; return; }
+    bb.innerHTML=`<div class="muted" style="font-size:10.5px;margin-bottom:8px">${list.length} question${list.length===1?'':'s'}, newest first.</div>`+
+      list.map(e=>`<div style="padding:9px 0;border-bottom:1px solid var(--line)">
         <div style="font-size:10px;color:var(--mute)">${askEsc(benAiWhen(e.at))}</div>
-        <div style="font-size:12.5px;font-weight:600;margin-top:2px">${askEsc(e.q)}</div>
-        <div style="font-size:11.5px;color:var(--mute);margin-top:3px;white-space:pre-wrap">${askEsc(e.a)}</div>
-      </div>`).join('')}
-    </div>
-  </div>`;
+        <div style="font-size:13px;font-weight:600;margin-top:2px">${askEsc(e.q)}</div>
+        <div style="font-size:12px;color:var(--mute);margin-top:3px;white-space:pre-wrap">${askEsc(e.a)}</div>
+      </div>`).join('');
+  }).catch(()=>{ const bb=document.getElementById('benAiBody'); if(bb) bb.innerHTML='<div class="muted" style="padding:8px">Could not load the log.</div>'; });
 }
 let BENDESC = { open:false, loaded:false, loading:false, list:[], msg:'' };
 function benAttr(s){ return askEsc(s).replace(/"/g,'&quot;'); }
@@ -5007,9 +5007,8 @@ function vPortals(){
       <button class="btn" style="width:auto;padding:9px 16px" onclick="benSave()">Save access</button>
       <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="index.php?portal=ben" target="_blank" rel="noopener">Open portal ↗</a>
       <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benCopy(this)">Copy link</button>
-      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benAiToggle()">💬 ${BENAI.open?'Hide':'Ask AI'} log${BENAI.loaded&&BENAI.list.length?` (${BENAI.list.length})`:''}</button>
+      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benAiOpen()">💬 Ask AI log</button>
     </div>
-    ${BENAI.open?benAiPanel():''}
     <label style="display:flex;align-items:center;gap:9px;margin-top:12px;font-size:12.5px;cursor:pointer">
       <input type="checkbox" id="benPrevChk" onchange="benPrevSave(this.checked)" style="width:auto;margin:0"> Let Ben preview invoice PDFs (click an invoice to open it)
     </label>
