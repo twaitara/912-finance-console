@@ -75,7 +75,7 @@ if (isset($_GET['hook']) && $_GET['hook'] === 'zoho') {
     $patterns = [
         'ask_context_v2.json', 'audrey_unpaid_v4.json', 'email_clients_v6.json',
         'etr_dups_v2.json', 'etr_v4_*.json', 'quotestatus_v3_*.json',
-        'invstatus_v2_*.json', 'report_v6_*.json',
+        'invstatus_v2_*.json', 'report_v6_*.json', 'ben_invoices_v*.json',
     ];
     $cleared = 0;
     foreach ($patterns as $pat) { foreach (glob($dir . '/' . $pat) ?: [] as $f) { if (@unlink($f)) $cleared++; } }
@@ -133,9 +133,23 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
             return ['Fabri Metal Congo SARL', 'CIMMETAL Burkina', 'SteelRwa Industries Ltd', 'Fabrimetal Senegal Sebikotane', 'Fabrimetal Burundi', 'Fabrimetal Angola', 'IMAFER Mali', 'Fabrimetal Ghana Ltd.', 'Fabrimetal Benin', 'MMD', 'Fabrimetal Senegal SINDIA'];
         }
         function bp_key($s) { return preg_replace('/[^a-z0-9]/', '', strtolower((string)$s)); }
+        /* smart plain-English summary of an invoice from its line items */
+        function bp_desc_summary($lineItems) {
+            $uniq = []; $seen = [];
+            foreach (($lineItems ?? []) as $li) {
+                $n = trim((string)($li['name'] ?? '')); if ($n === '') $n = trim((string)($li['description'] ?? ''));
+                $n = preg_replace('/\s+/', ' ', $n); if ($n === '') continue;
+                $k = strtolower($n); if (isset($seen[$k])) continue; $seen[$k] = 1; $uniq[] = $n;
+            }
+            if (!$uniq) return '';
+            $shown = array_slice($uniq, 0, 3); $more = count($uniq) - count($shown);
+            $s = implode(', ', $shown); if ($more > 0) $s .= ' +' . $more . ' more';
+            if (mb_strlen($s) > 120) $s = mb_substr($s, 0, 118) . '…';
+            return $s;
+        }
         function bp_build($force) {
             $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-            $cache = $dir . '/ben_invoices_v1.json';
+            $cache = $dir . '/ben_invoices_v2.json';
             if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
             $cfg = zoho_config(); $companies = bp_companies(); $map = [];
             foreach ($companies as $c) $map[bp_key($c)] = $c;
@@ -149,26 +163,51 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
                     if ($yr !== '2025' && $yr !== '2026') continue;
                     $st = (string)($inv['status'] ?? ''); if ($st === 'void' || $st === 'draft') continue;
                     $k = bp_key($inv['customer_name'] ?? ''); if (!isset($map[$k])) continue;
-                    $rows[] = ['company'=>$map[$k], 'number'=>(string)($inv['invoice_number'] ?? ''), 'date'=>$date, 'dueDate'=>substr((string)($inv['due_date'] ?? ''), 0, 10), 'status'=>$st, 'total'=>(float)($inv['total'] ?? 0), 'balance'=>(float)($inv['balance'] ?? 0), 'currency'=>strtoupper((string)($inv['currency_code'] ?? ($cfg['currency'] ?? 'KES')))];
+                    $rows[] = ['id'=>(string)($inv['invoice_id'] ?? ''), 'company'=>$map[$k], 'number'=>(string)($inv['invoice_number'] ?? ''), 'date'=>$date, 'year'=>$yr, 'status'=>$st, 'total'=>(float)($inv['total'] ?? 0), 'balance'=>(float)($inv['balance'] ?? 0), 'currency'=>strtoupper((string)($inv['currency_code'] ?? ($cfg['currency'] ?? 'KES')))];
                 }
                 $more = $d['page_context']['has_more_page'] ?? false; $page++;
             } while ($more && !$stop && $page <= 80);
-            $byCompany = [];
-            foreach ($companies as $c) $byCompany[$c] = ['name'=>$c, 'invoices'=>[], 'invoicedByCur'=>[], 'outstandingByCur'=>[], 'count'=>0];
-            $sumInv = []; $sumOut = []; $byYear = ['2025'=>[], '2026'=>[]]; $count = 0;
-            foreach ($rows as $r) {
-                $g = &$byCompany[$r['company']]; $cur = $r['currency'];
-                $g['invoices'][] = $r; $g['count']++;
-                $g['invoicedByCur'][$cur] = ($g['invoicedByCur'][$cur] ?? 0) + $r['total'];
-                $g['outstandingByCur'][$cur] = ($g['outstandingByCur'][$cur] ?? 0) + $r['balance'];
-                $sumInv[$cur] = ($sumInv[$cur] ?? 0) + $r['total']; $sumOut[$cur] = ($sumOut[$cur] ?? 0) + $r['balance'];
-                $yr = substr($r['date'], 0, 4); if (isset($byYear[$yr])) $byYear[$yr][$cur] = ($byYear[$yr][$cur] ?? 0) + $r['total'];
-                $count++; unset($g);
+
+            // per-invoice "what it's for" — first line items, cached persistently (they never change)
+            $descFile = $dir . '/ben_desc_cache.json';
+            $descCache = is_file($descFile) ? (json_decode(@file_get_contents($descFile), true) ?: []) : [];
+            $descDirty = false; $fetched = 0; $CAP = 250;
+            foreach ($rows as &$r) {
+                $id = $r['id'];
+                if ($id !== '' && array_key_exists($id, $descCache)) { $r['desc'] = $descCache[$id]; continue; }
+                $r['desc'] = '';
+                if ($id !== '' && $fetched < $CAP) {
+                    try { [$dv, $dc] = zoho_api('GET', 'invoices/' . rawurlencode($id), null, []); if ($dc < 400) $r['desc'] = bp_desc_summary($dv['invoice']['line_items'] ?? []); }
+                    catch (Exception $e) { $r['desc'] = ''; }
+                    $descCache[$id] = $r['desc']; $descDirty = true; $fetched++;
+                }
             }
-            foreach ($byCompany as &$g) { usort($g['invoices'], fn($a, $b) => strcmp($b['date'], $a['date'])); } unset($g);
-            $companiesOut = array_values($byCompany);
-            usort($companiesOut, function ($a, $b) { if ($b['count'] !== $a['count']) return $b['count'] - $a['count']; return strcasecmp($a['name'], $b['name']); });
-            $out = ['ok'=>true, 'asOf'=>date('c'), 'cached'=>false, 'summary'=>['invoicedByCur'=>$sumInv, 'outstandingByCur'=>$sumOut, 'byYear'=>$byYear, 'count'=>$count, 'companies'=>count(array_filter($companiesOut, fn($c) => $c['count'] > 0))], 'companies'=>$companiesOut];
+            unset($r);
+            if ($descDirty) @file_put_contents($descFile, json_encode($descCache));
+
+            // group by YEAR then company — never bundle the two years together
+            $years = [];
+            foreach (['2025', '2026'] as $y) $years[$y] = ['count'=>0, 'invoicedByCur'=>[], 'outstandingByCur'=>[], 'companies'=>[]];
+            $byYC = [];
+            foreach ($rows as $r) {
+                $y = $r['year']; $cn = $r['company']; $cur = $r['currency'];
+                if (!isset($byYC[$y][$cn])) $byYC[$y][$cn] = ['name'=>$cn, 'invoices'=>[], 'invoicedByCur'=>[], 'outstandingByCur'=>[], 'count'=>0];
+                $b = &$byYC[$y][$cn];
+                $b['invoices'][] = $r; $b['count']++;
+                $b['invoicedByCur'][$cur] = ($b['invoicedByCur'][$cur] ?? 0) + $r['total'];
+                $b['outstandingByCur'][$cur] = ($b['outstandingByCur'][$cur] ?? 0) + $r['balance'];
+                unset($b);
+                $years[$y]['count']++;
+                $years[$y]['invoicedByCur'][$cur] = ($years[$y]['invoicedByCur'][$cur] ?? 0) + $r['total'];
+                $years[$y]['outstandingByCur'][$cur] = ($years[$y]['outstandingByCur'][$cur] ?? 0) + $r['balance'];
+            }
+            foreach (['2025', '2026'] as $y) {
+                $cos = array_values($byYC[$y] ?? []);
+                foreach ($cos as &$c) { usort($c['invoices'], fn($a, $b) => strcmp($b['date'], $a['date'])); } unset($c);
+                usort($cos, function ($a, $b) { if ($b['count'] !== $a['count']) return $b['count'] - $a['count']; return strcasecmp($a['name'], $b['name']); });
+                $years[$y]['companies'] = $cos;
+            }
+            $out = ['ok'=>true, 'asOf'=>date('c'), 'cached'=>false, 'years'=>$years];
             @file_put_contents($cache, json_encode($out));
             return $out;
         }
@@ -232,7 +271,19 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
   .login .go{width:100%;margin-top:14px;border:0;background:var(--orange);color:#fff;padding:12px;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
   .login .go:hover{filter:brightness(1.05)}
   .login .err{background:#FDECEA;color:#B42318;border-radius:8px;padding:9px 11px;font-size:12px;margin-top:12px}
-  @media(max-width:560px){ .sum .card{min-width:120px} .cohead .mtot{width:100%;text-align:left;margin-left:0} }
+  .ytabs{display:flex;gap:6px;align-items:center;margin:2px 0 12px;flex-wrap:wrap}
+  .ytab{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--mute);display:flex;align-items:center;gap:8px;transition:all .12s}
+  .ytab:hover{border-color:var(--ink)}
+  .ytab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .ytab .yc{font-size:10px;font-weight:700;background:rgba(0,0,0,.10);border-radius:20px;padding:1px 8px}
+  .ytab.on .yc{background:rgba(255,255,255,.22)}
+  .prbtn{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--ink)}
+  .prbtn:hover{background:#F4F7FB}
+  .yhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 2px 12px;font-size:13.5px}
+  .yhead .yt{font-weight:600;color:#334155}
+  td.desc{color:#334155;max-width:360px;font-size:11.5px}
+  @media print{ .top,.ytabs,.pgfoot,.bar{display:none!important} body{background:#fff;font-size:12px} .card{break-inside:avoid;box-shadow:none} .wrap{max-width:none;padding:0} }
+  @media(max-width:560px){ .sum .card{min-width:120px} .cohead .mtot{width:100%;text-align:left;margin-left:0} td.desc{max-width:none} }
 </style></head>
 <body>
 <div id="bar" class="bar"></div>
@@ -269,36 +320,44 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtC = (cur,n) => (cur||'') + ' ' + Math.round(n||0).toLocaleString('en-US');
 const fmtMap = m => { const k=Object.keys(m||{}); if(!k.length) return '—'; return k.sort().map(c=>fmtC(c,m[c])).join('  ·  '); };
-let DATA=null;
+let DATA=null, YEAR=null;
 function bar(s){ const b=document.getElementById('bar'); if(!b)return; if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);} }
-async function load(refresh){ bar(true); try{ const r=await fetch('index.php?portal=ben&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'}); DATA=await r.json(); }catch(e){ DATA={ok:false,error:String(e)}; } bar(false); render(); }
+async function load(refresh){ bar(true); try{ const r=await fetch('index.php?portal=ben&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'}); DATA=await r.json(); }catch(e){ DATA={ok:false,error:String(e)}; } if(!YEAR&&DATA&&DATA.years){ const y=DATA.years; YEAR=((y['2026']||{}).count>0)?'2026':(((y['2025']||{}).count>0)?'2025':'2026'); } bar(false); render(); }
 function pillClass(s){ s=(s||'').toLowerCase(); return ['paid','overdue','sent','unpaid','partially_paid'].includes(s)?s:'other'; }
+function anyOut(m){ return Object.values(m||{}).some(v=>v>0.5); }
+function setYear(y){ YEAR=y; render(); window.scrollTo(0,0); }
+function printYear(){ window.print(); }
 function render(){
   const app=document.getElementById('app'); if(!DATA) return;
   if(DATA.ok===false){ app.innerHTML='<div class="card" style="color:var(--bad);padding:14px">Error: '+esc(DATA.error||'failed')+'</div>'; return; }
-  const s=DATA.summary||{};
-  let html=`<div class="sum">
-    <div class="card"><div class="lab">Total invoiced (2025–26)</div><div class="val">${esc(fmtMap(s.invoicedByCur))}</div></div>
-    <div class="card"><div class="lab">Outstanding</div><div class="val" style="color:var(--bad)">${esc(fmtMap(s.outstandingByCur))}</div></div>
-    <div class="card"><div class="lab">Invoices</div><div class="val">${s.count||0}</div></div>
-    <div class="card"><div class="lab">Companies</div><div class="val">${s.companies||0}</div></div>
-  </div>
-  <div class="muted" style="margin:0 2px 6px">As of ${DATA.asOf?new Date(DATA.asOf).toLocaleString('en-GB'):'now'}. Invoiced by year — 2025: ${esc(fmtMap((s.byYear||{})['2025']))} · 2026: ${esc(fmtMap((s.byYear||{})['2026']))}</div>`;
-  (DATA.companies||[]).forEach(c=>{
-    const rows = c.invoices.length ? c.invoices.map(iv=>`<tr>
-        <td>${esc(iv.number)}</td><td>${esc(iv.date||'')}</td>
+  const years=DATA.years||{};
+  if(!YEAR) YEAR=((years['2026']||{}).count>0)?'2026':'2025';
+  const yd=years[YEAR]||{count:0,companies:[],invoicedByCur:{},outstandingByCur:{}};
+  const tab=y=>`<button class="ytab ${YEAR===y?'on':''}" onclick="setYear('${y}')">${y}<span class="yc">${(years[y]||{}).count||0}</span></button>`;
+  let html=`<div class="ytabs">${tab('2025')}${tab('2026')}<button class="prbtn" onclick="printYear()">🖨 Print ${YEAR}</button></div>`;
+  const cos=yd.companies||[];
+  html+=`<div class="yhead">
+    <div><b style="font-size:15px">${YEAR}</b> · ${yd.count||0} invoice${yd.count===1?'':'s'} across ${cos.length} compan${cos.length===1?'y':'ies'}</div>
+    <div class="yt">Billed in ${YEAR}: ${esc(fmtMap(yd.invoicedByCur))}${anyOut(yd.outstandingByCur)?` &nbsp;·&nbsp; <span class="muted">Open: ${esc(fmtMap(yd.outstandingByCur))}</span>`:''}</div>
+  </div>`;
+  if(!cos.length){ html+='<div class="card muted" style="padding:16px">No invoices for '+YEAR+'.</div>'; app.innerHTML=html; return; }
+  cos.forEach(c=>{
+    const rows=c.invoices.map(iv=>`<tr>
+        <td>${esc(iv.number)}</td>
+        <td>${esc(iv.date||'')}</td>
+        <td class="desc">${esc(iv.desc||'—')}</td>
         <td><span class="pill ${pillClass(iv.status)}">${esc((iv.status||'').replace(/_/g,' '))}</span></td>
-        <td class="amt">${esc(fmtC(iv.currency,iv.total))}</td>
-        <td class="amt" style="color:${iv.balance>0?'var(--bad)':'var(--good)'}">${esc(fmtC(iv.currency,iv.balance))}</td></tr>`).join('')
-      : `<tr class="empty"><td colspan="5">No 2025–2026 invoices for this company.</td></tr>`;
-    const foot = c.invoices.length ? `<tfoot><tr><td colspan="3">Total · ${c.count} invoice${c.count===1?'':'s'}</td><td class="amt">${esc(fmtMap(c.invoicedByCur))}</td><td class="amt" style="color:var(--bad)">${esc(fmtMap(c.outstandingByCur))}</td></tr></tfoot>` : '';
+        <td class="amt">${esc(fmtC(iv.currency,iv.total))}</td></tr>`).join('');
     html += `<div class="card co">
         <div class="cohead"><span class="nm">${esc(c.name)}</span><span class="cnt">${c.count}</span>
-          <span class="mtot"><span class="i">${esc(fmtMap(c.invoicedByCur))}</span> &nbsp;·&nbsp; <span class="o">${esc(fmtMap(c.outstandingByCur))} due</span></span></div>
+          <span class="mtot"><span class="i">${esc(fmtMap(c.invoicedByCur))}</span></span></div>
         <div style="overflow-x:auto"><table>
-          <thead><tr><th>Invoice #</th><th>Date</th><th>Status</th><th class="amt">Total</th><th class="amt">Balance</th></tr></thead>
-          <tbody>${rows}</tbody>${foot}</table></div></div>`;
+          <thead><tr><th>Invoice #</th><th>Date</th><th>What it's for</th><th>Status</th><th class="amt">Amount</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td colspan="4">Total · ${c.count} invoice${c.count===1?'':'s'}</td><td class="amt">${esc(fmtMap(c.invoicedByCur))}</td></tr></tfoot>
+        </table></div></div>`;
   });
+  html+=`<div class="muted" style="margin:10px 2px">Updated ${DATA.asOf?new Date(DATA.asOf).toLocaleString('en-GB'):'now'}.</div>`;
   app.innerHTML=html;
 }
 load(false);
