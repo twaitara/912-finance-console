@@ -174,6 +174,29 @@ if (isset($_GET['whstatus'])) {
     exit;
 }
 
+/* Admin-only: read/set the BEN PORTAL credentials (stored hashed in
+   data/ben_auth.json). Inline so a partial deploy of only index.php serves it. */
+if (isset($_GET['bencreds'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $bf  = __DIR__ . '/data/ben_auth.json';
+    $curB = is_file($bf) ? (json_decode(@file_get_contents($bf), true) ?: []) : [];
+    $inB = json_decode(file_get_contents('php://input'), true) ?: [];
+    if (($inB['action'] ?? '') === 'save') {
+        $u = trim((string)($inB['user'] ?? ''));
+        $p = (string)($inB['pass'] ?? '');
+        if ($u === '') { echo json_encode(['ok'=>false, 'error'=>'Username is required.']); exit; }
+        $hash = (string)($curB['hash'] ?? '');
+        if ($p !== '') { if (strlen($p) < 4) { echo json_encode(['ok'=>false, 'error'=>'Password must be at least 4 characters.']); exit; } $hash = password_hash($p, PASSWORD_DEFAULT); }
+        if ($hash === '') { echo json_encode(['ok'=>false, 'error'=>'Set a password for the first time.']); exit; }
+        $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true);
+        @file_put_contents($bf, json_encode(['user'=>$u, 'hash'=>$hash, 'updated'=>date('c')]));
+        echo json_encode(['ok'=>true, 'configured'=>true, 'user'=>$u]); exit;
+    }
+    echo json_encode(['ok'=>true, 'configured'=>(!empty($curB['user']) && !empty($curB['hash'])), 'user'=>(string)($curB['user'] ?? '')]);
+    exit;
+}
+
 // --- login gate (master password = admin; or a per-user account) ---
 $justLoggedIn = false;
 if (isset($_POST['app_password'])) {
@@ -1429,6 +1452,7 @@ let LOANFORM = { type:'person', name:'', amount:'', date:'', expected:'', note:'
 let FUNDFORM = { name:'', balance:'', msg:'', err:false };
 const AUDREY_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'audrey.php';
 const TASKBOARD_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'tasks_board.php';
+const BEN_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'ben.php';
 function copyBoard(btn){ try{ navigator.clipboard.writeText(TASKBOARD_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1500);}catch(e){} }
 let BK = { folder:'', running:false, msg:'', msgErr:false, loaded:false,
            pick:{ open:false, loading:false, current:null, folders:[], roots:[], err:'' } };
@@ -1621,7 +1645,7 @@ function render(){
   if(TAB==='latepay'){ p.innerHTML = vLatePay(); if(!LATE.loaded && !LATE.loading) lateLoad(); }
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
-  if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin) whLoad(); }
+  if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); benStatusLoad(); } }
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
@@ -4221,6 +4245,24 @@ function whLoad(){
       ${recent?`<div style="border-top:1px dashed var(--line);padding-top:6px">${recent}</div>`:''}`;
   }).catch(()=>{ const b=document.getElementById('whStatusBox'); if(b) b.innerHTML='<span style="color:var(--bad)">Status check failed.</span>'; });
 }
+function benStatusLoad(){
+  const el=document.getElementById('benStatus'); if(!el) return;
+  fetch('?bencreds=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    const e=document.getElementById('benStatus'); if(!e) return;
+    if(j&&j.ok&&j.configured){ e.innerHTML='<span style="color:var(--good)">● Active</span> — username <b>'+askEsc(j.user)+'</b>. Enter a new password to change it.'; const u=document.getElementById('benUser'); if(u&&!u.value) u.value=j.user; }
+    else e.innerHTML='<span style="color:var(--bad)">● Not set up yet</span> — choose a username &amp; password to enable the portal.';
+  }).catch(()=>{});
+}
+function benSave(){
+  const u=(document.getElementById('benUser')||{}).value||'';
+  const p=(document.getElementById('benPass')||{}).value||'';
+  if(!u.trim()){ alert('Enter a username.'); return; }
+  fetch('?bencreds=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',user:u,pass:p})}).then(r=>r.json()).then(j=>{
+    if(j&&j.ok){ const pw=document.getElementById('benPass'); if(pw) pw.value=''; benStatusLoad(); alert('Ben Portal access saved.'); }
+    else alert((j&&j.error)||'Could not save.');
+  }).catch(e=>alert('Error: '+e));
+}
+function benCopy(btn){ try{ navigator.clipboard.writeText(BEN_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
 function vSettings(){
   const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
   const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -4236,6 +4278,21 @@ function vSettings(){
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn sec" style="width:auto;padding:7px 13px;font-size:12px" onclick="whLoad()">↻ Refresh status</button>
       <span class="muted" style="font-size:10.5px">Endpoint: <code>index.php?hook=zoho</code> (secret lives in config.php)</span>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid #7C3AED">
+    ${sec('🔐 Ben Portal access')}
+    <div class="muted" style="font-size:12px;margin-bottom:10px">A private, login-protected report for <b>Ben</b> showing <b>all 2025–2026 invoices</b> for the Fabrimetal / CIMMETAL / SteelRwa group. Set the username &amp; password here — leave the password blank to keep the current one.</div>
+    <div id="benStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
+    <div class="grid2" style="gap:10px">
+      <div><label>Username</label><input id="benUser" type="text" autocomplete="off" placeholder="e.g. ben" style="margin-bottom:0"></div>
+      <div><label>Password</label><input id="benPass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn" style="width:auto;padding:9px 16px" onclick="benSave()">Save access</button>
+      <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="ben.php" target="_blank" rel="noopener">Open portal ↗</a>
+      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benCopy(this)">Copy link</button>
     </div>
   </div>`:''}
 
