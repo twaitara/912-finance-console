@@ -122,12 +122,20 @@ if (!function_exists('bp_build')) {
         if (mb_strlen($s) > 120) $s = mb_substr($s, 0, 118) . '…';
         return $s;
     }
-    function bp_label($s) {
+    /* specific, human-authored overrides only (used for subjects too) */
+    function bp_label_specific($s) {
         $t = strtolower((string)$s);
-        if ($t === '') return '';
+        if ($t === '') return (string)$s;
         if (strpos($t, 'cloud hosting') !== false) return 'Temporary SAP Server Hosting (Main Server was Down)';
         if (strpos($t, 'managed sap hosting') !== false) return 'Managed SAP Hosting Environment';
         if (strpos($t, 'winsvrstdcore') !== false || (strpos($t, 'setup fee') !== false && strpos($t, 'server') !== false)) return 'Server Setup Fee';
+        return (string)$s;
+    }
+    /* full auto-label for line-item text (specific overrides + generic bucket) */
+    function bp_label($s) {
+        $t = strtolower((string)$s);
+        if ($t === '') return '';
+        $sp = bp_label_specific($s); if ($sp !== (string)$s) return $sp;
         $svc = ['intrusion', 'prevention', 'duo security', 'firewall', 'antivirus', 'endpoint', 'sql', 'server', 'software', 'licen', 'subscription', 'hosting', 'backup', 'cyber', 'vpn', 'monitoring', 'services offered', 'it support', 'maintenance', 'support', 'office 365', 'microsoft 365', 'ssl certificate', 'domain'];
         foreach ($svc as $kw) { if (strpos($t, $kw) !== false) return 'Support Services'; }
         return (string)$s;
@@ -151,7 +159,7 @@ if (!function_exists('bp_build')) {
     }
     function bp_build($force) {
         $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        $cache = $dir . '/ben_invoices_v5.json';
+        $cache = $dir . '/ben_invoices_v6.json';
         if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
         $cfg = zoho_config(); $companies = bp_companies(); $map = [];
         foreach ($companies as $c) $map[bp_key($c)] = $c;
@@ -170,18 +178,28 @@ if (!function_exists('bp_build')) {
             $more = $d['page_context']['has_more_page'] ?? false; $page++;
         } while ($more && !$stop && $page <= 80);
 
-        $descFile = $dir . '/ben_desc_cache.json';
+        // "What it's for": prefer the invoice Subject if present, else summarise the
+        // line items. Cached per id as {d: text, s: 1 if from subject}.
+        $descFile = $dir . '/ben_desc_cache_v2.json';
         $descCache = is_file($descFile) ? (json_decode(@file_get_contents($descFile), true) ?: []) : [];
         $descDirty = false; $fetched = 0; $CAP = 250;
         foreach ($rows as &$r) {
-            $id = $r['id']; $raw = '';
-            if ($id !== '' && array_key_exists($id, $descCache)) { $raw = (string)$descCache[$id]; }
+            $id = $r['id']; $d = ''; $isSub = false;
+            if ($id !== '' && isset($descCache[$id]) && is_array($descCache[$id])) { $d = (string)($descCache[$id]['d'] ?? ''); $isSub = !empty($descCache[$id]['s']); }
             elseif ($id !== '' && $fetched < $CAP) {
-                try { [$dv, $dc] = zoho_api('GET', 'invoices/' . rawurlencode($id), null, []); if ($dc < 400) $raw = bp_desc_summary($dv['invoice']['line_items'] ?? []); }
-                catch (Exception $e) { $raw = ''; }
-                $descCache[$id] = $raw; $descDirty = true; $fetched++;
+                try {
+                    [$dv, $dc] = zoho_api('GET', 'invoices/' . rawurlencode($id), null, []);
+                    if ($dc < 400 && !empty($dv['invoice'])) {
+                        $inv = $dv['invoice'];
+                        $subject = trim((string)($inv['subject'] ?? ''));
+                        if ($subject === '') { foreach (($inv['custom_fields'] ?? []) as $cf) { if (stripos((string)($cf['label'] ?? ''), 'subject') !== false) { $subject = trim((string)($cf['value'] ?? '')); if ($subject !== '') break; } } }
+                        if ($subject !== '') { $isSub = true; $d = (mb_strlen($subject) > 140) ? (mb_substr($subject, 0, 138) . '…') : $subject; }
+                        else { $isSub = false; $d = bp_desc_summary($inv['line_items'] ?? []); }
+                    }
+                } catch (Exception $e) { $d = ''; }
+                $descCache[$id] = ['d'=>$d, 's'=>$isSub ? 1 : 0]; $descDirty = true; $fetched++;
             }
-            $r['autoDesc'] = bp_label($raw);
+            $r['autoDesc'] = $isSub ? bp_label_specific($d) : bp_label($d);
             $r['desc'] = $r['autoDesc'];
         }
         unset($r);
@@ -582,7 +600,7 @@ if (isset($_GET['bendesc'])) {
         foreach (($yd['companies'] ?? []) as $c) {
             foreach (($c['invoices'] ?? []) as $iv) {
                 $num = (string)($iv['number'] ?? '');
-                $list[] = ['number'=>$num, 'company'=>(string)$c['name'], 'year'=>(string)$y, 'date'=>(string)($iv['date'] ?? ''), 'auto'=>(string)($iv['autoDesc'] ?? ''), 'override'=>($num !== '' && isset($ov[$num])) ? (string)$ov[$num] : ''];
+                $list[] = ['id'=>(string)($iv['id'] ?? ''), 'number'=>$num, 'company'=>(string)$c['name'], 'year'=>(string)$y, 'date'=>(string)($iv['date'] ?? ''), 'auto'=>(string)($iv['autoDesc'] ?? ''), 'override'=>($num !== '' && isset($ov[$num])) ? (string)$ov[$num] : ''];
             }
         }
     }
@@ -606,6 +624,26 @@ if (isset($_GET['benpref'])) {
     }
     echo json_encode(['ok'=>true, 'preview'=>bp_prefs($pfDir)['preview']]);
     exit;
+}
+
+/* Admin-only: stream any invoice PDF (for the admin-side preview in the Ben
+   descriptions editor). */
+if (isset($_GET['invpdf'])) {
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo 'Admins only.'; exit; }
+    require_once __DIR__ . '/zoho.php';
+    $pid = preg_replace('/[^0-9]/', '', (string)$_GET['invpdf']);
+    if ($pid === '') { http_response_code(404); echo 'Not found.'; exit; }
+    $cfg = zoho_config();
+    try { $token = zoho_access_token(); } catch (\Throwable $e) { http_response_code(502); echo 'Auth error.'; exit; }
+    $url = $cfg['api_domain'] . '/books/v3/invoices/' . rawurlencode($pid) . '?' . http_build_query(['organization_id'=>$cfg['organization_id'], 'accept'=>'pdf']);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . $token, 'Accept: application/pdf']]);
+    $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Invoice preview is unavailable right now.'; exit; }
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="invoice-' . $pid . '.pdf"');
+    header('X-Content-Type-Options: nosniff');
+    echo $body; exit;
 }
 
 // --- login gate (master password = admin; or a per-user account) ---
@@ -4696,6 +4734,7 @@ function benDescRow(iv){
       <div class="muted" style="font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${askEsc(iv.company)} · ${askEsc(iv.year)}</div>
     </div>
     <input type="text" value="${benAttr(iv.override)}" placeholder="${benAttr(iv.auto||'—')}" onchange="benDescSave('${benJs(iv.number)}',this.value,this)" style="flex:1;margin-bottom:0;font-size:12px;padding:6px 9px">
+    ${iv.id?`<button class="btn sec" style="width:auto;padding:5px 9px;font-size:11px" title="Preview invoice PDF" onclick="benDescPreview('${benJs(iv.id)}','${benJs(iv.number)}')">👁</button>`:''}
     <button class="btn sec" style="width:auto;padding:5px 9px;font-size:11px" title="Use the automatic label" onclick="benDescReset('${benJs(iv.number)}',this)">↺</button>
   </div>`;
 }
@@ -4718,6 +4757,7 @@ function benDescSave(num,label,el){
   }).catch(e=>{ if(el) el.disabled=false; alert('Error: '+e); });
 }
 function benDescReset(num,btn){ const el=(btn&&btn.parentNode)?btn.parentNode.querySelector('input'):null; if(el) el.value=''; benDescSave(num,'',el); }
+function benDescPreview(id,number){ if(!id) return; window.open('?invpdf='+encodeURIComponent(id),'_blank','noopener'); }
 function vSettings(){
   const fund = CFG.fund, ratePct = +(CFG.rate*100).toFixed(2), vatPct = +((CFG.vat||0)*100).toFixed(2);
   const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
