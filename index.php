@@ -247,6 +247,30 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         exit;
     }
 
+    // Invoice PDF preview — streamed from Zoho via our token. Only serves an
+    // invoice that belongs to Ben's allowed companies/years (no enumeration).
+    if (isset($_GET['pdf'])) {
+        if (!$bpAuthed) { http_response_code(403); echo 'Not signed in.'; exit; }
+        $pid = preg_replace('/[^0-9]/', '', (string)$_GET['pdf']);
+        $allowed = false;
+        if ($pid !== '') {
+            try { $bpData = bp_build(false); } catch (\Throwable $e) { http_response_code(500); echo 'Error.'; exit; }
+            foreach (($bpData['years'] ?? []) as $yd) { foreach ($yd['companies'] as $c) { foreach ($c['invoices'] as $iv) { if ((string)($iv['id'] ?? '') === $pid) { $allowed = true; break 3; } } } }
+        }
+        if (!$allowed) { http_response_code(404); echo 'Not found.'; exit; }
+        $cfg = zoho_config();
+        try { $token = zoho_access_token(); } catch (\Throwable $e) { http_response_code(502); echo 'Auth error.'; exit; }
+        $url = $cfg['api_domain'] . '/books/v3/invoices/' . rawurlencode($pid) . '?' . http_build_query(['organization_id'=>$cfg['organization_id'], 'accept'=>'pdf']);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . $token, 'Accept: application/pdf']]);
+        $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Invoice preview is unavailable right now.'; exit; }
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="invoice-' . $pid . '.pdf"');
+        header('X-Content-Type-Options: nosniff');
+        echo $body; exit;
+    }
+
     $bpEsc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
     ?>
 <!doctype html><html><head><meta charset="utf-8">
@@ -308,7 +332,16 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
   .yhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 2px 12px;font-size:13.5px}
   .yhead .yt{font-weight:600;color:#334155}
   td.desc{color:#334155;max-width:360px;font-size:11.5px}
-  @media print{ .top,.ytabs,.pgfoot,.bar{display:none!important} body{background:#fff;font-size:12px} .card{break-inside:avoid;box-shadow:none} .wrap{max-width:none;padding:0} }
+  .pvlink{color:var(--blue);cursor:pointer;font-weight:600;text-decoration:underline;text-decoration-style:dotted}
+  .pvlink:hover{color:var(--orange)}
+  .pvmodal{position:fixed;inset:0;z-index:200;background:rgba(15,23,34,.6);display:none;align-items:center;justify-content:center;padding:18px}
+  .pvmodal.open{display:flex}
+  .pvcard{background:#fff;width:100%;max-width:860px;height:90vh;border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(8,16,24,.5)}
+  .pvhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 15px;border-bottom:1px solid var(--line);background:#FAFBFE}
+  .pvhead b{font-size:13px}
+  .pvx{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:15px;color:var(--mute)}
+  .pvx:hover{background:#FDECEA;color:var(--bad);border-color:#F4C7C0}
+  @media print{ .top,.ytabs,.pgfoot,.bar,.pvmodal{display:none!important} body{background:#fff;font-size:12px} .card{break-inside:avoid;box-shadow:none} .wrap{max-width:none;padding:0} }
   @media(max-width:560px){ .sum .card{min-width:120px} .cohead .mtot{width:100%;text-align:left;margin-left:0} td.desc{max-width:none} }
 </style></head>
 <body>
@@ -341,6 +374,18 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
 </div>
 <?php else: ?>
 <div class="wrap" id="app"><div class="card muted" style="padding:14px">Loading invoices…</div></div>
+<div id="pvModal" class="pvmodal" onclick="if(event.target===this)closePreview()">
+  <div class="pvcard">
+    <div class="pvhead">
+      <b id="pvTitle">Invoice</b>
+      <span style="display:flex;gap:8px;align-items:center">
+        <a id="pvOpen" href="#" target="_blank" rel="noopener" class="tbtn" style="color:var(--ink);border-color:var(--line);background:#fff">Open ↗</a>
+        <button class="pvx" onclick="closePreview()">✕</button>
+      </span>
+    </div>
+    <iframe id="pvFrame" src="about:blank" title="Invoice preview" style="flex:1;border:0;width:100%;background:#525659"></iframe>
+  </div>
+</div>
 <div class="pgfoot"><div class="cn">Waitara Holdings Group of Companies · Ben Portal</div><div class="sc">CONFIDENTIAL</div></div>
 <script>
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -351,6 +396,16 @@ function bar(s){ const b=document.getElementById('bar'); if(!b)return; if(s){b.s
 async function load(refresh){ bar(true); try{ const r=await fetch('index.php?portal=ben&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'}); DATA=await r.json(); }catch(e){ DATA={ok:false,error:String(e)}; } if(!YEAR&&DATA&&DATA.years){ const y=DATA.years; YEAR=((y['2026']||{}).count>0)?'2026':(((y['2025']||{}).count>0)?'2025':'2026'); } bar(false); render(); }
 function pillClass(s){ s=(s||'').toLowerCase(); return ['paid','overdue','sent','unpaid','partially_paid'].includes(s)?s:'other'; }
 function anyOut(m){ return Object.values(m||{}).some(v=>v>0.5); }
+function openPreview(id,number){
+  if(!id) return;
+  const url='index.php?portal=ben&pdf='+encodeURIComponent(id);
+  document.getElementById('pvTitle').textContent='Invoice '+(number||'');
+  document.getElementById('pvOpen').href=url;
+  document.getElementById('pvFrame').src=url;
+  document.getElementById('pvModal').classList.add('open');
+}
+function closePreview(){ document.getElementById('pvModal').classList.remove('open'); document.getElementById('pvFrame').src='about:blank'; }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePreview(); });
 function setYear(y){ YEAR=y; render(); window.scrollTo(0,0); }
 function printYear(){ window.print(); }
 function render(){
@@ -369,7 +424,7 @@ function render(){
   if(!cos.length){ html+='<div class="card muted" style="padding:16px">No invoices for '+YEAR+'.</div>'; app.innerHTML=html; return; }
   cos.forEach(c=>{
     const rows=c.invoices.map(iv=>`<tr>
-        <td>${esc(iv.number)}</td>
+        <td><span class="pvlink" onclick="openPreview('${esc(iv.id)}','${esc(iv.number)}')">${esc(iv.number)}</span></td>
         <td>${esc(iv.date||'')}</td>
         <td class="desc">${esc(iv.desc||'—')}</td>
         <td><span class="pill ${pillClass(iv.status)}">${esc((iv.status||'').replace(/_/g,' '))}</span></td>
