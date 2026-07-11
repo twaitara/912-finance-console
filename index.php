@@ -383,7 +383,16 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
   .tbtn{border:1px solid rgba(255,255,255,.2);color:#fff;background:rgba(255,255,255,.1);border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;transition:background .15s;display:inline-flex;align-items:center;gap:6px}
   .tbtn:hover{background:rgba(255,255,255,.18)}
   .tbtn.ico{padding:7px}
-  .wrap{max-width:1000px;margin:0 auto;padding:12px 12px 24px}
+  .wrap{max-width:1120px;margin:0 auto;padding:12px 12px 24px}
+  .layout{display:flex;gap:14px;align-items:flex-start}
+  .main{flex:1;min-width:0}
+  .side{flex:0 0 300px;position:sticky;top:60px}
+  .chrow{margin-bottom:9px}
+  .chrow .cl{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+  .chrow .cl b{font-weight:600}.chrow .cl span{font-variant-numeric:tabular-nums;color:var(--mute)}
+  .chbar{height:8px;background:var(--hair);border-radius:6px;overflow:hidden}
+  .chbar > i{display:block;height:100%;background:linear-gradient(90deg,var(--orange),#ffa657);border-radius:6px}
+  @media(max-width:820px){ .layout{flex-direction:column} .side{position:static;flex-basis:auto;width:100%} }
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px}
   .muted{color:var(--mute);font-size:11px}
   .lab{font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
@@ -490,7 +499,10 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
   <div class="pgfoot"><div class="cn">Waitara Holdings Group of Companies</div><div class="sc">SECURE PORTAL</div></div>
 </div>
 <?php else: ?>
-<div class="wrap" id="app"><div class="card muted" style="padding:14px">Loading invoices…</div></div>
+<div class="wrap layout">
+  <div class="main" id="app"><div class="card muted" style="padding:14px">Loading invoices…</div></div>
+  <aside class="side" id="side"></aside>
+</div>
 <div id="pvModal" class="pvmodal" onclick="if(event.target===this)closePreview()">
   <div class="pvcard">
     <div class="pvhead">
@@ -558,6 +570,18 @@ function bar(s){ const b=document.getElementById('bar'); if(!b)return; if(s){b.s
 async function load(refresh){ bar(true); try{ const r=await fetch('index.php?portal=ben&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'}); DATA=await r.json(); }catch(e){ DATA={ok:false,error:String(e)}; } if(!YEAR&&DATA&&DATA.years){ const y=DATA.years; YEAR=((y['2026']||{}).count>0)?'2026':(((y['2025']||{}).count>0)?'2025':'2026'); } bar(false); render(); }
 function pillClass(s){ s=(s||'').toLowerCase(); return ['paid','overdue','sent','unpaid','partially_paid'].includes(s)?s:'other'; }
 function anyOut(m){ return Object.values(m||{}).some(v=>v>0.5); }
+const COUNTRY={'Fabri Metal Congo SARL':'DR Congo','CIMMETAL Burkina':'Burkina Faso','SteelRwa Industries Ltd':'Rwanda','Fabrimetal Senegal Sebikotane':'Senegal','Fabrimetal Burundi':'Burundi','Fabrimetal Angola':'Angola','IMAFER Mali':'Mali','Fabrimetal Ghana Ltd.':'Ghana','Fabrimetal Benin':'Benin','MMD':'MMD','Fabrimetal Senegal SINDIA':'Senegal'};
+function countryOf(n){ return COUNTRY[n]||n; }
+function renderChart(){
+  const side=document.getElementById('side'); if(!side) return;
+  const yd=((DATA&&DATA.years)||{})[YEAR];
+  if(!yd||!(yd.companies||[]).length){ side.innerHTML=''; return; }
+  const tot={};
+  yd.companies.forEach(c=>{ let sum=0; Object.values(c.invoicedByCur||{}).forEach(v=>sum+=v); const k=countryOf(c.name); tot[k]=(tot[k]||0)+sum; });
+  const rows=Object.entries(tot).sort((a,b)=>b[1]-a[1]); const max=rows[0][1]||1;
+  const bars=rows.map(([k,v])=>`<div class="chrow"><div class="cl"><b>${esc(k)}</b><span>${Math.round(v).toLocaleString('en-US')}</span></div><div class="chbar"><i style="width:${Math.max(3,Math.round(v/max*100))}%"></i></div></div>`).join('');
+  side.innerHTML=`<div class="card" style="padding:14px"><div style="font-weight:700;font-size:12.5px;margin-bottom:12px">Spend by country · ${YEAR}</div>${bars}</div>`;
+}
 function openPreview(id,number){
   if(!id) return;
   const url='index.php?portal=ben&pdf='+encodeURIComponent(id);
@@ -572,7 +596,7 @@ function setYear(y){ YEAR=y; render(); window.scrollTo(0,0); }
 function printYear(){ window.print(); }
 function render(){
   const app=document.getElementById('app'); if(!DATA) return;
-  if(DATA.ok===false){ app.innerHTML='<div class="card" style="color:var(--bad);padding:14px">Error: '+esc(DATA.error||'failed')+'</div>'; return; }
+  if(DATA.ok===false){ app.innerHTML='<div class="card" style="color:var(--bad);padding:14px">Error: '+esc(DATA.error||'failed')+'</div>'; renderChart(); return; }
   const years=DATA.years||{};
   if(!YEAR) YEAR=((years['2026']||{}).count>0)?'2026':'2025';
   const yd=years[YEAR]||{count:0,companies:[],invoicedByCur:{},outstandingByCur:{}};
@@ -583,7 +607,7 @@ function render(){
     <div><b style="font-size:15px">${YEAR}</b> · ${yd.count||0} invoice${yd.count===1?'':'s'} across ${cos.length} compan${cos.length===1?'y':'ies'}</div>
     <div class="yt">Billed in ${YEAR}: ${esc(fmtMap(yd.invoicedByCur))}${anyOut(yd.outstandingByCur)?` &nbsp;·&nbsp; <span class="muted">Open: ${esc(fmtMap(yd.outstandingByCur))}</span>`:''}</div>
   </div>`;
-  if(!cos.length){ html+='<div class="card muted" style="padding:16px">No invoices for '+YEAR+'.</div>'; app.innerHTML=html; return; }
+  if(!cos.length){ html+='<div class="card muted" style="padding:16px">No invoices for '+YEAR+'.</div>'; app.innerHTML=html; renderChart(); return; }
   cos.forEach(c=>{
     const rows=c.invoices.map(iv=>`<tr>
         <td>${PREVIEW?`<span class="pvlink" onclick="openPreview('${esc(iv.id)}','${esc(iv.number)}')">${esc(iv.number)}</span>`:esc(iv.number)}</td>
@@ -602,6 +626,7 @@ function render(){
   });
   html+=`<div class="muted" style="margin:10px 2px">Updated ${DATA.asOf?new Date(DATA.asOf).toLocaleString('en-GB'):'now'}.</div>`;
   app.innerHTML=html;
+  renderChart();
 }
 fillIcons(); updateThemeIcon();
 load(false);
