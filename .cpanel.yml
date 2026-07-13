@@ -6,4 +6,7 @@ deployment:
     # and can never overwrite the live secrets in $DEPLOYPATH.
     - /bin/cp *.php $DEPLOYPATH
     - /bin/cp .user.ini $DEPLOYPATH
+    - /bin/cp .htaccess $DEPLOYPATH
     - /bin/cp -R api $DEPLOYPATH
+    # Security hardening: deny direct web access to the data/ cache (Zoho token + JSON)
+    - /bin/cp data/.htaccess $DEPLOYPATH/data/

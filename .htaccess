@@ -7,3 +7,12 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule . /index.php [L]
 </IfModule>
+
+# --- Hardening: block direct web access to sensitive files ---
+# (config.php is PHP so it won't leak on its own; this is belt-and-braces.)
+<FilesMatch "\.(json|sql|md|zip|sqlite|log)$">
+  Require all denied
+</FilesMatch>
+<Files "config.php">
+  Require all denied
+</Files>

@@ -1,0 +1,2 @@
+# Block all direct web access to this folder (Zoho token cache + business JSON).
+Require all denied
