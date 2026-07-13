@@ -34,6 +34,7 @@ function pc_table(PDO $pdo){
         "ADD COLUMN actual_profit DECIMAL(14,2) DEFAULT 0 AFTER actual_cost",
         "ADD COLUMN is_project TINYINT NOT NULL DEFAULT 0 AFTER actual_profit",
         "ADD COLUMN project_closed TINYINT NOT NULL DEFAULT 0 AFTER is_project",
+        "ADD COLUMN imported TINYINT NOT NULL DEFAULT 0 AFTER project_closed",
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
 }
 

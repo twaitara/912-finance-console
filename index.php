@@ -6830,6 +6830,7 @@ function mqListHtml(){
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
+        ${(ME.admin && (q.imported==1||q.imported===true) && !isProject && !isInvoiced && q.zoho_estimate_id)?`<button class="btn sec qb" ${tip('Re-pull the latest line items and totals from Zoho (if you changed them there)')} onclick="mqRefreshZoho(${q.id},'${qesc(q.zoho_estimate_id)}')" ${busy?'disabled':''}>${busy?'Refreshing…':'↻ Refresh from Zoho'}</button>`:''}
         ${!pushed?`<button class="btn qb" ${tip('Send this quote to Zoho for approval')} onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Check the latest approval status from Zoho')} onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
         ${ME.admin?`<select class="qb" title="Change status" onchange="mqSetStatus(${q.id},this.value)" style="width:auto;font-size:11.5px;padding:6px 8px;margin-bottom:0;border-radius:9px">
@@ -7003,6 +7004,14 @@ function mqEdit(id){ fetch('api/quotes.php',{method:'POST',credentials:'same-ori
     QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,acost:it.actual_cost||0,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}];
     QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; qbOpen();
   }).catch(e=>alert(''+e)); }
+function mqRefreshZoho(id,eid){ if(!confirm("Re-pull this quote's line items and totals from Zoho?\n\nThis replaces the current line items with Zoho's latest (any budgeted costs set here are reset)."))return;
+  MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_import.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'import',estimate_id:eid})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ const w=j.warnings||[]; MQ.msg='Refreshed from Zoho.'+(w.length?(' ⚠ '+w.join(' ')):''); MQ.err=w.length>0; MQ.loaded=false; mqLoad(); }
+    else { MQ.msg=j.error||'Refresh failed.'; MQ.err=true; render(); }
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
 function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was pushed, it stays in Zoho.)'))return;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})})
   .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=MQ.quotes.filter(q=>q.id!==id); render(); } else alert(j.error||'Delete failed'); }).catch(e=>alert(''+e)); }

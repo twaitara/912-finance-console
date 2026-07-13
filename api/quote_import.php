@@ -130,7 +130,7 @@ try {
             if (in_array($ex['status'], ['project','invoiced'], true)) {
                 echo json_encode(['ok'=>true, 'already'=>true, 'quote'=>quote_out($ex), 'warnings'=>$warnings]); exit;
             }
-            $pdo->prepare("UPDATE quotes SET zoho_customer_id=?, customer_name=?, reference=?, subject=?, quote_date=?, expiry_date=?, currency=?, line_items=?, notes=?, terms=?, sub_total=?, tax_amount=?, total_cost=?, profit=?, total=?, status=? WHERE id=?")
+            $pdo->prepare("UPDATE quotes SET zoho_customer_id=?, customer_name=?, reference=?, subject=?, quote_date=?, expiry_date=?, currency=?, line_items=?, notes=?, terms=?, sub_total=?, tax_amount=?, total_cost=?, profit=?, total=?, status=?, imported=1 WHERE id=?")
                 ->execute([$custId, $custNm, $ref, $subj, $qdate, $edate, $cur, $itemsJson, $notes, $terms, $sub, $tax, $costTotal, $profit, $total, $status, (int)$ex['id']]);
             $id = (int)$ex['id'];
             activity_log($pdo, $me, 're-imported quote from Zoho', $number . ' · ' . $custNm . ' (' . count($items) . ' items)');
@@ -141,8 +141,8 @@ try {
         $pdo->prepare("INSERT INTO quotes
               (created_by, created_email, zoho_customer_id, customer_name, reference, subject, quote_date, expiry_date,
                currency, line_items, notes, terms, sub_total, tax_amount, discount_value, discount_type, discount_amount,
-               total_cost, profit, total, status, zoho_estimate_id, zoho_estimate_number)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+               total_cost, profit, total, status, zoho_estimate_id, zoho_estimate_number, imported)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)")
             ->execute([
                $me, $_SESSION['email'] ?? '', $custId, $custNm, $ref, $subj, $qdate, $edate,
                $cur, $itemsJson, $notes, $terms, $sub, $tax, 0, 'percent', 0, $costTotal, $profit, $total, $status, $eid, $number,
