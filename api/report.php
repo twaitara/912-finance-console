@@ -5,6 +5,7 @@
 session_start();
 header('Content-Type: application/json');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
+if (empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'The profit report is admin-only.']); exit; }
 require __DIR__ . '/../zoho.php';
 @set_time_limit(300);
 

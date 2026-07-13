@@ -2217,7 +2217,7 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals'||t==='report') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
@@ -6427,6 +6427,7 @@ const STATUS_GROUPS = [
   {key:'pending',  label:'Pending',  set:['pending_approval','draft','local_draft']},
   {key:'declined', label:'Declined', set:['declined','rejected']},
   {key:'sent',     label:'Sent',     set:['sent']},
+  {key:'project',  label:'In progress', set:['project']},
   {key:'invoiced', label:'Invoiced', set:['invoiced']},
 ];
 function mqStatusSet(){ const s=new Set(); MQ.statuses.forEach(k=>{ const g=STATUS_GROUPS.find(x=>x.key===k); if(g) g.set.forEach(v=>s.add(v)); }); return s; }
@@ -6464,6 +6465,7 @@ function quoteBadge(status){
     rejected:['Declined','#D64933','#FDECEA'],
     sent:['Sent','#2350C5','#EEF2FE'],
     accepted:['Accepted ✓','#0F7A34','#E7F6EC'],
+    project:['In progress','#7A5AF8','#EEEAFE'],
     invoiced:['Invoiced','#2350C5','#EEF2FE'],
     expired:['Expired','#64748B','#F1F4F8']
   };
@@ -6474,6 +6476,7 @@ function quoteAccent(s){
   if(s==='approved'||s==='accepted') return 'var(--good)';
   if(s==='declined'||s==='rejected') return 'var(--bad)';
   if(s==='pending_approval') return '#E0A400';
+  if(s==='project') return '#7A5AF8';
   if(s==='sent'||s==='invoiced') return 'var(--blue)';
   return '#CBD5E1';
 }
@@ -6483,7 +6486,7 @@ function vNewQuote(){
   const cur=QB.currency||'KES';
   const taxOpt=t=>`<option value="vat" ${t!=='none'?'selected':''}>VAT (${Math.round((CFG.vat||0.16)*100)}%)</option><option value="none" ${t==='none'?'selected':''}>No tax</option>`;
   const rows=QB.items.map((it,i)=>`
-    <div class="qbrow${ME.admin?'':' qb-noac'}">
+    <div class="qbrow qb-noac">
       <div class="qbc-item">
         <div style="position:relative;margin-bottom:4px">
           <input id="qbIN${i}" type="text" autocomplete="off" placeholder="Item name" value="${qesc(it.name)}" oninput="qbItemName(${i},this.value)" onfocus="qbItemNameFocus(${i})" onblur="qbItemNameBlur(${i})" style="margin-bottom:0;font-weight:600;width:100%">
@@ -6493,8 +6496,7 @@ function vNewQuote(){
       </div>
       <div class="qbc-qty"><span class="qbc-lab">Qty</span><input type="number" step="0.01" min="0" value="${qesc(it.qty)}" oninput="qbItem(${i},'qty',this.value)" style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-rate"><span class="qbc-lab">Rate</span><input type="number" step="0.01" min="0" value="${qesc(it.rate)}" oninput="qbItem(${i},'rate',this.value)" style="margin-bottom:0;text-align:right"></div>
-      <div class="qbc-cost"><span class="qbc-lab">Unit cost</span><input type="number" step="0.01" min="0" placeholder="0" value="${qesc(it.cost)}" oninput="qbItem(${i},'cost',this.value)" title="Estimated cost per unit (internal)" style="margin-bottom:0;text-align:right"></div>
-      ${ME.admin?`<div class="qbc-acost"><span class="qbc-lab">Actual cost</span><input type="number" step="0.01" min="0" placeholder="—" value="${qesc(it.acost)}" oninput="qbItem(${i},'acost',this.value)" title="Real cost per unit once known (overrides unit cost for profit)" style="margin-bottom:0;text-align:right"></div>`:''}
+      <div class="qbc-cost"><span class="qbc-lab">Budgeted unit cost</span><input type="number" step="0.01" min="0" placeholder="0" value="${qesc(it.cost)}" oninput="qbItem(${i},'cost',this.value)" title="Budgeted/estimated cost per unit (internal). Actual cost is captured at conversion." style="margin-bottom:0;text-align:right"></div>
       <div class="qbc-tax"><span class="qbc-lab">Tax</span><select onchange="qbItem(${i},'tax',this.value)" style="margin-bottom:0">${taxOpt(it.tax)}</select></div>
       <div class="qbc-amt"><span class="qbc-lab">Amount</span><div id="qbAmt${i}" style="font-weight:700;font-size:13px">${qbAmtCellHtml(it)}</div></div>
       <button class="qbc-del btn sec" onclick="qbDelRow(${i})" title="Remove">✕</button>
@@ -6525,9 +6527,9 @@ function vNewQuote(){
   </div>
 
   <div class="card">
-    <div class="qbhead${ME.admin?'':' qb-noac'}">
+    <div class="qbhead qb-noac">
       <div class="qbc-item">Item details</div><div class="qbc-qty">Qty</div><div class="qbc-rate">Rate</div>
-      <div class="qbc-cost">Unit cost</div>${ME.admin?`<div class="qbc-acost">Actual cost</div>`:''}<div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
+      <div class="qbc-cost">Budgeted unit cost</div><div class="qbc-tax">Tax</div><div class="qbc-amt">Amount</div><div class="qbc-del"></div>
     </div>
     ${rows}
     <button class="btn sec" style="width:auto;padding:7px 12px;font-size:12px;margin-top:10px" ${tip('Add another item line to this quote')} onclick="qbAddRow()">⊕ Add new row</button>
@@ -6770,10 +6772,12 @@ function mqListHtml(){
     const pushed=!!q.zoho_estimate_id; const isOpen=!!MQ.open[q.id]; const busy=MQ.busyId===q.id;
     const acc=quoteAccent(q.status);
     const canSend=pushed && ['approved','sent','accepted'].includes(q.status);
-    // technicians may generate the job card once (approved → invoiced), but not re-download after; admins always can
-    const canJob=pushed && (ME.admin?['approved','sent','accepted','invoiced']:['approved','sent','accepted']).includes(q.status);
+    // lifecycle: approved → (Convert to project) → project → (Bill client) → invoiced
+    const isProject=q.status==='project';
+    const canProject=ME.admin && pushed && ['approved','sent','accepted'].includes(q.status);
     const isInvoiced=q.status==='invoiced'||!!q.zoho_invoice_number;
-    const canCapture=isInvoiced && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || q.created_by===ME.user);
+    const canBill=ME.admin && isProject;
+    const canCost=(isProject||isInvoiced) && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || q.created_by===ME.user);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
                  q.zoho_invoice_number?`<span style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number)}</span>`:null,
@@ -6790,7 +6794,7 @@ function mqListHtml(){
         <div style="text-align:right;white-space:nowrap">
           <div style="color:var(--orange);font-weight:700;font-size:15px">${qesc(q.currency||'KES')} ${fmtn(q.total)}</div>
           <div style="margin-top:5px">${quoteBadge(q.status)}</div>
-          ${ME.admin?`<div style="margin-top:5px;font-size:10.5px;font-weight:600;color:${(q.profit||0)<0?'var(--bad)':'var(--good)'}">Profit ${fmtn(q.profit||0)}</div>`:''}
+          ${ME.admin?(()=>{const useActual=isProject||isInvoiced;const p=(useActual?q.actual_profit:q.profit)||0;return `<div style="margin-top:5px;font-size:10.5px;font-weight:600;color:${p<0?'var(--bad)':'var(--good)'}">${useActual?'Actual profit':'Profit'} ${fmtn(p)}</div>`;})():''}
         </div>
       </div>
       <div class="qact">
@@ -6798,15 +6802,17 @@ function mqListHtml(){
         ${(ME.admin && q.status==='pending_approval')?`<button class="btn qb" style="background:var(--good);box-shadow:none" onclick="mqApprove(${q.id})" ${busy?'disabled':''}>${busy?'Approving…':'✓ Approve'}</button>
         <button class="btn sec qb" style="color:var(--bad);border-color:#F4C7C0" onclick="mqDecline(${q.id})" ${busy?'disabled':''}>✕ Decline</button>`:''}
         ${canSend?`<button class="btn qb" ${tip('Email this quote to the customer (PDF attached)')} onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
-        ${canJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job complete? This creates the invoice and opens the job card to print')} onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Job Card'}</button>`:''}
-        ${canCapture?`<button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Enter the actual costs that went into this job, broken down per line')} onclick="jcOpen(${q.id})">💰 Capture costs</button>`:''}
+        ${canProject?`<button class="btn qb" style="background:#7A5AF8;box-shadow:none" ${tip('Start the job: capture actual costs against this quote before billing')} onclick="mqToProject(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'📋 Convert to project'}</button>`:''}
+        ${canCost?`<button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Enter or edit the actual costs that went into this job, broken down per line')} onclick="jcOpen(${q.id},'capture')">${isInvoiced?'💰 Capture costs':'💰 Costs'}</button>`:''}
+        ${canBill?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? Review costs vs profit, create the invoice, and post the expenses to Zoho')} onclick="jcOpen(${q.id},'bill')" ${busy?'disabled':''}>${busy?'Working…':'🧾 Bill client'}</button>`:''}
+        ${(ME.admin && isInvoiced)?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="window.open('api/job_card.php?id='+${q.id},'_blank')">⤓ Job card</button>`:''}
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
         ${!pushed?`<button class="btn qb" ${tip('Send this quote to Zoho for approval')} onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Check the latest approval status from Zoho')} onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
         ${ME.admin?`<select class="qb" title="Change status" onchange="mqSetStatus(${q.id},this.value)" style="width:auto;font-size:11.5px;padding:6px 8px;margin-bottom:0;border-radius:9px">
-          ${[['draft','Draft'],['pending_approval','Pending'],['approved','Approved'],['declined','Declined'],['sent','Sent'],['accepted','Accepted'],['invoiced','Invoiced'],['expired','Expired']].map(s=>`<option value="${s[0]}" ${q.status===s[0]?'selected':''}>${s[1]}</option>`).join('')}
+          ${[['draft','Draft'],['pending_approval','Pending'],['approved','Approved'],['declined','Declined'],['sent','Sent'],['accepted','Accepted'],['project','In progress'],['invoiced','Invoiced'],['expired','Expired']].map(s=>`<option value="${s[0]}" ${q.status===s[0]?'selected':''}>${s[1]}</option>`).join('')}
         </select>`:''}
         <button class="btn sec qb qb-del" onclick="mqDelete(${q.id})" title="Remove from app">✕</button>
       </div>
@@ -6941,34 +6947,54 @@ function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was p
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})})
   .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=MQ.quotes.filter(q=>q.id!==id); render(); } else alert(j.error||'Delete failed'); }).catch(e=>alert(''+e)); }
 
-/* ---------- Job costing: capture the actual cost of each invoice line ---------- */
-var JC={id:0,quote:null,admin:false,lines:[],busy:false,msg:'',err:false};
+/* ---------- Job costing: capture the actual cost of each invoice line ----------
+   Two modes:
+     'capture' — edit actual costs on an already-invoiced job (post-invoice)
+     'convert' — review budgeted vs actual before converting a quote to an invoice
+   In both, actual costs post to Zoho as expenses attached to the invoice. */
+var JC={id:0,quote:null,admin:false,mode:'capture',lines:[],busy:false,msg:'',err:false,warnings:[],config:{account_id:'',paid_through_account_id:''}};
+var JCACC=null;   // cached expense/paid-through accounts for the admin booking picker
 const JC_CATS=[['parts','Parts'],['labour','Labour'],['consumables','Consumables'],['subcontract','Subcontract'],['other','Other']];
 
-function jcLinesFrom(q){ return (q.line_items||[]).map(it=>({
-  name:it.name||'', description:it.description||'', qty:it.qty!=null?it.qty:1,
-  amount:(it.amount!=null?it.amount:null),   // absent for non-admins (price-stripped server-side)
-  rows:(it.cost_rows||[]).map(r=>({category:r.category||'other',description:r.description||'',qty:r.qty!=null?r.qty:1,unit_cost:r.unit_cost!=null?r.unit_cost:0}))
-})); }
+function jcLinesFrom(q){ return (q.line_items||[]).map(it=>{
+  const qty=it.qty!=null?it.qty:1, bcost=(it.cost!=null?it.cost:0);
+  return { name:it.name||'', description:it.description||'', qty:qty,
+    amount:(it.amount!=null?it.amount:null),   // absent for non-admins (price-stripped server-side)
+    bcost:bcost, budget:Math.round(qty*bcost*100)/100,   // budgeted unit + line cost
+    rows:(it.cost_rows||[]).map(r=>({id:r.id||0,category:r.category||'other',description:r.description||'',qty:r.qty!=null?r.qty:1,unit_cost:r.unit_cost!=null?r.unit_cost:0})) };
+}); }
 
-function jcOpen(id){
-  JC={id:id,quote:null,admin:false,lines:[],busy:false,msg:'',err:false};
+function jcOpen(id,mode){
+  mode=(mode==='bill')?'bill':'capture';
+  JC={id:id,quote:null,admin:false,mode:mode,lines:[],busy:false,msg:'',err:false,warnings:[],config:{account_id:'',paid_through_account_id:''}};
   document.getElementById('jcModalBody').innerHTML='<div class="muted" style="padding:22px;text-align:center">Loading…</div>';
-  document.getElementById('jcModalTitle').textContent='Capture costs';
+  document.getElementById('jcModalTitle').textContent=(mode==='bill')?'Review & bill':'Capture costs';
   document.getElementById('jcModal').classList.add('open'); document.body.style.overflow='hidden';
+  const done=()=>{ if(JC.admin && !JCACC){ fetch('api/accounts.php',{credentials:'same-origin'}).then(r=>r.json()).then(a=>{ if(a.ok) JCACC={expense:a.expense||[],paid:a.paid||[]}; jcRender(); }).catch(()=>jcRender()); } else { jcRender(); } };
+  // both modes load line items + the project's captured cost rows (from the project_costs table)
   fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',id})})
   .then(r=>r.json()).then(j=>{
     if(!j.ok){ document.getElementById('jcModalBody').innerHTML='<div class="warn" style="margin:10px">'+qesc(j.error||'Could not load')+'</div>'; return; }
-    JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); jcRender();
+    JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); if(j.config) JC.config=j.config;
+    done();
   }).catch(e=>{ document.getElementById('jcModalBody').innerHTML='<div class="warn" style="margin:10px">Error: '+qesc(''+e)+'</div>'; });
 }
 function jcClose(){ document.getElementById('jcModal').classList.remove('open'); document.body.style.overflow=''; }
+function jcAddBudgetRow(li){ const l=JC.lines[li]; l.rows.push({id:0,category:'other',description:'Budgeted estimate',qty:l.qty||1,unit_cost:l.bcost||0}); jcRender(); }
+
+function jcSaveConfig(){
+  const acc=document.getElementById('jcAcc'), paid=document.getElementById('jcPaid');
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'config_set',account_id:acc?acc.value:'',paid_through_account_id:paid?paid.value:''})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ JC.config=j.config; JC.msg='Booking account saved.'; JC.err=false; } else { JC.msg=j.error||'Could not save booking.'; JC.err=true; } jcRender(); })
+  .catch(e=>{ JC.msg='Error: '+e; JC.err=true; jcRender(); });
+}
 
 function jcRowAmt(r){ const q=parseFloat(r.qty)||0, u=parseFloat(r.unit_cost)||0; return Math.round(q*u*100)/100; }
 function jcLineCost(l){ return (l.rows||[]).reduce((s,r)=>s+jcRowAmt(r),0); }
 function jcTotalCost(){ return JC.lines.reduce((s,l)=>s+jcLineCost(l),0); }
 function jcTotalCharged(){ return JC.lines.reduce((s,l)=>s+(parseFloat(l.amount)||0),0); }
-function jcAddRow(li){ JC.lines[li].rows.push({category:'other',description:'',qty:1,unit_cost:0}); jcRender(); }
+function jcTotalBudget(){ return JC.lines.reduce((s,l)=>s+(parseFloat(l.budget)||0),0); }
+function jcAddRow(li){ JC.lines[li].rows.push({id:0,category:'other',description:'',qty:1,unit_cost:0}); jcRender(); }
 function jcDelRow(li,ri){ JC.lines[li].rows.splice(ri,1); jcRender(); }
 
 /* update only the computed figures so typing doesn't lose input focus */
@@ -6984,8 +7010,27 @@ function jcRepaint(){
 
 function jcRender(){
   const q=JC.quote, box=document.getElementById('jcModalBody'); if(!q||!box)return;
-  document.getElementById('jcModalTitle').textContent='Capture costs · '+(q.customer_name||'')+(q.zoho_invoice_number?(' · '+q.zoho_invoice_number):'');
+  const conv=(JC.mode==='bill');
+  document.getElementById('jcModalTitle').textContent=(conv?'Review & bill · ':'Capture costs · ')+(q.customer_name||'')+((!conv&&q.zoho_invoice_number)?(' · '+q.zoho_invoice_number):'');
   const catOpts=(sel)=>JC_CATS.map(c=>`<option value="${c[0]}" ${sel===c[0]?'selected':''}>${c[1]}</option>`).join('');
+  // admin: pick the Zoho expense account these costs book to
+  const booking = JC.admin ? `
+    <div class="card" style="padding:10px 12px;margin-bottom:12px;background:var(--surface-2)">
+      <div style="font-size:11.5px;color:var(--mute);margin-bottom:6px">Captured costs post to Zoho as expenses on this invoice. Booking account:</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="jcAcc" class="in" style="margin:0;width:auto;min-width:210px;font-size:12px">
+          <option value="">— choose expense account —</option>
+          ${(JCACC?JCACC.expense:[]).map(a=>`<option value="${a.id}" ${JC.config.account_id===a.id?'selected':''}>${qesc(a.name)}</option>`).join('')}
+        </select>
+        <select id="jcPaid" class="in" style="margin:0;width:auto;min-width:180px;font-size:12px">
+          <option value="">— paid through (optional) —</option>
+          ${(JCACC?JCACC.paid:[]).map(a=>`<option value="${a.id}" ${JC.config.paid_through_account_id===a.id?'selected':''}>${qesc(a.name)}</option>`).join('')}
+        </select>
+        <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px" onclick="jcSaveConfig()">Save booking</button>
+      </div>
+      ${JC.config.account_id?'':`<div class="warn" style="margin-top:8px;font-size:11.5px">Set a booking account so captured costs post to Zoho.</div>`}
+    </div>` : '';
+  const warns = (JC.warnings&&JC.warnings.length) ? `<div class="warn" style="margin-bottom:10px;font-size:11.5px">${JC.warnings.map(w=>'⚠ '+qesc(w)).join('<br>')}</div>` : '';
   const lines=JC.lines.map((l,li)=>{
     const rows=(l.rows||[]).map((r,ri)=>`
       <tr>
@@ -6997,7 +7042,9 @@ function jcRender(){
         <td style="text-align:center"><button class="btn sec" style="width:auto;padding:3px 8px;font-size:12px;color:var(--bad)" onclick="jcDelRow(${li},${ri})" title="Remove this cost">✕</button></td>
       </tr>`).join('');
     const hdr = JC.admin
-      ? `<span style="font-size:11.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b> · Cost <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b> · Profit <b id="jclp-${li}">—</b></span>`
+      ? (conv
+         ? `<span style="font-size:11.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b> · Budget <b style="color:var(--ink)">${fmtn(l.budget||0)}</b> · Actual <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b> · Profit <b id="jclp-${li}">—</b></span>`
+         : `<span style="font-size:11.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b> · Cost <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b> · Profit <b id="jclp-${li}">—</b></span>`)
       : `<span style="font-size:11.5px;color:var(--mute)">Cost so far <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b></span>`;
     return `<div class="card" style="padding:12px;margin-bottom:12px">
       <div class="row" style="align-items:flex-start;gap:10px;margin-bottom:8px">
@@ -7012,32 +7059,80 @@ function jcRender(){
         <tbody>${rows||`<tr><td colspan="6" class="muted" style="padding:8px 6px;font-size:11.5px">No costs yet — add the parts, labour and materials that went into this line.</td></tr>`}</tbody>
       </table></div>
       <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="jcAddRow(${li})">+ Add cost</button>
+      ${conv&&(l.budget>0)?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px;margin-left:6px" onclick="jcAddBudgetRow(${li})" title="Add a cost row seeded from the budgeted figure">+ from budget</button>`:''}
     </div>`;
   }).join('');
   const footer = JC.admin
-    ? `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">INVOICE TOTAL</b>
-        <span style="font-size:12.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · Profit <b id="jctp">—</b></span></div></div>`
+    ? (conv
+       ? `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">INVOICE TOTAL</b>
+          <span style="font-size:12.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Budget <b style="color:var(--ink)">${fmtn(jcTotalBudget())}</b> · Actual <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · Profit <b id="jctp">—</b></span></div></div>`
+       : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">INVOICE TOTAL</b>
+          <span style="font-size:12.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · Profit <b id="jctp">—</b></span></div></div>`)
     : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">TOTAL COST</b><b id="jctc" style="font-size:13px">${fmtn(jcTotalCost())}</b></div></div>`;
+  const intro = conv
+    ? `<div class="muted" style="font-size:11.5px;margin-bottom:10px">Review the captured costs — budgeted vs actual and profit — then bill. Billing creates the invoice in Zoho and posts these costs as expenses attached to it.</div>`
+    : (JC.admin?'':`<div class="muted" style="font-size:11.5px;margin-bottom:10px">Enter what each line actually cost. You won't see the price charged to the customer.</div>`);
+  const primary = conv
+    ? `<button class="btn" style="width:auto;background:var(--blue);box-shadow:none" onclick="jcBill()" ${JC.busy?'disabled':''}>${JC.busy?'Billing…':'🧾 Bill client'}</button>`
+    : `<button class="btn" style="width:auto" onclick="jcSave()" ${JC.busy?'disabled':''}>${JC.busy?'Saving…':'Save costs'}</button>`;
   box.innerHTML=(JC.msg?`<div class="${JC.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(JC.msg)}</div>`:'')
-    + (JC.admin?'':`<div class="muted" style="font-size:11.5px;margin-bottom:10px">Enter what each line actually cost. You won't see the price charged to the customer.</div>`)
+    + warns + booking + intro
     + lines + footer
-    + `<div class="row" style="justify-content:flex-end;gap:8px"><button class="btn sec" style="width:auto" onclick="jcClose()">Close</button>
-       <button class="btn" style="width:auto" onclick="jcSave()" ${JC.busy?'disabled':''}>${JC.busy?'Saving…':'Save costs'}</button></div>`;
+    + `<div class="row" style="justify-content:flex-end;gap:8px"><button class="btn sec" style="width:auto" onclick="jcClose()">Close</button>${primary}</div>`;
   jcRepaint();
 }
 
-function jcSave(){
-  JC.busy=true; JC.msg=''; jcRender();
-  const lines=JC.lines.map((l,idx)=>({ index:idx, cost_rows:(l.rows||[])
+function jcCollectLines(){
+  return JC.lines.map((l,idx)=>({ index:idx, line_name:l.name||'', cost_rows:(l.rows||[])
     .filter(r=>(r.description||'').trim()!==''||(parseFloat(r.unit_cost)||0)>0)
-    .map(r=>({category:r.category,description:r.description,qty:r.qty,unit_cost:r.unit_cost})) }));
-  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_costs',id:JC.id,lines})})
+    .map(r=>({id:r.id||0,category:r.category,description:r.description,qty:r.qty,unit_cost:r.unit_cost})) }));
+}
+
+/* reflect updated actual cost/profit onto the My Quotes card */
+function jcSyncCard(q){ const mq=(MQ.quotes||[]).find(x=>x.id===JC.id); if(mq&&q){ if(q.actual_cost!=null)mq.actual_cost=q.actual_cost; if(q.actual_profit!=null)mq.actual_profit=q.actual_profit; } }
+
+function jcSave(){
+  JC.busy=true; JC.msg=''; JC.warnings=[]; jcRender();
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_costs',id:JC.id,lines:jcCollectLines()})})
   .then(r=>r.json()).then(j=>{ JC.busy=false;
-    if(j.ok){ JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); JC.msg='Costs saved.'; JC.err=false;
-      const mq=(MQ.quotes||[]).find(x=>x.id===JC.id); if(mq&&j.admin){ mq.total_cost=j.quote.total_cost; mq.profit=j.quote.profit; }
+    if(j.ok){ JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); JC.warnings=j.warnings||[];
+      JC.msg=(JC.warnings.length?'Costs saved (see notes below).':'Costs saved.'); JC.err=false;
+      if(j.admin) jcSyncCard(j.quote);
       jcRender();
     } else { JC.msg=j.error||'Save failed.'; JC.err=true; jcRender(); }
   }).catch(e=>{ JC.busy=false; JC.msg='Error: '+e; JC.err=true; jcRender(); });
+}
+
+function jcBill(){
+  if(!confirm('Bill this client now?\n\nThis creates the INVOICE in Zoho and posts the captured costs as expenses attached to it. This cannot be undone.')) return;
+  JC.busy=true; JC.msg=''; JC.warnings=[]; jcRender();
+  // 1) persist the latest cost edits to the project, then 2) create the invoice + push expenses
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_costs',id:JC.id,lines:jcCollectLines()})})
+  .then(r=>r.json()).then(sj=>{
+    if(!sj.ok){ JC.busy=false; JC.msg=sj.error||'Could not save costs.'; JC.err=true; jcRender(); return; }
+    if(sj.quote) jcSyncCard(sj.quote);
+    return fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:JC.id})})
+      .then(r=>r.json()).then(j=>{ JC.busy=false;
+        if(j.ok){
+          const mq=(MQ.quotes||[]).find(x=>x.id===JC.id); if(mq){ mq.status='invoiced'; mq.zoho_invoice_number=j.invoice_number||mq.zoho_invoice_number; }
+          const w=j.warnings||[];
+          MQ.msg='Invoice '+(j.invoice_number||'')+(j.already?' (already invoiced).':' created — costs posted to Zoho.')+(w.length?(' ⚠ '+w.join(' ')):''); MQ.err=w.length>0;
+          jcClose();
+          window.open('api/job_card.php?id='+JC.id,'_blank');
+          MQ.loaded=false; mqLoad(); render();
+        } else { JC.msg=j.error||'Could not bill.'; JC.err=true; jcRender(); }
+      });
+  }).catch(e=>{ JC.busy=false; JC.msg='Error: '+e; JC.err=true; jcRender(); });
+}
+
+function mqToProject(id){
+  if(!confirm('Start this job as a project? You can then capture actual costs against it before billing.')) return;
+  MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ const q=(MQ.quotes||[]).find(x=>x.id===id); if(q)q.status='project'; MQ.msg='Project started — capture costs as the job runs.'; MQ.err=false; }
+    else { MQ.msg=j.error||'Could not start project.'; MQ.err=true; } render();
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
 
 function vJobCards(){

@@ -24,7 +24,6 @@ function users_all_tabs() {
         'ledger'   => 'Ledger',
         'loans'    => 'Loans',
         'growth'   => 'Growth',
-        'report'   => 'Profit Report',
         'etr'      => 'ETR Check',
         'invrep'   => 'Invoices',
         'quotes'   => 'Quotes',

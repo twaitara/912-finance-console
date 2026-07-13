@@ -1,14 +1,16 @@
 <?php
-/* api/quote_invoice.php — convert a quote's Zoho estimate into a Zoho INVOICE.
-   Used by "Generate Job Card". Owner or the quote's creator. Idempotent: if the
-   quote was already invoiced, returns the existing invoice number.
-   POST JSON: {id} */
+/* api/quote_invoice.php — "Bill client": turn a project/quote into a Zoho INVOICE and
+   push its captured project_costs rows to Zoho as expenses attached to that invoice.
+   Admins only. Idempotent: if already invoiced, returns the existing invoice number.
+   POST JSON: {id}  (costs are read from the project_costs table, not the request)
+   Returns {ok, invoice_number, warnings[]}. */
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../db.php';
 require __DIR__ . '/../zoho.php';
-@set_time_limit(90);
+require __DIR__ . '/../project_costs.php';   // pc_* helpers (+ costcap_config)
+@set_time_limit(120);
 
 function quote_inv_vat_tax_id(){
     $cache = __DIR__ . '/../data/zoho_vat.json';
@@ -32,10 +34,10 @@ function quote_inv_vat_tax_id(){
 
 try {
     $pdo = db();
+    pc_table($pdo);
     $me    = $_SESSION['user'] ?? '';
-    $admin = !empty($_SESSION['is_admin']);
+    if (empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Only an admin can bill a client / create an invoice.']); exit; }
 
-    // make sure the invoice columns exist (older tables)
     foreach ([
         "ADD COLUMN zoho_invoice_id VARCHAR(64) DEFAULT '' AFTER zoho_estimate_number",
         "ADD COLUMN zoho_invoice_number VARCHAR(64) DEFAULT '' AFTER zoho_invoice_id",
@@ -47,23 +49,22 @@ try {
     $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([$id]);
     $q = $st->fetch(PDO::FETCH_ASSOC);
     if (!$q) throw new Exception('Quote not found.');
-    if (!$admin && $q['created_by'] !== $me) throw new Exception('Not your quote.');
     if (empty($q['zoho_estimate_id'])) throw new Exception('Push the quote to Zoho first.');
-    if (!in_array($q['status'], ['approved','sent','accepted','invoiced'], true)) {
-        throw new Exception('Only an approved quote can be turned into a job card / invoice.');
+    if (!in_array($q['status'], ['project','approved','sent','accepted','invoiced'], true)) {
+        throw new Exception('Only a project (or approved quote) can be billed.');
     }
 
     // already converted?
     if (!empty($q['zoho_invoice_id'])) {
-        echo json_encode(['ok'=>true, 'invoice_number'=>$q['zoho_invoice_number'], 'already'=>true]);
+        echo json_encode(['ok'=>true, 'invoice_number'=>$q['zoho_invoice_number'], 'already'=>true, 'warnings'=>[]]);
         exit;
     }
 
-    // Build the invoice directly from the quote's line items (Zoho's fromestimate convert
-    // is not available on this org — verified live). Same proven path as estimate creation.
-    $taxId = quote_inv_vat_tax_id();
     $items = json_decode($q['line_items'] ?: '[]', true) ?: [];
     if (!$items) throw new Exception('Quote has no line items.');
+
+    // Build the invoice from the quote's line items (Zoho fromestimate not available on this org).
+    $taxId = quote_inv_vat_tax_id();
     $lineItems = [];
     foreach ($items as $it) {
         $li = [
@@ -94,9 +95,27 @@ try {
     $pdo->prepare("UPDATE quotes SET zoho_invoice_id=?, zoho_invoice_number=?, status='invoiced', last_synced_at=NOW() WHERE id=?")
         ->execute([$invId, $invNo, $id]);
 
+    // Push captured project costs to Zoho as expenses attached to this invoice.
+    $warnings = [];
+    $conf = costcap_config();
+    $rows = pc_for_quote($pdo, $id);
+    if ($rows) {
+        if (($conf['account_id'] ?? '') === '') {
+            $warnings[] = 'Invoice created, but captured costs were not posted to Zoho — set the cost expense account, then open Capture costs and save to push them.';
+        } else {
+            foreach ($rows as $r) {
+                if (!empty($r['zoho_expense_id']) || (float)$r['amount'] <= 0) continue;  // already pushed / empty
+                [$expId, $err] = pc_zoho_create($r, $invNo, $conf);
+                if ($expId !== '') $pdo->prepare("UPDATE project_costs SET zoho_expense_id=? WHERE id=?")->execute([$expId, (int)$r['id']]);
+                else $warnings[] = 'Zoho expense failed for "'.$r['line_name'].'": '.$err;
+            }
+        }
+    }
+    pc_refresh_quote($pdo, $id);
+
     require_once __DIR__ . '/../activity_store.php';
-    activity_log($pdo, $me, 'generated job card', $invNo . ' for ' . ($q['customer_name'] ?? '') . ' (from ' . ($q['zoho_estimate_number'] ?: ('#'.$id)) . ')');
-    echo json_encode(['ok'=>true, 'invoice_number'=>$invNo]);
+    activity_log($pdo, $me, 'billed client', $invNo . ' for ' . ($q['customer_name'] ?? '') . ' (from ' . ($q['zoho_estimate_number'] ?: ('#'.$id)) . ')');
+    echo json_encode(['ok'=>true, 'invoice_number'=>$invNo, 'warnings'=>$warnings]);
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
 }

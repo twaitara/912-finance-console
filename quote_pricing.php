@@ -1,47 +1,14 @@
 <?php
 /* quote_pricing.php — shared quote line-item pricing + output helpers.
-   Extracted from api/quotes.php so the cost-capture endpoint (api/quote_costs.php)
-   reuses the exact same maths. Include with require_once.
+   Extracted from api/quotes.php so other endpoints reuse the same maths.
+   Include with require_once.
 
-   A line item may carry an optional cost_rows[] breakdown:
-     cost_rows: [{category, description, qty, unit_cost, amount}]
-   When present, the line's cost is the SUM of those rows (qty*unit_cost) and it
-   overrides the per-line cost/actual_cost. Lines without cost_rows behave exactly
-   as before. */
-
-if (!function_exists('quote_clean_cost_rows')) {
-    /* Normalise a line's cost_rows: keep valid rows, recompute each amount server-side,
-       return [rows, total]. Empty/blank rows are dropped. */
-    function quote_clean_cost_rows($raw){
-        $rows = []; $total = 0.0;
-        $cats = ['parts','labour','consumables','subcontract','other'];
-        foreach ((array)$raw as $r){
-            if (!is_array($r)) continue;
-            $desc = trim((string)($r['description'] ?? ''));
-            $qty  = round((float)($r['qty'] ?? 0), 2);
-            $unit = round((float)($r['unit_cost'] ?? 0), 2);
-            // a row with no description and no cost is empty — skip it
-            if ($desc === '' && $unit <= 0) continue;
-            if ($qty <= 0) $qty = 1;
-            $cat = strtolower(trim((string)($r['category'] ?? 'other')));
-            if (!in_array($cat, $cats, true)) $cat = 'other';
-            $amount = round($qty * $unit, 2);
-            $total += $amount;
-            $rows[] = [
-                'category'    => $cat,
-                'description' => substr($desc, 0, 190),
-                'qty'         => $qty,
-                'unit_cost'   => max(0, $unit),
-                'amount'      => $amount,
-            ];
-        }
-        return [$rows, round($total, 2)];
-    }
-}
+   Line-item cost here is the BUDGETED unit cost (`cost`) typed while quoting; it
+   drives the quote's estimated profit. ACTUAL costs are captured against a project
+   in the relational `project_costs` table (see project_costs.php), not in this JSON. */
 
 if (!function_exists('quote_price')) {
-    /* normalise + price line items (per-line tax + unit cost, with an entity discount before tax).
-       A line's cost = SUM(cost_rows) when present, else actual_cost, else cost.
+    /* normalise + price line items (per-line tax + budgeted unit cost, entity discount before tax).
        Returns [cleanItems, sub, discAmt, tax, total, costTotal, profit]. */
     function quote_price($rawItems, $vatRate, $discVal, $discType){
         $items = []; $sub = 0.0; $taxedBase = 0.0; $costTotal = 0.0;
@@ -50,25 +17,18 @@ if (!function_exists('quote_price')) {
             if ($name === '') continue;
             $qty   = round((float)($it['qty'] ?? 0), 2);
             $rate  = round((float)($it['rate'] ?? 0), 2);
-            $cost  = max(0, round((float)($it['cost'] ?? 0), 2));          // estimated unit cost
-            $acost = max(0, round((float)($it['actual_cost'] ?? 0), 2));   // actual cost (overrides)
+            $cost  = max(0, round((float)($it['cost'] ?? 0), 2));          // budgeted unit cost
+            $acost = max(0, round((float)($it['actual_cost'] ?? 0), 2));   // legacy single actual (still honoured if present)
             if ($qty <= 0) $qty = 1;
             $amount   = round($qty * $rate, 2);
-
-            // cost breakdown rows override the single cost/actual_cost values
-            [$costRows, $rowsTotal] = quote_clean_cost_rows($it['cost_rows'] ?? []);
-            if ($costRows) {
-                $lineCost = $rowsTotal;
-            } else {
-                $effCost  = $acost > 0 ? $acost : $cost;                    // actual wins, else unit cost
-                $lineCost = round($qty * $effCost, 2);
-            }
+            $effCost  = $acost > 0 ? $acost : $cost;
+            $lineCost = round($qty * $effCost, 2);
 
             $tax = (strtolower((string)($it['tax'] ?? 'vat')) === 'none') ? 'none' : 'vat';
             $sub += $amount;
             $costTotal += $lineCost;
             if ($tax === 'vat') $taxedBase += $amount;
-            $item = [
+            $items[] = [
                 'name'        => substr($name, 0, 190),
                 'description' => substr(trim((string)($it['description'] ?? '')), 0, 500),
                 'qty'         => $qty,
@@ -76,11 +36,9 @@ if (!function_exists('quote_price')) {
                 'cost'        => $cost,
                 'actual_cost' => $acost,
                 'amount'      => $amount,
-                'profit'      => round($amount - $lineCost, 2),   // line profit (ex VAT, using effective cost)
+                'profit'      => round($amount - $lineCost, 2),   // budgeted line profit (ex VAT)
                 'tax'         => $tax,
             ];
-            if ($costRows) $item['cost_rows'] = $costRows;         // only persist when present
-            $items[] = $item;
         }
         $sub = round($sub, 2);
         $costTotal = round($costTotal, 2);
@@ -91,7 +49,7 @@ if (!function_exists('quote_price')) {
         $taxedAfter = $taxedBase - ($sub > 0 ? $discAmt * ($taxedBase / $sub) : 0);
         $tax = round(max(0, $taxedAfter) * (float)$vatRate, 2);
         $total = round($sub - $discAmt + $tax, 2);
-        $profit = round(($sub - $discAmt) - $costTotal, 2);       // quote profit (ex VAT, after discount)
+        $profit = round(($sub - $discAmt) - $costTotal, 2);       // budgeted quote profit (ex VAT, after discount)
         return [$items, $sub, $discAmt, $tax, $total, $costTotal, $profit];
     }
 }
@@ -99,9 +57,9 @@ if (!function_exists('quote_price')) {
 if (!function_exists('quote_strip_prices')) {
     /* Remove every selling-price / profit figure from a quote_out()-shaped array so a
        non-admin cost capturer never sees what the client was charged. Keeps line
-       name/description/qty/tax and the cost_rows they enter. Mutates a copy. */
+       name/description/qty/tax. Mutates a copy. */
     function quote_strip_prices(array $r){
-        foreach (['sub_total','tax_amount','total','total_cost','profit','discount_value','discount_amount'] as $k) {
+        foreach (['sub_total','tax_amount','total','total_cost','profit','actual_cost','actual_profit','discount_value','discount_amount'] as $k) {
             if (array_key_exists($k, $r)) $r[$k] = 0;
         }
         $r['prices_hidden'] = true;
@@ -124,6 +82,8 @@ if (!function_exists('quote_out')) {
         $r['total'] = (float)$r['total'];
         $r['total_cost'] = (float)($r['total_cost'] ?? 0);
         $r['profit'] = (float)($r['profit'] ?? 0);
+        $r['actual_cost'] = (float)($r['actual_cost'] ?? 0);
+        $r['actual_profit'] = (float)($r['actual_profit'] ?? 0);
         $r['discount_value'] = (float)($r['discount_value'] ?? 0);
         $r['discount_amount'] = (float)($r['discount_amount'] ?? 0);
         return $r;

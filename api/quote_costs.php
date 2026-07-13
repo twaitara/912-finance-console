@@ -1,84 +1,174 @@
 <?php
-/* api/quote_costs.php — capture the ACTUAL cost of each line on an invoiced job.
-   Costs are stored as a cost_rows[] breakdown inside the quote's own line_items JSON
-   (no separate table). Prices/profit are stripped server-side for non-admins, so a
-   cost capturer never sees what the client was charged.
+/* api/quote_costs.php — capture the ACTUAL cost of each line of a PROJECT (or an
+   invoiced job) into the relational project_costs table.
 
-   Access: admin, the quote's creator, or any user holding the 'costcap' permission —
-   and only on quotes whose status is 'invoiced'.
+   During a project (no invoice yet) costs are pure DB — nothing hits Zoho. Once the
+   job is billed (has an invoice number) each change is mirrored to its Zoho expense:
+   new row -> POST, changed -> PUT, removed -> DELETE. Prices/profit are stripped
+   server-side for non-admins.
+
+   Access: admin, the quote's creator, or a user with 'costcap' — status project|invoiced.
 
    Actions (POST JSON):
-     {action:'get', id}
-       -> {ok, admin, quote}                 (non-admin quote is price-stripped)
-     {action:'save_costs', id, lines:[{index, cost_rows:[{category,description,qty,unit_cost}]}]}
-       -> {ok, admin, quote}                 (merges cost_rows by line index; recomputes totals) */
+     {action:'get', id}                                    -> {ok, admin, quote, config?}
+     {action:'save_costs', id, lines:[{index, line_name, cost_rows:[{id?,category,description,qty,unit_cost}]}]}
+                                                           -> {ok, admin, quote, warnings[]}
+     {action:'config_get'}            (admin)              -> {ok, config}
+     {action:'config_set', account_id, paid_through_account_id?}  (admin) -> {ok, config} */
 
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../db.php';
 require __DIR__ . '/../quote_pricing.php';
+require __DIR__ . '/../project_costs.php';   // table + Zoho expense helpers (+ costcap_config via costcap_sync)
 $cfg = require __DIR__ . '/../config.php';
+
+$CATS = ['parts','labour','consumables','subcontract','other'];
 
 try {
     $pdo   = db();
+    pc_table($pdo);
     $me    = $_SESSION['user'] ?? '';
     $admin = !empty($_SESSION['is_admin']);
-    $vat   = (float)($cfg['vat_rate'] ?? 0.16);
     $tabsS   = (string)($_SESSION['tabs'] ?? '');
     $costcap = ($tabsS === '*') || in_array('costcap', array_map('trim', explode(',', $tabsS)), true);
 
     $in = json_decode(file_get_contents('php://input'), true); if (!is_array($in)) $in = $_POST;
     $action = $in['action'] ?? 'get';
 
-    /* load an invoiced job the caller is allowed to cost */
+    /* --- admin-only booking config --- */
+    if ($action === 'config_get') {
+        if (!$admin) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Admins only.']); exit; }
+        echo json_encode(['ok'=>true, 'config'=>costcap_config()]); exit;
+    }
+    if ($action === 'config_set') {
+        if (!$admin) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Admins only.']); exit; }
+        $c = costcap_config_save(trim((string)($in['account_id'] ?? '')), trim((string)($in['paid_through_account_id'] ?? '')));
+        echo json_encode(['ok'=>true, 'config'=>$c]); exit;
+    }
+
+    /* load a project / invoiced job the caller may cost */
     $load = function($id) use ($pdo, $me, $admin, $costcap) {
         $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([(int)$id]);
         $row = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$row) throw new Exception('Invoice not found.');
-        $isOwner = ($row['created_by'] === $me);
-        if (!$admin && !$isOwner && !$costcap) throw new Exception('You do not have access to this job.');
-        if ($row['status'] !== 'invoiced') throw new Exception('Costs can only be captured once the job has been invoiced.');
+        if (!$row) throw new Exception('Job not found.');
+        if (!$admin && $row['created_by'] !== $me && !$costcap) throw new Exception('You do not have access to this job.');
+        if (!in_array($row['status'], ['project','invoiced'], true)) throw new Exception('Costs are captured on a project (or an invoiced job).');
         return $row;
     };
 
-    /* shape the response: admins get full prices/profit, everyone else is price-stripped */
-    $respond = function(array $row) use ($admin) {
-        $q = quote_out($row);
-        if ($admin) { echo json_encode(['ok'=>true, 'admin'=>true, 'quote'=>$q]); }
-        else        { echo json_encode(['ok'=>true, 'admin'=>false, 'quote'=>quote_strip_prices($q)]); }
+    /* assemble the response: line items (JSON) + their cost rows (table); price-stripped for non-admins */
+    $assemble = function($quoteId) use ($pdo, $admin) {
+        $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([(int)$quoteId]);
+        $q = quote_out($st->fetch(PDO::FETCH_ASSOC));
+        $byLine = [];
+        foreach (pc_for_quote($pdo, $quoteId) as $c) {
+            $byLine[(int)$c['line_index']][] = [
+                'id'=>(int)$c['id'], 'category'=>$c['category'], 'description'=>$c['description'],
+                'qty'=>(float)$c['qty'], 'unit_cost'=>(float)$c['unit_cost'], 'amount'=>(float)$c['amount'],
+            ];
+        }
+        foreach ($q['line_items'] as $i => &$it) { $it['cost_rows'] = $byLine[$i] ?? []; }
+        unset($it);
+        return $admin ? $q : quote_strip_prices($q);   // strip keeps cost_rows, zeroes prices/profit
     };
 
     if ($action === 'get') {
-        $respond($load($in['id'] ?? 0));
-        exit;
+        $row = $load($in['id'] ?? 0);
+        $out = ['ok'=>true, 'admin'=>$admin, 'quote'=>$assemble($row['id'])];
+        if ($admin) $out['config'] = costcap_config();
+        echo json_encode($out); exit;
     }
 
     if ($action === 'save_costs') {
-        $row = $load($in['id'] ?? 0);
-        $items = json_decode($row['line_items'] ?: '[]', true) ?: [];
-
-        // merge submitted cost_rows into the stored lines BY INDEX — names/rates are never touched
-        foreach ((array)($in['lines'] ?? []) as $ln) {
-            $idx = (int)($ln['index'] ?? -1);
-            if ($idx < 0 || !isset($items[$idx])) continue;
-            $items[$idx]['cost_rows'] = is_array($ln['cost_rows'] ?? null) ? $ln['cost_rows'] : [];
+        $row     = $load($in['id'] ?? 0);
+        $quoteId = (int)$row['id'];
+        $items   = json_decode($row['line_items'] ?: '[]', true) ?: [];
+        $invNo   = trim((string)($row['zoho_invoice_number'] ?? ''));
+        $conf    = costcap_config();
+        $billed  = ($invNo !== '');
+        $canPost = ($billed && ($conf['account_id'] ?? '') !== '');
+        $warnings = [];
+        if ($billed && ($conf['account_id'] ?? '') === '') {
+            $warnings[] = 'Costs saved, but expense changes were not pushed to Zoho — an admin must set the cost expense account.';
         }
 
-        // re-price with the existing discount so total_cost / profit refresh (quote_price cleans cost_rows)
-        [$clean, $sub, $discAmt, $tax, $total, $costTotal, $profit] =
-            quote_price($items, $vat, (float)($row['discount_value'] ?? 0), (string)($row['discount_type'] ?? 'percent'));
+        foreach ((array)($in['lines'] ?? []) as $ln) {
+            $idx = (int)($ln['index'] ?? -1);
+            if ($idx < 0) continue;
+            $lineName = substr(trim((string)($ln['line_name'] ?? ($items[$idx]['name'] ?? 'Item'))), 0, 190);
 
-        $pdo->prepare("UPDATE quotes SET line_items=?, sub_total=?, tax_amount=?, discount_amount=?, total_cost=?, profit=?, total=? WHERE id=?")
-            ->execute([json_encode($clean), $sub, $tax, $discAmt, $costTotal, $profit, $total, (int)$row['id']]);
+            // existing rows for this line, keyed by id
+            $oldById = [];
+            foreach (pc_for_quote($pdo, $quoteId) as $c) {
+                if ((int)$c['line_index'] === $idx) $oldById[(int)$c['id']] = $c;
+            }
+
+            $keptIds = [];
+            foreach ((array)($ln['cost_rows'] ?? []) as $r) {
+                $desc = trim((string)($r['description'] ?? ''));
+                $qty  = (float)($r['qty'] ?? 0); if ($qty <= 0) $qty = 1;
+                $unit = (float)($r['unit_cost'] ?? 0);
+                if ($desc === '' && $unit <= 0) continue;                 // empty row — skip
+                $cat  = strtolower(trim((string)($r['category'] ?? 'other')));
+                if (!in_array($cat, $CATS, true)) $cat = 'other';
+                $desc = substr($desc, 0, 190);
+                $amount = round($qty * max(0, $unit), 2);
+                $rid  = (int)($r['id'] ?? 0);
+                $old  = ($rid && isset($oldById[$rid])) ? $oldById[$rid] : null;
+
+                if ($old) {
+                    $keptIds[$rid] = true;
+                    $expId = (string)($old['zoho_expense_id'] ?? '');
+                    $changed = abs((float)$old['amount'] - $amount) > 0.005
+                        || (string)$old['category'] !== $cat
+                        || (string)$old['description'] !== $desc
+                        || (string)$old['line_name'] !== $lineName;
+                    if ($changed) {
+                        $pdo->prepare("UPDATE project_costs SET line_name=?, category=?, description=?, qty=?, unit_cost=?, amount=? WHERE id=?")
+                            ->execute([$lineName, $cat, $desc, $qty, max(0,$unit), $amount, $rid]);
+                    }
+                    if ($canPost) {
+                        $ez = ['line_name'=>$lineName,'category'=>$cat,'description'=>$desc,'amount'=>$amount];
+                        if ($expId === '') {   // not yet pushed (e.g. billed while account was unset) — push now
+                            [$newExp,$err] = pc_zoho_create($ez, $invNo, $conf);
+                            if ($newExp !== '') $pdo->prepare("UPDATE project_costs SET zoho_expense_id=? WHERE id=?")->execute([$newExp,$rid]);
+                            else $warnings[] = 'Zoho expense post failed for "'.$lineName.'": '.$err;
+                        } elseif ($changed) {
+                            $err = pc_zoho_update($expId, $ez, $invNo, $conf);
+                            if ($err) $warnings[] = 'Zoho expense update failed for "'.$lineName.'": '.$err;
+                        }
+                    }
+                } else {
+                    // new row
+                    $pdo->prepare("INSERT INTO project_costs (quote_id,line_index,line_name,category,description,qty,unit_cost,amount,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
+                        ->execute([$quoteId,$idx,$lineName,$cat,$desc,$qty,max(0,$unit),$amount,$me]);
+                    $newId = (int)$pdo->lastInsertId();
+                    $keptIds[$newId] = true;
+                    if ($canPost) {
+                        [$newExp,$err] = pc_zoho_create(['line_name'=>$lineName,'category'=>$cat,'description'=>$desc,'amount'=>$amount], $invNo, $conf);
+                        if ($newExp !== '') $pdo->prepare("UPDATE project_costs SET zoho_expense_id=? WHERE id=?")->execute([$newExp,$newId]);
+                        else $warnings[] = 'Zoho expense post failed for "'.$lineName.'": '.$err;
+                    }
+                }
+            }
+
+            // delete rows removed from this line (and their Zoho expense if billed)
+            foreach ($oldById as $oid => $oc) {
+                if (empty($keptIds[$oid])) {
+                    if ($canPost && !empty($oc['zoho_expense_id'])) { $err = pc_zoho_delete((string)$oc['zoho_expense_id']); if ($err) $warnings[] = 'Zoho expense delete failed: '.$err; }
+                    $pdo->prepare("DELETE FROM project_costs WHERE id=?")->execute([$oid]);
+                }
+            }
+        }
+
+        pc_refresh_quote($pdo, $quoteId);
 
         require_once __DIR__ . '/../activity_store.php';
-        activity_log($pdo, $me, 'captured job costs',
-            ($row['zoho_invoice_number'] ?: ('#'.$row['id'])) . ' · ' . ($row['customer_name'] ?? '') . ' (cost ' . number_format($costTotal, 0) . ')');
+        activity_log($pdo, $me, 'captured job costs', ($invNo ?: ('#'.$quoteId)) . ' · ' . ($row['customer_name'] ?? '') . ' (cost ' . number_format(pc_total($pdo,$quoteId), 0) . ')');
 
-        $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([(int)$row['id']]);
-        $respond($st->fetch(PDO::FETCH_ASSOC));
-        exit;
+        echo json_encode(['ok'=>true, 'admin'=>$admin, 'quote'=>$assemble($quoteId), 'warnings'=>$warnings]); exit;
     }
 
     throw new Exception('Unknown action.');
