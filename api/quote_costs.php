@@ -77,6 +77,7 @@ try {
             $byLine[(int)$c['line_index']][] = [
                 'id'=>(int)$c['id'], 'category'=>$c['category'], 'description'=>$c['description'],
                 'qty'=>(float)$c['qty'], 'unit_cost'=>(float)$c['unit_cost'], 'amount'=>(float)$c['amount'],
+                'vat'=>((string)($c['vat_mode'] ?? 'excl') === 'incl') ? 'incl' : 'excl',
             ];
         }
         foreach ($q['line_items'] as $i => &$it) { $it['cost_rows'] = $byLine[$i] ?? []; }
@@ -99,6 +100,7 @@ try {
         $conf    = costcap_config();
         $billed  = ($invNo !== '');
         $canPost = ($billed && ($conf['account_id'] ?? '') !== '');
+        $vatTaxId = $canPost ? zoho_vat_tax_id() : '';   // for VAT-inclusive expense rows
         $warnings = [];
         if ($billed && ($conf['account_id'] ?? '') === '') {
             $warnings[] = 'Costs saved, but expense changes were not pushed to Zoho — an admin must set the cost expense account.';
@@ -123,6 +125,7 @@ try {
                 if ($desc === '' && $unit <= 0) continue;                 // empty row — skip
                 $cat  = strtolower(trim((string)($r['category'] ?? 'other')));
                 if (!in_array($cat, $CATS, true)) $cat = 'other';
+                $vatMode = ((string)($r['vat'] ?? 'excl') === 'incl') ? 'incl' : 'excl';
                 $desc = substr($desc, 0, 190);
                 $amount = round($qty * max(0, $unit), 2);
                 $rid  = (int)($r['id'] ?? 0);
@@ -134,30 +137,31 @@ try {
                     $changed = abs((float)$old['amount'] - $amount) > 0.005
                         || (string)$old['category'] !== $cat
                         || (string)$old['description'] !== $desc
-                        || (string)$old['line_name'] !== $lineName;
+                        || (string)$old['line_name'] !== $lineName
+                        || (string)($old['vat_mode'] ?? 'excl') !== $vatMode;
                     if ($changed) {
-                        $pdo->prepare("UPDATE project_costs SET line_name=?, category=?, description=?, qty=?, unit_cost=?, amount=? WHERE id=?")
-                            ->execute([$lineName, $cat, $desc, $qty, max(0,$unit), $amount, $rid]);
+                        $pdo->prepare("UPDATE project_costs SET line_name=?, category=?, description=?, qty=?, unit_cost=?, amount=?, vat_mode=? WHERE id=?")
+                            ->execute([$lineName, $cat, $desc, $qty, max(0,$unit), $amount, $vatMode, $rid]);
                     }
                     if ($canPost) {
-                        $ez = ['line_name'=>$lineName,'category'=>$cat,'description'=>$desc,'amount'=>$amount];
+                        $ez = ['line_name'=>$lineName,'category'=>$cat,'description'=>$desc,'amount'=>$amount,'vat_mode'=>$vatMode];
                         if ($expId === '') {   // not yet pushed (e.g. billed while account was unset) — push now
-                            [$newExp,$err] = pc_zoho_create($ez, $invNo, $conf);
+                            [$newExp,$err] = pc_zoho_create($ez, $invNo, $conf, $vatTaxId);
                             if ($newExp !== '') $pdo->prepare("UPDATE project_costs SET zoho_expense_id=? WHERE id=?")->execute([$newExp,$rid]);
                             else $warnings[] = 'Zoho expense post failed for "'.$lineName.'": '.$err;
                         } elseif ($changed) {
-                            $err = pc_zoho_update($expId, $ez, $invNo, $conf);
+                            $err = pc_zoho_update($expId, $ez, $invNo, $conf, $vatTaxId);
                             if ($err) $warnings[] = 'Zoho expense update failed for "'.$lineName.'": '.$err;
                         }
                     }
                 } else {
                     // new row
-                    $pdo->prepare("INSERT INTO project_costs (quote_id,line_index,line_name,category,description,qty,unit_cost,amount,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
-                        ->execute([$quoteId,$idx,$lineName,$cat,$desc,$qty,max(0,$unit),$amount,$me]);
+                    $pdo->prepare("INSERT INTO project_costs (quote_id,line_index,line_name,category,description,qty,unit_cost,amount,vat_mode,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)")
+                        ->execute([$quoteId,$idx,$lineName,$cat,$desc,$qty,max(0,$unit),$amount,$vatMode,$me]);
                     $newId = (int)$pdo->lastInsertId();
                     $keptIds[$newId] = true;
                     if ($canPost) {
-                        [$newExp,$err] = pc_zoho_create(['line_name'=>$lineName,'category'=>$cat,'description'=>$desc,'amount'=>$amount], $invNo, $conf);
+                        [$newExp,$err] = pc_zoho_create(['line_name'=>$lineName,'category'=>$cat,'description'=>$desc,'amount'=>$amount,'vat_mode'=>$vatMode], $invNo, $conf, $vatTaxId);
                         if ($newExp !== '') $pdo->prepare("UPDATE project_costs SET zoho_expense_id=? WHERE id=?")->execute([$newExp,$newId]);
                         else $warnings[] = 'Zoho expense post failed for "'.$lineName.'": '.$err;
                     }
@@ -173,10 +177,10 @@ try {
             }
         }
 
-        pc_refresh_quote($pdo, $quoteId);
+        pc_refresh_quote($pdo, $quoteId, $vat);
 
         require_once __DIR__ . '/../activity_store.php';
-        activity_log($pdo, $me, 'captured job costs', ($invNo ?: ('#'.$quoteId)) . ' · ' . ($row['customer_name'] ?? '') . ' (cost ' . number_format(pc_total($pdo,$quoteId), 0) . ')');
+        activity_log($pdo, $me, 'captured job costs', ($invNo ?: ('#'.$quoteId)) . ' · ' . ($row['customer_name'] ?? '') . ' (cost ' . number_format(pc_actual_cost_exvat($pdo,$quoteId,$vat), 0) . ')');
 
         echo json_encode(['ok'=>true, 'admin'=>$admin, 'quote'=>$assemble($quoteId), 'warnings'=>$warnings]); exit;
     }

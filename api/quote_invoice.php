@@ -98,6 +98,7 @@ try {
     // Push captured project costs to Zoho as expenses attached to this invoice.
     $warnings = [];
     $conf = costcap_config();
+    $vatTaxId = zoho_vat_tax_id();
     $rows = pc_for_quote($pdo, $id);
     if ($rows) {
         if (($conf['account_id'] ?? '') === '') {
@@ -105,13 +106,37 @@ try {
         } else {
             foreach ($rows as $r) {
                 if (!empty($r['zoho_expense_id']) || (float)$r['amount'] <= 0) continue;  // already pushed / empty
-                [$expId, $err] = pc_zoho_create($r, $invNo, $conf);
+                [$expId, $err] = pc_zoho_create($r, $invNo, $conf, $vatTaxId);
                 if ($expId !== '') $pdo->prepare("UPDATE project_costs SET zoho_expense_id=? WHERE id=?")->execute([$expId, (int)$r['id']]);
                 else $warnings[] = 'Zoho expense failed for "'.$r['line_name'].'": '.$err;
             }
         }
     }
-    pc_refresh_quote($pdo, $id);
+    pc_refresh_quote($pdo, $id, $vat);
+
+    // Apply the client's recorded payments to this new Zoho invoice (what they've paid so far).
+    pp_table($pdo);
+    $paid = pp_total($pdo, $id);
+    if ($paid > 0) {
+        $invTotal = (float)($d['invoice']['total'] ?? 0);
+        $applied  = ($invTotal > 0) ? min($paid, $invTotal) : $paid;
+        $depositAcc = (string)($conf['paid_through_account_id'] ?? '');
+        if ($depositAcc === '') {
+            $warnings[] = 'Invoice created, but the recorded payments were not applied in Zoho — set a "paid through" account in the cost booking, then record/apply the payment in Zoho.';
+        } else {
+            $payBody = [
+                'customer_id'  => (string)$q['zoho_customer_id'],
+                'payment_mode' => 'cash',
+                'amount'       => round($applied, 2),
+                'date'         => date('Y-m-d'),
+                'account_id'   => $depositAcc,
+                'reference_number' => $invNo,
+                'invoices'     => [['invoice_id' => $invId, 'amount_applied' => round($applied, 2)]],
+            ];
+            [$pd, $pc] = zoho_api('POST', 'customerpayments', $payBody);
+            if ($pc >= 400) $warnings[] = 'Invoice created, but Zoho did not accept the client payment ('.number_format($applied,0).'): '.($pd['message'] ?? ('HTTP '.$pc));
+        }
+    }
 
     require_once __DIR__ . '/../activity_store.php';
     activity_log($pdo, $me, 'billed client', $invNo . ' for ' . ($q['customer_name'] ?? '') . ' (from ' . ($q['zoho_estimate_number'] ?: ('#'.$id)) . ')');

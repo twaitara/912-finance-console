@@ -27,6 +27,8 @@ function pc_table(PDO $pdo){
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX (quote_id), INDEX (quote_id, line_index), INDEX (category)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    // whether the entered cost is inclusive or exclusive of VAT ('incl' | 'excl')
+    try { $pdo->exec("ALTER TABLE project_costs ADD COLUMN vat_mode VARCHAR(4) DEFAULT 'excl' AFTER amount"); } catch (Exception $e) {}
     // actual (captured) cost/profit cached on the quote for cheap list rendering,
     // plus the project markers (is_project = ever converted; project_closed = archived by admin)
     foreach ([
@@ -88,9 +90,41 @@ function pc_total(PDO $pdo, $quoteId){
     return round((float)$st->fetchColumn(), 2);
 }
 
-/* recompute actual_cost / actual_profit onto the quote from its cost rows */
-function pc_refresh_quote(PDO $pdo, $quoteId){
-    $cost = pc_total($pdo, $quoteId);
+/* ex-VAT value of a cost (VAT is never part of profit) */
+function pc_exvat($amount, $vatMode, $vat){
+    $amount = (float)$amount;
+    return round(($vatMode === 'incl') ? $amount / (1 + (float)$vat) : $amount, 2);
+}
+
+/* total ACTUAL cost ex-VAT (used for profit) */
+function pc_actual_cost_exvat(PDO $pdo, $quoteId, $vat){
+    $st = $pdo->prepare("SELECT amount, vat_mode FROM project_costs WHERE quote_id=?");
+    $st->execute([(int)$quoteId]);
+    $sum = 0.0;
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $sum += pc_exvat($r['amount'], $r['vat_mode'] ?? 'excl', $vat);
+    return round($sum, 2);
+}
+
+/* the org's 16% VAT tax id (cached) — used to post VAT-inclusive expenses correctly */
+function zoho_vat_tax_id(){
+    $cache = __DIR__ . '/data/zoho_vat.json';
+    if (is_file($cache)) { $t = json_decode(@file_get_contents($cache), true); if (!empty($t['tax_id'])) return (string)$t['tax_id']; }
+    [$data, $code] = zoho_api('GET', 'settings/taxes');
+    $id = '';
+    if ($code < 400) {
+        foreach (($data['taxes'] ?? []) as $tax) {
+            $pct = (float)($tax['tax_percentage'] ?? 0); $nm = strtolower((string)($tax['tax_name'] ?? ''));
+            if (abs($pct - 16.0) < 0.01 || strpos($nm, 'vat') !== false) { $id = (string)($tax['tax_id'] ?? ''); if (abs($pct-16.0)<0.01) break; }
+        }
+        if (!is_dir(__DIR__ . '/data')) @mkdir(__DIR__ . '/data', 0775, true);
+        @file_put_contents($cache, json_encode(['tax_id'=>$id]));
+    }
+    return $id;
+}
+
+/* recompute actual_cost (ex-VAT) / actual_profit onto the quote — VAT is excluded from profit */
+function pc_refresh_quote(PDO $pdo, $quoteId, $vat = 0.16){
+    $cost = pc_actual_cost_exvat($pdo, $quoteId, $vat);
     $st = $pdo->prepare("SELECT sub_total, discount_amount FROM quotes WHERE id=?");
     $st->execute([(int)$quoteId]);
     $r = $st->fetch(PDO::FETCH_ASSOC) ?: ['sub_total'=>0,'discount_amount'=>0];
@@ -100,32 +134,36 @@ function pc_refresh_quote(PDO $pdo, $quoteId){
     return ['actual_cost'=>$cost, 'actual_profit'=>$profit];
 }
 
-/* --- Zoho expense body for one cost row (KES, tax-exclusive, tied to the invoice) --- */
-function pc_expense_body(array $row, $invNo, array $conf){
+/* --- Zoho expense body for one cost row (tied to the invoice). VAT-inclusive rows are
+   posted with is_inclusive_tax + the VAT tax id so Zoho's net (total_without_tax) stays
+   ex-VAT; exclusive rows post as net. --- */
+function pc_expense_body(array $row, $invNo, array $conf, $vatTaxId = ''){
     $desc = trim((string)($row['line_name'] ?? '')) . ' — ' . ucfirst((string)($row['category'] ?? 'other'))
           . ((trim((string)($row['description'] ?? '')) !== '') ? (': ' . trim((string)$row['description'])) : '');
+    $incl = ((string)($row['vat_mode'] ?? 'excl') === 'incl') && ($vatTaxId !== '');
     $body = [
         'account_id'       => (string)($conf['account_id'] ?? ''),
         'date'             => date('Y-m-d'),
         'amount'           => round((float)($row['amount'] ?? 0), 2),
         'reference_number' => (string)$invNo,
         'description'      => substr($desc, 0, 500),
-        'is_inclusive_tax' => false,
+        'is_inclusive_tax' => $incl,
     ];
+    if ($incl) $body['tax_id'] = (string)$vatTaxId;
     if (!empty($conf['paid_through_account_id'])) $body['paid_through_account_id'] = (string)$conf['paid_through_account_id'];
     return $body;
 }
 
 /* create a Zoho expense for a row -> [expense_id, errorOrNull] */
-function pc_zoho_create(array $row, $invNo, array $conf){
-    [$d, $c] = zoho_api('POST', 'expenses', pc_expense_body($row, $invNo, $conf));
+function pc_zoho_create(array $row, $invNo, array $conf, $vatTaxId = ''){
+    [$d, $c] = zoho_api('POST', 'expenses', pc_expense_body($row, $invNo, $conf, $vatTaxId));
     if ($c < 400 && !empty($d['expense']['expense_id'])) return [(string)$d['expense']['expense_id'], null];
     return ['', ($d['message'] ?? ('HTTP ' . $c))];
 }
 
 /* update an existing Zoho expense -> errorOrNull */
-function pc_zoho_update($expenseId, array $row, $invNo, array $conf){
-    [$d, $c] = zoho_api('PUT', 'expenses/' . $expenseId, pc_expense_body($row, $invNo, $conf));
+function pc_zoho_update($expenseId, array $row, $invNo, array $conf, $vatTaxId = ''){
+    [$d, $c] = zoho_api('PUT', 'expenses/' . $expenseId, pc_expense_body($row, $invNo, $conf, $vatTaxId));
     return ($c >= 400) ? ($d['message'] ?? ('HTTP ' . $c)) : null;
 }
 

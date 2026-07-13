@@ -45,7 +45,9 @@ try {
     }
 
     // Profit report: admin only; pull ACTUAL cost per line from project_costs.
+    // VAT is never part of profit, so VAT-inclusive costs are converted to their ex-VAT value.
     $isProfit = ($doc === 'profit');
+    $vat = (float)($cfg['vat_rate'] ?? 0.16);
     $actualByLine = []; $curr = $q['currency'] ?: 'KES';
     if ($isProfit) {
         if (!$admin) { http_response_code(403); echo 'The profit report is admin-only.'; exit; }
@@ -53,7 +55,7 @@ try {
         pc_table($pdo);
         foreach (pc_for_quote($pdo, $id) as $c) {
             $li = (int)$c['line_index'];
-            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + (float)$c['amount'];
+            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + pc_exvat($c['amount'], $c['vat_mode'] ?? 'excl', $vat);
         }
     }
     $money = function($n) use ($curr) { return $curr . ' ' . number_format((float)$n, 0); };
@@ -205,7 +207,7 @@ try {
         <b>Expected profit</b> (from budget): <b><?php echo $money($expProfit); ?></b>
         &nbsp;·&nbsp; <b>Actual profit</b>: <b style="color:<?php echo $actProfit<0?'#c0392b':'#1e7e34'; ?>"><?php echo $money($actProfit); ?></b>
         &nbsp;·&nbsp; Margin: <b><?php echo $margin; ?>%</b>
-        <div style="color:#8a98a8;font-size:11px;margin-top:4px">Figures are ex-VAT. Actual cost = expenses captured against this job. Labour is included in cost.</div>
+        <div style="color:#8a98a8;font-size:11px;margin-top:4px">All figures are ex-VAT — VAT is never included in profit. VAT-inclusive costs are shown at their ex-VAT value. Actual cost = expenses captured against this job (labour included).</div>
       </div>
       <?php else: ?>
       <table class="items">
