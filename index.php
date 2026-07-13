@@ -6824,8 +6824,10 @@ function mqListHtml(){
     const canSend=pushed && ['approved','sent','accepted'].includes(q.status);
     // lifecycle: approved → (Convert to project) → project → (Bill client) → invoiced
     const isProject=q.status==='project';
-    const canProject=ME.admin && pushed && ['approved','sent','accepted'].includes(q.status);
     const isInvoiced=q.status==='invoiced'||!!q.zoho_invoice_number;
+    const alreadyProject=(q.is_project==1||q.is_project===true);
+    // convert an approved quote OR an already-invoiced quote (that isn't already a project) into a project
+    const canProject=ME.admin && pushed && !alreadyProject && (['approved','sent','accepted'].includes(q.status) || isInvoiced);
     const canBill=ME.admin && isProject;
     const canCost=(isProject||isInvoiced) && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || (ME.tabs||[]).includes('projects') || q.created_by===ME.user);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
@@ -7256,11 +7258,16 @@ function jcBill(){
 }
 
 function mqToProject(id){
-  if(!confirm('Start this job as a project? You can then capture actual costs against it before billing.')) return;
+  const q0=(MQ.quotes||[]).find(x=>x.id===id); const inv=q0&&q0.zoho_invoice_number;
+  const msg = inv
+    ? ('This quote is already INVOICED ('+inv+').\n\nConvert it into a project so you can capture costs against it? It stays invoiced.')
+    : 'Start this job as a project? You can then capture actual costs against it before billing.';
+  if(!confirm(msg)) return;
   MQ.busyId=id; MQ.msg=''; render();
-  fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action:'start'})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
-    if(j.ok){ const q=(MQ.quotes||[]).find(x=>x.id===id); if(q)q.status='project'; PROJ.loaded=false; MQ.msg='Project started — capture costs on the Projects page.'; MQ.err=false; }
+    if(j.ok){ const q=(MQ.quotes||[]).find(x=>x.id===id); if(q){ q.status=j.status||q.status; q.is_project=1; } PROJ.loaded=false;
+      MQ.msg=(inv?('Invoiced job '+inv+' added to Projects — capture costs there.'):'Project started — capture costs on the Projects page.'); MQ.err=false; }
     else { MQ.msg=j.error||'Could not start project.'; MQ.err=true; } render();
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }

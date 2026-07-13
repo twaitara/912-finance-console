@@ -28,8 +28,15 @@ try {
 
     if ($action === 'start') {
         if (empty($q['zoho_estimate_id'])) throw new Exception('Push the quote to Zoho first.');
+        $isInvoiced = ($q['status'] === 'invoiced') || (trim((string)$q['zoho_invoice_number']) !== '');
+        if ($isInvoiced) {
+            // already billed — bring it into the project flow (so costs can be captured) but keep it invoiced
+            $pdo->prepare("UPDATE quotes SET is_project=1, project_closed=0 WHERE id=?")->execute([$id]);
+            activity_log($pdo, $me, 'started project (already invoiced)', ($q['zoho_invoice_number'] ?: ('#'.$id)) . ' · ' . ($q['customer_name'] ?? ''));
+            echo json_encode(['ok'=>true, 'status'=>$q['status'], 'is_project'=>1, 'project_closed'=>0, 'invoice_number'=>$q['zoho_invoice_number']]); exit;
+        }
         if (!in_array($q['status'], ['approved','sent','accepted'], true)) {
-            throw new Exception('Only an approved quote can be turned into a project.');
+            throw new Exception('Only an approved (or invoiced) quote can be turned into a project.');
         }
         $pdo->prepare("UPDATE quotes SET status='project', is_project=1, project_closed=0 WHERE id=?")->execute([$id]);
         activity_log($pdo, $me, 'started project', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' · ' . ($q['customer_name'] ?? ''));
