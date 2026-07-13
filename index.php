@@ -3275,11 +3275,11 @@ function vUsers(){
 
   const rows = (N.list||[]).map(u=>{
     const tabs = (u.tabs||'').split(',').filter(Boolean);
-    const chips = u.is_admin? '<span class="pill" style="background:#EEF2FE;color:var(--blue)">Full access</span>'
-      : (tabs.length? tabs.map(t=>`<span class="pill" style="background:#F1F4F8;color:var(--ink)">${ALLTABS[t]||t}</span>`).join(' ') : '<span class="muted" style="font-size:11px">No tabs</span>');
+    const chips = u.is_admin? '<span class="pill" style="background:var(--surface-2);color:var(--blue);border:1px solid var(--line)">Full access</span>'
+      : (tabs.length? tabs.map(t=>`<span class="pill" style="background:var(--surface-2);color:var(--ink);border:1px solid var(--line)">${ALLTABS[t]||t}</span>`).join(' ') : '<span class="muted" style="font-size:11px">No tabs</span>');
     const editing = N.editId===u.id;
     return `<div class="card" style="${u.disabled?'opacity:.62':''}">
-      <div class="row"><b style="font-size:14px">${esc(u.username)}${u.is_admin?' 👑':''} ${u.disabled?'<span class="pill" style="background:#FDECEA;color:var(--bad)">Disabled</span>':''}</b>
+      <div class="row"><b style="font-size:14px">${esc(u.username)}${u.is_admin?' 👑':''} ${u.disabled?'<span class="pill" style="background:var(--surface-2);color:var(--bad);border:1px solid var(--line)">Disabled</span>':''}</b>
         <span class="muted" style="font-size:11px">#${u.id}</span></div>
       <div class="muted" style="font-size:11px;margin-top:2px">${u.email?('✉ '+esc(u.email)):'<span style="color:var(--bad)">no email — cannot see their tasks</span>'}${u.calendar?' · <span style="color:var(--good)">📅 calendar connected</span>':''}</div>
       <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">${chips}</div>
