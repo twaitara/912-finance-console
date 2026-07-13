@@ -3600,7 +3600,10 @@ function rptToggleMonth(m){
   render();
 }
 function rptAllMonths(){ window._rptMonths=[]; render(); }
-function rptSearch(v){ window._rptSearch=v; const el=document.getElementById('rptBody'); if(el) el.innerHTML=rptBodyHtml(); }
+function rptSearch(v){ window._rptSearch=v; REPORT.dp=1; const el=document.getElementById('rptBody'); if(el) el.innerHTML=rptBodyHtml(); }
+function rptRepaint(){ const el=document.getElementById('rptBody'); if(el) el.innerHTML=rptBodyHtml(); }
+function rptGoPage(n){ REPORT.dp=n; rptRepaint(); }
+function rptPerPage(v){ REPORT.perPage=parseInt(v,10)||25; REPORT.dp=1; rptRepaint(); }
 function vReport(){
   const now = new Date();
   if(window._rptYear===undefined) window._rptYear = String(now.getFullYear());
@@ -3645,6 +3648,7 @@ function rptBodyHtml(){
 
   const list = reportFiltered();
   const t = list.reduce((a,x)=>{ a.rev+=x.revenueExVat||0; a.vat+=x.vat||0; a.cost+=x.cost||0; a.profit+=x.profit||0; a.total+=x.total||0; return a; }, {rev:0,vat:0,cost:0,profit:0,total:0});
+  const _rst={perPage:REPORT.perPage||25, page:REPORT.dp||1}; const _rp=pgSlice(list,_rst); REPORT.dp=_rst.page;   // paginate rows; totals stay over the full set
   const q = (window._rptSearch||'').trim();
 
   // ---- multi-client picker ----
@@ -3702,8 +3706,9 @@ function rptBodyHtml(){
   }
 
   return costForm + picker + `
-    <div class="row" style="margin:0 2px 6px">
-      <span class="muted">${list.length} invoice${list.length===1?'':'s'} · ${CFG.cur}</span>
+    <div class="row" style="margin:0 2px 6px;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="muted" style="flex:1;min-width:140px">${list.length} invoice${list.length===1?'':'s'} · ${CFG.cur}${_rp.pages>1?(' · page '+REPORT.dp+' of '+_rp.pages):''}</span>
+      ${pgSel(REPORT.perPage||25,'rptPerPage(this.value)')}
       <span class="muted" style="font-size:10px">Data as of ${REPORT.generatedAt? new Date(REPORT.generatedAt).toLocaleString('en-KE') : 'now'}${REPORT.cached?' (cached)':''}</span>
     </div>
     ${REPORT.truncated? `<div class="muted" style="margin:-2px 2px 10px">Showing first 150 invoices for VAT accuracy — narrow to fewer months for the full set.</div>`:''}
@@ -3717,7 +3722,7 @@ function rptBodyHtml(){
           <th>Total Cost</th><th>Total Profit</th>
         </tr></thead>
         <tbody>
-          ${list.map(x=>{const usd=x.currency==='USD';const g='#1a7f37';return `<tr${usd?' style="background:#eafbf0"':''}>
+          ${_rp.slice.map(x=>{const usd=x.currency==='USD';const g='#1a7f37';return `<tr${usd?' style="background:#eafbf0"':''}>
             <td class="l cl">${x.client||''}</td>
             <td class="l"${usd?` style="color:${g};font-weight:700"`:''}>${usd?'$ ':''}${x.invoiceNumber||''}</td>
             <td class="l">${x.date||''}</td>
@@ -3739,7 +3744,8 @@ function rptBodyHtml(){
           </tr>
         </tbody>
       </table>
-    </div>`
+    </div>
+    ${pgBar({page:REPORT.dp},_rp.pages,'rptGoPage')}`
     : `<div class="card muted" style="text-align:center">${q?('No client matches "'+q+'".'):'No KES invoices in this period.'}</div>`}
 
     <a onclick="exportReportCSV()" style="color:var(--blue);cursor:pointer;font-size:12px;display:block;text-align:center;margin-top:10px">Export this report as CSV</a>`;
@@ -4157,9 +4163,11 @@ function qlImport(eid){
       if(TAB==='qlist') render();
     } else alert(j.error||'Import failed'); }).catch(e=>alert(''+e));
 }
+function qlistGoPage(n){ QLIST.dp=n; render(); }
+function qlistPerPage(v){ QLIST.perPage=parseInt(v,10)||25; QLIST.dp=1; render(); }
 function qlistLoad(more=false){
   if(QLIST.loading) return;
-  if(!more){QLIST.page=1;QLIST.allItems=[];QLIST.hasMore=false;QLIST.error='';}
+  if(!more){QLIST.page=1;QLIST.dp=1;QLIST.allItems=[];QLIST.hasMore=false;QLIST.error='';}
   QLIST.loading=true; render();
   const {from,to}=qlistDates();
   const p=new URLSearchParams({status:QLIST.status,from,to,page:QLIST.page,sort:'date',order:'D'});
@@ -4192,8 +4200,9 @@ function vQList(){
   const q=QLIST.search.toLowerCase();
   const items=QLIST.allItems.filter(x=>!q||x.customer.toLowerCase().includes(q)||x.number.toLowerCase().includes(q));
   const total=items.reduce((s,x)=>s+(+x.total||0),0);
+  const _st={perPage:QLIST.perPage||25, page:QLIST.dp||1}; const _qp=pgSlice(items,_st); QLIST.dp=_st.page;
   const badge=s=>`<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:9px;color:#fff;background:${SC[s]||'#94A3B8'};text-transform:capitalize">${s||'—'}</span>`;
-  const rows=items.map(x=>`<tr>
+  const rows=_qp.slice.map(x=>`<tr>
     <td style="padding:7px 10px;font-size:11.5px;font-weight:600;white-space:nowrap;color:var(--orange)">${x.number}</td>
     <td style="padding:7px 10px;font-size:11.5px">${x.customer}</td>
     <td style="padding:7px 10px;font-size:11px;color:var(--mute);white-space:nowrap">${x.date}</td>
@@ -4212,7 +4221,8 @@ function vQList(){
     <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
       <input id="qlSearch" type="text" placeholder="Search client or quote #…" value="${QLIST.search}"
         style="flex:1;font-size:12px;padding:6px 10px"
-        oninput="QLIST.search=this.value;render()">
+        oninput="QLIST.search=this.value;QLIST.dp=1;render()">
+      ${pgSel(QLIST.perPage||25,'qlistPerPage(this.value)')}
       <button class="btn sec" style="width:auto;padding:6px 14px;font-size:11.5px;flex-shrink:0" onclick="QLIST.page=1;QLIST.allItems=[];qlistLoad()">↺ Refresh</button>
     </div>
   </div>
@@ -4221,7 +4231,7 @@ function vQList(){
   ${QLIST.loaded||QLIST.allItems.length?`
   <div class="card" style="padding:0;overflow:hidden">
     <div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between">
-      <span style="font-size:12px;font-weight:600">${items.length} quote${items.length!==1?'s':''}</span>
+      <span style="font-size:12px;font-weight:600">${items.length} quote${items.length!==1?'s':''}${_qp.pages>1?(' · page '+QLIST.dp+' of '+_qp.pages):''}</span>
       <span style="font-size:12px;font-weight:700;color:var(--orange)">KES ${Math.round(total).toLocaleString('en-KE')}</span>
     </div>
     <div style="overflow-x:auto">
@@ -4239,6 +4249,7 @@ function vQList(){
       <tbody style="divide-y">${rows||`<tr><td colspan="${ME.admin?8:7}" style="text-align:center;padding:20px;color:var(--mute);font-size:12px">No quotes found</td></tr>`}</tbody>
     </table>
     </div>
+    ${_qp.pages>1?`<div style="padding:6px 14px 12px">${pgBar({page:QLIST.dp},_qp.pages,'qlistGoPage')}</div>`:''}
     ${QLIST.hasMore?`<div style="padding:10px 14px;border-top:1px solid var(--line);text-align:center">
       <button class="btn sec" style="width:auto;padding:6px 20px;font-size:12px" onclick="qlistLoad(true)">${QLIST.loading?'Loading…':'Load next 200 →'}</button>
     </div>`:''}
@@ -4259,9 +4270,11 @@ function ivlistDates(){
   if(IVLIST.preset==='custom')    return {from:IVLIST.from,              to:IVLIST.to};
   return {from:'',to:''};
 }
+function ivlistGoPage(n){ IVLIST.dp=n; render(); }
+function ivlistPerPage(v){ IVLIST.perPage=parseInt(v,10)||25; IVLIST.dp=1; render(); }
 function ivlistLoad(more=false){
   if(IVLIST.loading) return;
-  if(!more){IVLIST.page=1;IVLIST.allItems=[];IVLIST.hasMore=false;IVLIST.error='';}
+  if(!more){IVLIST.page=1;IVLIST.dp=1;IVLIST.allItems=[];IVLIST.hasMore=false;IVLIST.error='';}
   IVLIST.loading=true; render();
   const {from,to}=ivlistDates();
   const p=new URLSearchParams({status:IVLIST.status,from,to,page:IVLIST.page,sort:'date',order:'D'});
@@ -4298,8 +4311,9 @@ function vIVList(){
   const totalAmt=items.reduce((s,x)=>s+(+x.total||0),0);
   const totalBal=items.reduce((s,x)=>s+(+x.balance||0),0);
   const overdue=items.filter(x=>x.status==='overdue');
+  const _st={perPage:IVLIST.perPage||25, page:IVLIST.dp||1}; const _ip=pgSlice(items,_st); IVLIST.dp=_st.page;
   const badge=s=>`<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:9px;color:#fff;background:${SC[s]||'#94A3B8'};text-transform:capitalize">${s==='partiallypaid'?'Partial':s||'—'}</span>`;
-  const rows=items.map(x=>`<tr>
+  const rows=_ip.slice.map(x=>`<tr>
     <td style="padding:7px 10px;font-size:11.5px;font-weight:600;white-space:nowrap;color:var(--orange)">${x.number}</td>
     <td style="padding:7px 10px;font-size:11.5px">${x.customer}</td>
     <td style="padding:7px 10px;font-size:11px;color:var(--mute);white-space:nowrap">${x.date}</td>
@@ -4317,7 +4331,8 @@ function vIVList(){
     <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
       <input id="ivSearch" type="text" placeholder="Search client or invoice #…" value="${IVLIST.search}"
         style="flex:1;font-size:12px;padding:6px 10px"
-        oninput="IVLIST.search=this.value;render()">
+        oninput="IVLIST.search=this.value;IVLIST.dp=1;render()">
+      ${pgSel(IVLIST.perPage||25,'ivlistPerPage(this.value)')}
       <button class="btn sec" style="width:auto;padding:6px 14px;font-size:11.5px;flex-shrink:0" onclick="IVLIST.page=1;IVLIST.allItems=[];ivlistLoad()">↺ Refresh</button>
     </div>
   </div>
@@ -4326,7 +4341,7 @@ function vIVList(){
   ${IVLIST.loaded||IVLIST.allItems.length?`
   <div class="card" style="padding:0;overflow:hidden">
     <div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <span style="font-size:12px;font-weight:600">${items.length} invoice${items.length!==1?'s':''}</span>
+      <span style="font-size:12px;font-weight:600">${items.length} invoice${items.length!==1?'s':''}${_ip.pages>1?(' · page '+IVLIST.dp+' of '+_ip.pages):''}</span>
       <span style="font-size:12px">Billed <b>KES ${Math.round(totalAmt).toLocaleString('en-KE')}</b></span>
       ${totalBal>0?`<span style="font-size:12px">Outstanding <b style="color:#EF4444">KES ${Math.round(totalBal).toLocaleString('en-KE')}</b></span>`:''}
       ${overdue.length?`<span style="font-size:12px;color:#EF4444;font-weight:700">${overdue.length} overdue</span>`:''}
@@ -4345,6 +4360,7 @@ function vIVList(){
       <tbody>${rows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--mute);font-size:12px">No invoices found</td></tr>'}</tbody>
     </table>
     </div>
+    ${_ip.pages>1?`<div style="padding:6px 14px 12px">${pgBar({page:IVLIST.dp},_ip.pages,'ivlistGoPage')}</div>`:''}
     ${IVLIST.hasMore?`<div style="padding:10px 14px;border-top:1px solid var(--line);text-align:center">
       <button class="btn sec" style="width:auto;padding:6px 20px;font-size:12px" onclick="ivlistLoad(true)">${IVLIST.loading?'Loading…':'Load next 200 →'}</button>
     </div>`:''}
@@ -6479,7 +6495,7 @@ function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
-let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, open:{}, users:[], statuses:[], q:'' };
+let MQ = { quotes:[], loaded:false, loading:false, syncing:false, msg:'', err:false, busyId:0, month:'all', page:1, perPage:50, open:{}, users:[], statuses:[], q:'' };
 const STATUS_GROUPS = [
   {key:'approved', label:'Approved', set:['approved','accepted']},
   {key:'pending',  label:'Pending',  set:['pending_approval','draft','local_draft']},
@@ -6490,6 +6506,11 @@ const STATUS_GROUPS = [
 ];
 function mqStatusSet(){ const s=new Set(); MQ.statuses.forEach(k=>{ const g=STATUS_GROUPS.find(x=>x.key===k); if(g) g.set.forEach(v=>s.add(v)); }); return s; }
 const MQ_PER_PAGE = 50;
+/* ---- shared page-size + pagination helpers (used by every record list) ---- */
+const PAGE_SIZES=[10,15,25,50,100];
+function pgSel(cur,onchange){ return `<select onchange="${onchange}" title="Records per page" style="width:auto;margin:0;font-size:12px;padding:6px 8px">${PAGE_SIZES.map(n=>`<option value="${n}" ${(cur||25)===n?'selected':''}>${n} / page</option>`).join('')}</select>`; }
+function pgSlice(arr,st){ const total=arr.length; const per=st.perPage||25; const pages=Math.max(1,Math.ceil(total/per)); if(st.page>pages)st.page=pages; if(!st.page||st.page<1)st.page=1; return {total,per,pages,slice:arr.slice((st.page-1)*per,st.page*per)}; }
+function pgBar(st,pages,goFn){ if(pages<=1)return ''; return `<div class="row" style="justify-content:center;gap:8px;margin-top:14px"><button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="${goFn}(${st.page-1})" ${st.page<=1?'disabled':''}>‹ Prev</button><span class="muted" style="font-size:12px">Page ${st.page} of ${pages}</span><button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="${goFn}(${st.page+1})" ${st.page>=pages?'disabled':''}>Next ›</button></div>`; }
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function mqNormalize(qs){ (qs||[]).forEach(q=>{ if(q.zoho_invoice_number) q.status='invoiced'; }); return qs||[]; }   /* an invoice number means invoiced, regardless of estimate status */
 function mqMonthKey(q){ return String(q.created_at||q.quote_date||'').slice(0,7); }   /* YYYY-MM */
@@ -6827,9 +6848,7 @@ function mqListHtml(){
       return digits!=='' && hay.replace(/\D/g,'').includes(digits);
     });
   }
-  const pages=Math.max(1,Math.ceil(filtered.length/MQ_PER_PAGE));
-  if(MQ.page>pages) MQ.page=pages; if(MQ.page<1) MQ.page=1;
-  const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
+  const _pg=pgSlice(filtered, MQ); const pages=_pg.pages; const slice=_pg.slice;
 
   const count=`<div class="muted" style="margin-bottom:10px;font-size:12px">${MQ.syncing?'Checking Zoho…':(filtered.length+' quote'+(filtered.length===1?'':'s')+(MQ.month==='all'?'':' · '+mqMonthLabel(MQ.month))+(qq?(' · matching “'+qesc(MQ.q)+'”'):''))}</div>`;
 
@@ -6966,7 +6985,7 @@ function vMyQuotes(){
     ${MQ.msg?`<div class="${MQ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(MQ.msg)}</div>`:''}
     <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="mqSearch" type="text" autocomplete="off" ${tip('Find by quote/estimate number, invoice number, reference, client or subject')} placeholder="🔍 Search quote #, invoice #, client or subject…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
-      <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}
+      <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}${pgSel(MQ.perPage,'mqPerPage(this.value)')}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
     </div>
     ${statusFilter}
@@ -6976,6 +6995,7 @@ function vMyQuotes(){
 function mqTogglePreview(id){ MQ.open[id]=!MQ.open[id]; render(); }
 function mqSetMonth(v){ MQ.month=v; MQ.page=1; render(); }
 function mqGoPage(n){ MQ.page=n; render(); }
+function mqPerPage(v){ MQ.perPage=parseInt(v,10)||50; MQ.page=1; const b=document.getElementById('mqListBox'); if(b) b.innerHTML=mqListHtml(); }
 function mqToggleUser(u){ const i=MQ.users.indexOf(u); if(i>=0) MQ.users.splice(i,1); else MQ.users.push(u); MQ.page=1; render(); }
 function mqClearUsers(){ MQ.users=[]; MQ.page=1; render(); }
 function mqToggleStatus(k){ const i=MQ.statuses.indexOf(k); if(i>=0) MQ.statuses.splice(i,1); else MQ.statuses.push(k); MQ.page=1; render(); }
@@ -7532,6 +7552,9 @@ function ppDelete(id){ if(!confirm('Remove this payment?'))return;
   .catch(e=>{ PP.msg='Error: '+e; PP.err=true; ppRender(); });
 }
 
+var JCP={perPage:25,page:1};
+function jcardGoPage(n){ JCP.page=n; render(); }
+function jcardPerPage(v){ JCP.perPage=parseInt(v,10)||25; JCP.page=1; render(); }
 function vJobCards(){
   const jobs=(MQ.quotes||[]).filter(q=>q.status==='invoiced'||q.zoho_invoice_number)
     .slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
@@ -7543,9 +7566,13 @@ function vJobCards(){
       <div class="muted" style="margin-top:6px;max-width:460px;margin-left:auto;margin-right:auto">Open <b>My Quotes</b>, find an approved quote and tap <b>🧾 Job Card</b>. The quote becomes a Zoho invoice and a printable Delivery Note / Job Card (no prices) opens for the customer to sign.</div>
       <button class="btn" style="width:auto;padding:8px 16px;font-size:12px;margin-top:14px" onclick="navTo('myquotes')">Go to My Quotes →</button>
     </div>`;
+  const _jp=pgSlice(jobs, JCP);
   return `<h2>Job cards</h2>
-    <div class="muted" style="margin:-6px 0 12px">${jobs.length} job card${jobs.length===1?'':'s'} generated${ME.admin?'':' by you'}.</div>
-    ${jobs.map(q=>{
+    <div class="row" style="align-items:center;gap:8px;margin:-6px 0 12px;flex-wrap:wrap">
+      <span class="muted" style="flex:1;min-width:140px">${jobs.length} job card${jobs.length===1?'':'s'} generated${ME.admin?'':' by you'}${_jp.pages>1?(' · page '+JCP.page+' of '+_jp.pages):''}.</span>
+      ${pgSel(JCP.perPage,'jcardPerPage(this.value)')}
+    </div>
+    ${_jp.slice.map(q=>{
       const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
       return `<div class="card" style="border-left:4px solid var(--blue)">
         <div class="row" style="align-items:flex-start;gap:12px">
@@ -7558,7 +7585,8 @@ function vJobCards(){
           <button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Open the printable job card / delivery note')} onclick="window.open('api/job_card.php?id=${q.id}','_blank')">🧾 ${ME.admin?'Open / print':'View'} job card</button>
           ${ME.admin?`<button class="btn sec qb" onclick="mqPdf(${q.id})">⤓ Download Quote PDF</button>`:''}
         </div>
-      </div>`;}).join('')}`;
+      </div>`;}).join('')}
+    ${pgBar(JCP, _jp.pages, 'jcardGoPage')}`;
 }
 function loadJobCards(){ MQ.loading=true;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
