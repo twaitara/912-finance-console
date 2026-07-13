@@ -24,6 +24,7 @@ try {
     $items  = json_decode($q['line_items'] ?: '[]', true) ?: [];
     $docNo  = $q['zoho_invoice_number'] ?: ($q['zoho_estimate_number'] ?: ('Q-' . $id));
     $date   = date('d M Y');
+    $theme  = (($_GET['theme'] ?? '') === 'dark') ? 'dark' : '';   // match the app's dark mode on screen (prints light)
 
     // company (letterhead) — defaults match the org; overridable in config.php
     $coName = $cfg['business_name']    ?? 'Nine One Two Holdings';
@@ -64,7 +65,7 @@ try {
     $addrHtml = nl2br(jc_esc($coAddr));
 
     header('Content-Type: text/html; charset=utf-8');
-    ?><!doctype html><html><head><meta charset="utf-8">
+    ?><!doctype html><html class="<?php echo $theme; ?>"><head><meta charset="utf-8">
 <title>Job Card <?php echo jc_esc($docNo); ?></title>
 <style>
   @page{size:A4;margin:14mm}
@@ -98,6 +99,17 @@ try {
   .bar{position:fixed;top:0;left:0;right:0;background:#15202B;color:#fff;padding:8px 14px;display:flex;gap:10px;justify-content:center;align-items:center;font-size:13px}
   .bar button{background:#F56F00;color:#fff;border:none;padding:7px 16px;border-radius:7px;font-weight:600;cursor:pointer;font-family:inherit}
   .bar a{color:#9AA7B8;text-decoration:none;font-size:12px}
+  /* Dark mode for on-screen viewing only — printing always uses the light "paper" styles above */
+  @media screen{
+    html.dark body{background:#0E1826;color:#E7EDF5}
+    html.dark .sheet{background:#16212F;border-color:#2A3A4E}
+    html.dark .top,html.dark .rowline,html.dark .billto .lbl,html.dark table.items td{border-color:#2A3A4E}
+    html.dark .co .meta,html.dark .title .t,html.dark .title .no,html.dark .rowline .k,html.dark .billto .lbl,html.dark .billto .who .pin{color:#9FB0C4}
+    html.dark .co .name,html.dark .billto .who b,html.dark table.items td{color:#E7EDF5}
+    html.dark table.items td div{color:#9FB0C4!important}
+    html.dark .sign{color:#E7EDF5}
+    html.dark .sign span{border-top-color:#3A4C64}
+  }
   @media print{.bar{display:none}body{background:#fff}.sheet{border:none;margin:0;max-width:none}}
 </style></head>
 <body>

@@ -841,8 +841,10 @@ if (isset($_POST['app_password'])) {
     $un = trim($_POST['app_user'] ?? '');
     if (hash_equals($cfg['app_password'], $pw)) {
         $_SESSION['auth'] = true; $_SESSION['user'] = 'admin'; $_SESSION['is_admin'] = 1; $_SESSION['tabs'] = '*';
+        $_SESSION['email'] = $un;                                   // remember who typed in the master login
         $justLoggedIn = true;
-        try { require_once __DIR__ . '/db.php'; require_once __DIR__ . '/activity_store.php'; activity_log(db(), 'admin', 'logged in', 'master'); } catch (Exception $e) {}
+        // stamp the typed identity so master-password logins are traceable in the Activity log
+        try { require_once __DIR__ . '/db.php'; require_once __DIR__ . '/activity_store.php'; activity_log(db(), 'admin', 'logged in', 'master' . ($un !== '' ? (' as ' . $un) : ' (no id entered)')); } catch (Exception $e) {}
     } else {
         $row = false;
         try { require_once __DIR__ . '/db.php'; $row = user_authenticate(db(), $un, $pw); } catch (Exception $e) { $row = false; }
@@ -6352,6 +6354,7 @@ function vTodo(){
 /* ================= end To-Do ================= */
 
 function themeIsDark(){ return document.documentElement.classList.contains('dark'); }
+function openJobCard(id){ window.open('api/job_card.php?id='+id+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* job card follows dark mode on screen, prints light */
 function syncThemeBtn(){ const b=document.getElementById('themeBtn'); if(b) b.textContent = themeIsDark()?'☀️':'🌙'; }
 function toggleTheme(){
   const dark=document.documentElement.classList.toggle('dark');
@@ -6826,7 +6829,7 @@ function mqListHtml(){
         ${canProject?`<button class="btn qb" style="background:#7A5AF8;box-shadow:none" ${tip('Start the job: capture actual costs against this quote before billing')} onclick="mqToProject(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'📋 Convert to project'}</button>`:''}
         ${canCost?`<button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Enter or edit the actual costs that went into this job, broken down per line')} onclick="jcOpen(${q.id},'capture')">${isInvoiced?'💰 Capture costs':'💰 Costs'}</button>`:''}
         ${canBill?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? Review costs vs profit, create the invoice, and post the expenses to Zoho')} onclick="jcOpen(${q.id},'bill')" ${busy?'disabled':''}>${busy?'Working…':'🧾 Bill client'}</button>`:''}
-        ${(ME.admin && isInvoiced)?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="window.open('api/job_card.php?id='+${q.id},'_blank')">⤓ Job card</button>`:''}
+        ${(ME.admin && isInvoiced)?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${q.id})">⤓ Job card</button>`:''}
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
@@ -6949,7 +6952,7 @@ function mqJobCard(id){
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
     if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q){ q.status='invoiced'; q.zoho_invoice_number=j.invoice_number; }
       MQ.msg='Job card ready — invoice '+(j.invoice_number||'')+(j.already?' (already invoiced).':' created in Zoho.'); MQ.err=false;
-      window.open('api/job_card.php?id='+id,'_blank'); render(); }
+      openJobCard(id); render(); }
     else { MQ.msg=j.error||'Could not generate job card.'; MQ.err=true; render(); }
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
@@ -7195,7 +7198,7 @@ function jcBill(){
           const w=j.warnings||[];
           MQ.msg='Invoice '+(j.invoice_number||'')+(j.already?' (already invoiced).':' created — costs posted to Zoho.')+(w.length?(' ⚠ '+w.join(' ')):''); MQ.err=w.length>0;
           jcClose();
-          window.open('api/job_card.php?id='+JC.id,'_blank');
+          openJobCard(JC.id);
           MQ.loaded=false; mqLoad(); PROJ.loaded=false; if(TAB==='projects') projLoad(); render();
         } else { JC.msg=j.error||'Could not bill.'; JC.err=true; jcRender(); }
       });
@@ -7252,7 +7255,7 @@ function projCardAdmin(p){
     <div class="qact">
       <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('View / edit the actual costs on this project')} onclick="jcOpen(${p.id},'capture')">💰 Costs</button>
       ${stage==='open'?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Review costs vs profit, create the invoice and post expenses to Zoho')} onclick="jcOpen(${p.id},'bill')" ${busy?'disabled':''}>🧾 Bill client</button>`:''}
-      ${p.zoho_invoice_number?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="window.open('api/job_card.php?id='+${p.id},'_blank')">⤓ Job card</button>`:''}
+      ${p.zoho_invoice_number?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${p.id})">⤓ Job card</button>`:''}
       ${p.project_closed?`<button class="btn sec qb" ${tip('Reopen so the team can see and cost it again')} onclick="projReopen(${p.id})" ${busy?'disabled':''}>${busy?'…':'↺ Reopen'}</button>`:`<button class="btn sec qb" ${tip('Close this project — hides it from the team; you can reopen anytime')} onclick="projClose(${p.id})" ${busy?'disabled':''}>${busy?'…':'✓ Close'}</button>`}
     </div>
   </div>`;
