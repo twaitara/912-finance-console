@@ -7,6 +7,9 @@ deployment:
     - /bin/cp *.php $DEPLOYPATH
     - /bin/cp .user.ini $DEPLOYPATH
     - /bin/cp .htaccess $DEPLOYPATH
+    # Static app bundle extracted from index.php (cache-busted via ?v=filemtime)
+    - /bin/cp app.css $DEPLOYPATH
+    - /bin/cp app.js $DEPLOYPATH
     - /bin/cp -R api $DEPLOYPATH
     # Security hardening: deny direct web access to the data/ cache (Zoho token + JSON)
     - /bin/cp data/.htaccess $DEPLOYPATH/data/
