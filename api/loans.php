@@ -182,16 +182,25 @@ try {
         if (!$loan) throw new Exception('Loan not found.');
         $outstanding = (float)$loan['amount'] - (float)$loan['repaid'];
         if ($amt > $outstanding + 0.01) $amt = $outstanding;
-        $pdo->prepare("INSERT INTO fund_loan_repayments (loan_id,amount,repaid_date,note) VALUES (?,?,?,?)")->execute([$id,$amt,$date,$note]);
         $newRepaid = (float)$loan['repaid'] + $amt;
         $status = ($newRepaid >= (float)$loan['amount'] - 0.01) ? 'Repaid' : 'Open';
-        $pdo->prepare("UPDATE fund_loans SET repaid=?, status=? WHERE id=?")->execute([$newRepaid,$status,$id]);
+        // record the repayment and update the loan's running total atomically (fix #11)
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("INSERT INTO fund_loan_repayments (loan_id,amount,repaid_date,note) VALUES (?,?,?,?)")->execute([$id,$amt,$date,$note]);
+            $pdo->prepare("UPDATE fund_loans SET repaid=?, status=? WHERE id=?")->execute([$newRepaid,$status,$id]);
+            $pdo->commit();
+        } catch (\Throwable $e) { $pdo->rollBack(); throw $e; }
         echo json_encode(loans_payload($pdo, $FUND_SETTING)); exit;
     }
     if ($action === 'delete') {
         $id = (int)($in['id'] ?? 0); if (!$id) throw new Exception('No loan.');
-        $pdo->prepare("DELETE FROM fund_loan_repayments WHERE loan_id=?")->execute([$id]);
-        $pdo->prepare("DELETE FROM fund_loans WHERE id=?")->execute([$id]);
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("DELETE FROM fund_loan_repayments WHERE loan_id=?")->execute([$id]);
+            $pdo->prepare("DELETE FROM fund_loans WHERE id=?")->execute([$id]);
+            $pdo->commit();
+        } catch (\Throwable $e) { $pdo->rollBack(); throw $e; }
         echo json_encode(loans_payload($pdo, $FUND_SETTING)); exit;
     }
 

@@ -174,8 +174,12 @@ try {
 
     if ($action === 'delete') {
         $id = (int)($in['id'] ?? 0); if (!$id) throw new Exception('No task id.');
-        $pdo->prepare("DELETE FROM tasks WHERE id=?")->execute([$id]);
-        $pdo->prepare("DELETE FROM task_assignees WHERE task_id=?")->execute([$id]);
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("DELETE FROM tasks WHERE id=?")->execute([$id]);
+            $pdo->prepare("DELETE FROM task_assignees WHERE task_id=?")->execute([$id]);
+            $pdo->commit();
+        } catch (\Throwable $e) { $pdo->rollBack(); throw $e; }
         echo json_encode(['ok'=>true,'tasks'=>tk_list($pdo, $ADMIN ? null : $ME_EMAIL, $ADMIN ? null : $ME_USER)]); exit;
     }
 

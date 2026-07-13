@@ -106,9 +106,20 @@ try {
 
     if ($action === 'delete') {
         $row = $own($in['id'] ?? 0);
-        $pdo->prepare("DELETE FROM quotes WHERE id=?")->execute([(int)$row['id']]);
+        $qid = (int)$row['id'];
+        // remove the quote AND its child rows atomically, so nothing is orphaned (fix #11)
+        require_once __DIR__ . '/../project_costs.php';
+        pc_table($pdo); pp_table($pdo); pa_table($pdo);
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("DELETE FROM project_costs WHERE quote_id=?")->execute([$qid]);
+            $pdo->prepare("DELETE FROM project_payments WHERE quote_id=?")->execute([$qid]);
+            $pdo->prepare("DELETE FROM project_assignees WHERE quote_id=?")->execute([$qid]);
+            $pdo->prepare("DELETE FROM quotes WHERE id=?")->execute([$qid]);
+            $pdo->commit();
+        } catch (\Throwable $e) { $pdo->rollBack(); throw $e; }
         require_once __DIR__ . '/../activity_store.php';
-        activity_log($pdo, $me, 'removed quote', ($row['zoho_estimate_number'] ?: ('#'.$row['id'])) . ' · ' . ($row['customer_name'] ?? ''));
+        activity_log($pdo, $me, 'removed quote', ($row['zoho_estimate_number'] ?: ('#'.$qid)) . ' · ' . ($row['customer_name'] ?? ''));
         echo json_encode(['ok'=>true]); exit;
     }
 
