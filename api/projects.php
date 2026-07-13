@@ -30,7 +30,9 @@ try {
                 'status'=>$q['status'], 'project_closed'=>(int)$q['project_closed'],
                 'created_by'=>$q['created_by'], 'quote_date'=>$q['quote_date'], 'created_at'=>$q['created_at'],
                 'line_count'=>proj_line_count($q['line_items']),
-                'total'=>(float)$q['total'], 'actual_cost'=>(float)($q['actual_cost'] ?? 0), 'actual_profit'=>(float)($q['actual_profit'] ?? 0),
+                'total'=>(float)$q['total'],
+                'budget_cost'=>(float)($q['total_cost'] ?? 0), 'expected_profit'=>(float)($q['profit'] ?? 0),
+                'actual_cost'=>(float)($q['actual_cost'] ?? 0), 'actual_profit'=>(float)($q['actual_profit'] ?? 0),
             ];
         }, $rows);
         echo json_encode(['ok'=>true, 'admin'=>true, 'projects'=>$out]); exit;

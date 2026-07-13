@@ -7110,10 +7110,13 @@ function jcRender(){
         <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px"><b id="jcamt-${li}-${ri}">${fmtn(jcRowAmt(r))}</b></td>
         <td style="text-align:center"><button class="btn sec" style="width:auto;padding:3px 8px;font-size:12px;color:var(--bad)" onclick="jcDelRow(${li},${ri})" title="Remove this cost">✕</button></td>
       </tr>`).join('');
+    const ep=(parseFloat(l.amount)||0)-(parseFloat(l.budget)||0);   // expected (budgeted) line profit — static
     const hdr = JC.admin
-      ? (conv
-         ? `<span style="font-size:11.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b> · Budget <b style="color:var(--ink)">${fmtn(l.budget||0)}</b> · Actual <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b> · Profit <b id="jclp-${li}">—</b></span>`
-         : `<span style="font-size:11.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b> · Cost <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b> · Profit <b id="jclp-${li}">—</b></span>`)
+      ? `<span style="font-size:11px;color:var(--mute);line-height:1.6;text-align:right;display:inline-block">
+           Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b><br>
+           Budget <b style="color:var(--ink)">${fmtn(l.budget||0)}</b> · Actual <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b><br>
+           Exp. profit <b style="color:${ep<0?'var(--bad)':'var(--good)'}">${fmtn(ep)}</b> · Act. profit <b id="jclp-${li}">—</b>
+         </span>`
       : `<span style="font-size:11.5px;color:var(--mute)">Cost so far <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b></span>`;
     return `<div class="card" style="padding:12px;margin-bottom:12px">
       <div class="row" style="align-items:flex-start;gap:10px;margin-bottom:8px">
@@ -7127,20 +7130,24 @@ function jcRender(){
           <th style="padding:3px 6px;font-weight:600;text-align:right">Amount</th><th></th></tr></thead>
         <tbody>${rows||`<tr><td colspan="6" class="muted" style="padding:8px 6px;font-size:11.5px">No costs yet — add the parts, labour and materials that went into this line.</td></tr>`}</tbody>
       </table></div>
-      <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="jcAddRow(${li})">+ Add cost</button>
-      ${conv&&(l.budget>0)?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px;margin-left:6px" onclick="jcAddBudgetRow(${li})" title="Add a cost row seeded from the budgeted figure">+ from budget</button>`:''}
+      <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="jcAddRow(${li})">+ Add actual cost</button>
+      ${JC.admin&&(l.budget>0)?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px;margin-left:6px" onclick="jcAddBudgetRow(${li})" title="Add an actual-cost row seeded from the budgeted figure">+ from budget</button>`:''}
     </div>`;
   }).join('');
+  const tExpP=jcTotalCharged()-jcTotalBudget();
   const footer = JC.admin
-    ? (conv
-       ? `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">INVOICE TOTAL</b>
-          <span style="font-size:12.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Budget <b style="color:var(--ink)">${fmtn(jcTotalBudget())}</b> · Actual <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · Profit <b id="jctp">—</b></span></div></div>`
-       : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">INVOICE TOTAL</b>
-          <span style="font-size:12.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · Profit <b id="jctp">—</b></span></div></div>`)
-    : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">TOTAL COST</b><b id="jctc" style="font-size:13px">${fmtn(jcTotalCost())}</b></div></div>`;
+    ? `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)">
+        <div class="row" style="align-items:flex-start"><b style="font-size:12.5px">${conv?'INVOICE TOTAL':'PROJECT TOTAL'}</b>
+        <span style="font-size:12px;color:var(--mute);text-align:right;line-height:1.7">
+          Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Budgeted cost <b style="color:var(--ink)">${fmtn(jcTotalBudget())}</b> · Actual cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b><br>
+          Expected profit <b style="color:${tExpP<0?'var(--bad)':'var(--good)'}">${fmtn(tExpP)}${jcTotalCharged()>0?(' · '+Math.round(tExpP/jcTotalCharged()*100)+'%'):''}</b> · Actual profit <b id="jctp">—</b>
+        </span></div></div>`
+    : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">TOTAL ACTUAL COST</b><b id="jctc" style="font-size:13px">${fmtn(jcTotalCost())}</b></div></div>`;
   const intro = conv
-    ? `<div class="muted" style="font-size:11.5px;margin-bottom:10px">Review the captured costs — budgeted vs actual and profit — then bill. Billing creates the invoice in Zoho and posts these costs as expenses attached to it.</div>`
-    : (JC.admin?'':`<div class="muted" style="font-size:11.5px;margin-bottom:10px">Enter what each line actually cost. You won't see the price charged to the customer.</div>`);
+    ? `<div class="muted" style="font-size:11.5px;margin-bottom:10px">Review budgeted vs actual cost and profit, then bill. <b>Expected profit</b> uses the budgeted cost from the quote; <b>Actual profit</b> uses the actual costs entered here — which post to Zoho as expenses on the invoice.</div>`
+    : (JC.admin
+        ? `<div class="muted" style="font-size:11.5px;margin-bottom:10px">Enter the <b>actual cost</b> of each line (parts, labour, materials — several rows per line if needed). <b>Expected profit</b> comes from the budgeted cost; <b>Actual profit</b> comes from what you enter here (and is what posts to Zoho as expenses when you bill).</div>`
+        : `<div class="muted" style="font-size:11.5px;margin-bottom:10px">Enter what each line actually cost. You won't see the price charged to the customer.</div>`);
   const primary = conv
     ? `<button class="btn" style="width:auto;background:var(--blue);box-shadow:none" onclick="jcBill()" ${JC.busy?'disabled':''}>${JC.busy?'Billing…':'🧾 Bill client'}</button>`
     : `<button class="btn" style="width:auto" onclick="jcSave()" ${JC.busy?'disabled':''}>${JC.busy?'Saving…':'Save costs'}</button>`;
@@ -7236,10 +7243,10 @@ function projCardAdmin(p){
     <div class="row" style="align-items:flex-start;gap:12px">
       <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
         <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(num)} · ${p.line_count} item${p.line_count===1?'':'s'} · by ${qesc(p.created_by||'')}</div></div>
-      <div style="text-align:right;white-space:nowrap">
+      <div style="text-align:right;white-space:nowrap;font-size:11px;line-height:1.6">
         <div style="margin-bottom:4px">${projStageBadge(stage)}</div>
-        <div style="font-size:11px;color:var(--mute)">Charged ${fmtn(p.total||0)} · Cost ${fmtn(p.actual_cost||0)}</div>
-        <div style="font-size:11px;font-weight:700;color:${prof<0?'var(--bad)':'var(--good)'}">Actual profit ${fmtn(prof)}${(p.total>0)?(' · '+Math.round(prof/p.total*100)+'%'):''}</div>
+        <div style="color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(p.total||0)}</b> · Budget <b style="color:var(--ink)">${fmtn(p.budget_cost||0)}</b> · Actual <b style="color:var(--ink)">${fmtn(p.actual_cost||0)}</b></div>
+        <div style="font-weight:700"><span style="color:${(p.expected_profit||0)<0?'var(--bad)':'var(--good)'}">Exp. profit ${fmtn(p.expected_profit||0)}</span> · <span style="color:${prof<0?'var(--bad)':'var(--good)'}">Actual profit ${fmtn(prof)}${(p.total>0)?(' · '+Math.round(prof/p.total*100)+'%'):''}</span></div>
       </div>
     </div>
     <div class="qact">
