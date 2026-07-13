@@ -12,6 +12,7 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../db.php';
+require __DIR__ . '/../quote_pricing.php';   // shared quote_price() + quote_out() + cost_rows support
 $cfg = require __DIR__ . '/../config.php';
 
 function quotes_table(PDO $pdo){
@@ -51,69 +52,15 @@ function quotes_table(PDO $pdo){
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
 }
 
-/* normalise + price line items (per-line tax + unit cost, with an entity discount before tax).
-   Returns [cleanItems, sub, discAmt, tax, total, costTotal, profit]. */
-function quote_price($rawItems, $vatRate, $discVal, $discType){
-    $items = []; $sub = 0.0; $taxedBase = 0.0; $costTotal = 0.0;
-    foreach ((array)$rawItems as $it){
-        $name = trim((string)($it['name'] ?? ''));
-        if ($name === '') continue;
-        $qty   = round((float)($it['qty'] ?? 0), 2);
-        $rate  = round((float)($it['rate'] ?? 0), 2);
-        $cost  = max(0, round((float)($it['cost'] ?? 0), 2));          // estimated unit cost
-        $acost = max(0, round((float)($it['actual_cost'] ?? 0), 2));   // actual cost (overrides)
-        $effCost = $acost > 0 ? $acost : $cost;                         // actual wins, else unit cost
-        if ($qty <= 0) $qty = 1;
-        $amount   = round($qty * $rate, 2);
-        $lineCost = round($qty * $effCost, 2);
-        $tax = (strtolower((string)($it['tax'] ?? 'vat')) === 'none') ? 'none' : 'vat';
-        $sub += $amount;
-        $costTotal += $lineCost;
-        if ($tax === 'vat') $taxedBase += $amount;
-        $items[] = [
-            'name'        => substr($name, 0, 190),
-            'description' => substr(trim((string)($it['description'] ?? '')), 0, 500),
-            'qty'         => $qty,
-            'rate'        => $rate,
-            'cost'        => $cost,
-            'actual_cost' => $acost,
-            'amount'      => $amount,
-            'profit'      => round($amount - $lineCost, 2),   // line profit (ex VAT, using effective cost)
-            'tax'         => $tax,
-        ];
-    }
-    $sub = round($sub, 2);
-    $costTotal = round($costTotal, 2);
-    $discVal = max(0, (float)$discVal);
-    $discType = ($discType === 'amount') ? 'amount' : 'percent';
-    $discAmt = $discType === 'percent' ? round($sub * $discVal / 100, 2) : min(round($discVal, 2), $sub);
-    // discount is before tax — spread it across taxed lines proportionally
-    $taxedAfter = $taxedBase - ($sub > 0 ? $discAmt * ($taxedBase / $sub) : 0);
-    $tax = round(max(0, $taxedAfter) * (float)$vatRate, 2);
-    $total = round($sub - $discAmt + $tax, 2);
-    $profit = round(($sub - $discAmt) - $costTotal, 2);       // quote profit (ex VAT, after discount)
-    return [$items, $sub, $discAmt, $tax, $total, $costTotal, $profit];
-}
-
-function quote_out(array $r){
-    $r['line_items'] = json_decode($r['line_items'] ?: '[]', true) ?: [];
-    $r['id'] = (int)$r['id'];
-    $r['sub_total'] = (float)$r['sub_total'];
-    $r['tax_amount'] = (float)$r['tax_amount'];
-    $r['total'] = (float)$r['total'];
-    $r['total_cost'] = (float)($r['total_cost'] ?? 0);
-    $r['profit'] = (float)($r['profit'] ?? 0);
-    $r['discount_value'] = (float)($r['discount_value'] ?? 0);
-    $r['discount_amount'] = (float)($r['discount_amount'] ?? 0);
-    return $r;
-}
-
 try {
     $pdo = db();
     quotes_table($pdo);
     $me     = $_SESSION['user'] ?? '';
     $admin  = !empty($_SESSION['is_admin']);
     $vat    = (float)($cfg['vat_rate'] ?? 0.16);
+    // a non-admin "cost capturer" may also view (price-stripped) invoiced jobs they don't own
+    $tabsS   = (string)($_SESSION['tabs'] ?? '');
+    $costcap = ($tabsS === '*') || in_array('costcap', array_map('trim', explode(',', $tabsS)), true);
 
     $in = json_decode(file_get_contents('php://input'), true); if (!is_array($in)) $in = $_POST;
     $action = $in['action'] ?? 'list';
@@ -128,9 +75,22 @@ try {
     };
 
     if ($action === 'list') {
-        if ($admin) { $st = $pdo->query("SELECT * FROM quotes ORDER BY updated_at DESC"); $rows = $st->fetchAll(PDO::FETCH_ASSOC); }
-        else { $st = $pdo->prepare("SELECT * FROM quotes WHERE created_by=? ORDER BY updated_at DESC"); $st->execute([$me]); $rows = $st->fetchAll(PDO::FETCH_ASSOC); }
-        echo json_encode(['ok'=>true, 'quotes'=>array_map('quote_out', $rows)]);
+        if ($admin) {
+            $st = $pdo->query("SELECT * FROM quotes ORDER BY updated_at DESC");
+            $out = array_map('quote_out', $st->fetchAll(PDO::FETCH_ASSOC));
+        } else {
+            // own quotes (full detail — they built them)
+            $st = $pdo->prepare("SELECT * FROM quotes WHERE created_by=? ORDER BY updated_at DESC");
+            $st->execute([$me]);
+            $out = array_map('quote_out', $st->fetchAll(PDO::FETCH_ASSOC));
+            // cost capturers additionally see invoiced jobs from others — with all prices stripped
+            if ($costcap) {
+                $st2 = $pdo->prepare("SELECT * FROM quotes WHERE created_by<>? AND status='invoiced' ORDER BY updated_at DESC");
+                $st2->execute([$me]);
+                foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $r) { $out[] = quote_strip_prices(quote_out($r)); }
+            }
+        }
+        echo json_encode(['ok'=>true, 'quotes'=>$out]);
         exit;
     }
 

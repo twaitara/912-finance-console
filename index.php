@@ -2024,6 +2024,14 @@ if (empty($_SESSION['auth'])):
   </div>
 </div>
 
+<div id="jcModal" class="qbmodal" onclick="if(event.target===this)jcClose()">
+  <div class="qbm-card" style="max-width:900px">
+    <div class="qbm-head"><b id="jcModalTitle">Capture costs</b>
+      <button class="qbm-x" onclick="jcClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body" id="jcModalBody"></div>
+  </div>
+</div>
+
 <div id="benAiModal" class="qbmodal" onclick="if(event.target===this)benAiClose()">
   <div class="qbm-card" style="max-width:680px">
     <div class="qbm-head"><b>💬 Ask AI — Ben's questions</b>
@@ -6765,6 +6773,7 @@ function mqListHtml(){
     // technicians may generate the job card once (approved → invoiced), but not re-download after; admins always can
     const canJob=pushed && (ME.admin?['approved','sent','accepted','invoiced']:['approved','sent','accepted']).includes(q.status);
     const isInvoiced=q.status==='invoiced'||!!q.zoho_invoice_number;
+    const canCapture=isInvoiced && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || q.created_by===ME.user);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
                  q.zoho_invoice_number?`<span style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number)}</span>`:null,
@@ -6790,6 +6799,7 @@ function mqListHtml(){
         <button class="btn sec qb" style="color:var(--bad);border-color:#F4C7C0" onclick="mqDecline(${q.id})" ${busy?'disabled':''}>✕ Decline</button>`:''}
         ${canSend?`<button class="btn qb" ${tip('Email this quote to the customer (PDF attached)')} onclick="mqSend(${q.id})" ${busy?'disabled':''}>${busy?'Sending…':'✉ Send to customer'}</button>`:''}
         ${canJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job complete? This creates the invoice and opens the job card to print')} onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Job Card'}</button>`:''}
+        ${canCapture?`<button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Enter the actual costs that went into this job, broken down per line')} onclick="jcOpen(${q.id})">💰 Capture costs</button>`:''}
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
@@ -6931,6 +6941,105 @@ function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was p
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})})
   .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=MQ.quotes.filter(q=>q.id!==id); render(); } else alert(j.error||'Delete failed'); }).catch(e=>alert(''+e)); }
 
+/* ---------- Job costing: capture the actual cost of each invoice line ---------- */
+var JC={id:0,quote:null,admin:false,lines:[],busy:false,msg:'',err:false};
+const JC_CATS=[['parts','Parts'],['labour','Labour'],['consumables','Consumables'],['subcontract','Subcontract'],['other','Other']];
+
+function jcLinesFrom(q){ return (q.line_items||[]).map(it=>({
+  name:it.name||'', description:it.description||'', qty:it.qty!=null?it.qty:1,
+  amount:(it.amount!=null?it.amount:null),   // absent for non-admins (price-stripped server-side)
+  rows:(it.cost_rows||[]).map(r=>({category:r.category||'other',description:r.description||'',qty:r.qty!=null?r.qty:1,unit_cost:r.unit_cost!=null?r.unit_cost:0}))
+})); }
+
+function jcOpen(id){
+  JC={id:id,quote:null,admin:false,lines:[],busy:false,msg:'',err:false};
+  document.getElementById('jcModalBody').innerHTML='<div class="muted" style="padding:22px;text-align:center">Loading…</div>';
+  document.getElementById('jcModalTitle').textContent='Capture costs';
+  document.getElementById('jcModal').classList.add('open'); document.body.style.overflow='hidden';
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',id})})
+  .then(r=>r.json()).then(j=>{
+    if(!j.ok){ document.getElementById('jcModalBody').innerHTML='<div class="warn" style="margin:10px">'+qesc(j.error||'Could not load')+'</div>'; return; }
+    JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); jcRender();
+  }).catch(e=>{ document.getElementById('jcModalBody').innerHTML='<div class="warn" style="margin:10px">Error: '+qesc(''+e)+'</div>'; });
+}
+function jcClose(){ document.getElementById('jcModal').classList.remove('open'); document.body.style.overflow=''; }
+
+function jcRowAmt(r){ const q=parseFloat(r.qty)||0, u=parseFloat(r.unit_cost)||0; return Math.round(q*u*100)/100; }
+function jcLineCost(l){ return (l.rows||[]).reduce((s,r)=>s+jcRowAmt(r),0); }
+function jcTotalCost(){ return JC.lines.reduce((s,l)=>s+jcLineCost(l),0); }
+function jcTotalCharged(){ return JC.lines.reduce((s,l)=>s+(parseFloat(l.amount)||0),0); }
+function jcAddRow(li){ JC.lines[li].rows.push({category:'other',description:'',qty:1,unit_cost:0}); jcRender(); }
+function jcDelRow(li,ri){ JC.lines[li].rows.splice(ri,1); jcRender(); }
+
+/* update only the computed figures so typing doesn't lose input focus */
+function jcRepaint(){
+  JC.lines.forEach((l,li)=>{
+    (l.rows||[]).forEach((r,ri)=>{ const e=document.getElementById('jcamt-'+li+'-'+ri); if(e) e.textContent=fmtn(jcRowAmt(r)); });
+    const lc=document.getElementById('jclc-'+li); if(lc) lc.textContent=fmtn(jcLineCost(l));
+    if(JC.admin){ const lp=document.getElementById('jclp-'+li); if(lp){ const ch=parseFloat(l.amount)||0, pr=ch-jcLineCost(l); lp.textContent=fmtn(pr)+(ch>0?(' · '+Math.round(pr/ch*100)+'%'):''); lp.style.color=pr<0?'var(--bad)':'var(--good)'; } }
+  });
+  const tc=document.getElementById('jctc'); if(tc) tc.textContent=fmtn(jcTotalCost());
+  if(JC.admin){ const tp=document.getElementById('jctp'); if(tp){ const ch=jcTotalCharged(), pr=ch-jcTotalCost(); tp.textContent=fmtn(pr)+(ch>0?(' · '+Math.round(pr/ch*100)+'%'):''); tp.style.color=pr<0?'var(--bad)':'var(--good)'; } }
+}
+
+function jcRender(){
+  const q=JC.quote, box=document.getElementById('jcModalBody'); if(!q||!box)return;
+  document.getElementById('jcModalTitle').textContent='Capture costs · '+(q.customer_name||'')+(q.zoho_invoice_number?(' · '+q.zoho_invoice_number):'');
+  const catOpts=(sel)=>JC_CATS.map(c=>`<option value="${c[0]}" ${sel===c[0]?'selected':''}>${c[1]}</option>`).join('');
+  const lines=JC.lines.map((l,li)=>{
+    const rows=(l.rows||[]).map((r,ri)=>`
+      <tr>
+        <td><select class="in" style="margin:0;padding:5px 6px;font-size:12px" onchange="JC.lines[${li}].rows[${ri}].category=this.value">${catOpts(r.category)}</select></td>
+        <td><input class="in" style="margin:0;padding:5px 7px;font-size:12px" placeholder="e.g. Paint, beating labour…" value="${qesc(r.description||'')}" oninput="JC.lines[${li}].rows[${ri}].description=this.value"></td>
+        <td><input class="in" type="number" step="0.01" min="0" style="margin:0;padding:5px 6px;font-size:12px;width:66px;text-align:right" value="${r.qty}" oninput="JC.lines[${li}].rows[${ri}].qty=this.value;jcRepaint()"></td>
+        <td><input class="in" type="number" step="0.01" min="0" style="margin:0;padding:5px 6px;font-size:12px;width:94px;text-align:right" value="${r.unit_cost}" oninput="JC.lines[${li}].rows[${ri}].unit_cost=this.value;jcRepaint()"></td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px"><b id="jcamt-${li}-${ri}">${fmtn(jcRowAmt(r))}</b></td>
+        <td style="text-align:center"><button class="btn sec" style="width:auto;padding:3px 8px;font-size:12px;color:var(--bad)" onclick="jcDelRow(${li},${ri})" title="Remove this cost">✕</button></td>
+      </tr>`).join('');
+    const hdr = JC.admin
+      ? `<span style="font-size:11.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b> · Cost <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b> · Profit <b id="jclp-${li}">—</b></span>`
+      : `<span style="font-size:11.5px;color:var(--mute)">Cost so far <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b></span>`;
+    return `<div class="card" style="padding:12px;margin-bottom:12px">
+      <div class="row" style="align-items:flex-start;gap:10px;margin-bottom:8px">
+        <div style="min-width:0;flex:1"><b style="font-size:13.5px">${qesc(l.name||'(item)')}</b>${l.description?`<div class="muted" style="font-size:11.5px;margin-top:2px">${qesc(l.description)}</div>`:''}<div class="muted" style="font-size:11px;margin-top:2px">Qty ${fmtn(l.qty)}</div></div>
+        <div style="text-align:right">${hdr}</div>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:var(--mute);font-size:11px">
+          <th style="padding:3px 6px;font-weight:600;text-align:left">Category</th><th style="padding:3px 6px;font-weight:600;text-align:left">Description</th>
+          <th style="padding:3px 6px;font-weight:600;text-align:right">Qty</th><th style="padding:3px 6px;font-weight:600;text-align:right">Unit cost</th>
+          <th style="padding:3px 6px;font-weight:600;text-align:right">Amount</th><th></th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="6" class="muted" style="padding:8px 6px;font-size:11.5px">No costs yet — add the parts, labour and materials that went into this line.</td></tr>`}</tbody>
+      </table></div>
+      <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="jcAddRow(${li})">+ Add cost</button>
+    </div>`;
+  }).join('');
+  const footer = JC.admin
+    ? `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">INVOICE TOTAL</b>
+        <span style="font-size:12.5px;color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · Profit <b id="jctp">—</b></span></div></div>`
+    : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">TOTAL COST</b><b id="jctc" style="font-size:13px">${fmtn(jcTotalCost())}</b></div></div>`;
+  box.innerHTML=(JC.msg?`<div class="${JC.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(JC.msg)}</div>`:'')
+    + (JC.admin?'':`<div class="muted" style="font-size:11.5px;margin-bottom:10px">Enter what each line actually cost. You won't see the price charged to the customer.</div>`)
+    + lines + footer
+    + `<div class="row" style="justify-content:flex-end;gap:8px"><button class="btn sec" style="width:auto" onclick="jcClose()">Close</button>
+       <button class="btn" style="width:auto" onclick="jcSave()" ${JC.busy?'disabled':''}>${JC.busy?'Saving…':'Save costs'}</button></div>`;
+  jcRepaint();
+}
+
+function jcSave(){
+  JC.busy=true; JC.msg=''; jcRender();
+  const lines=JC.lines.map((l,idx)=>({ index:idx, cost_rows:(l.rows||[])
+    .filter(r=>(r.description||'').trim()!==''||(parseFloat(r.unit_cost)||0)>0)
+    .map(r=>({category:r.category,description:r.description,qty:r.qty,unit_cost:r.unit_cost})) }));
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_costs',id:JC.id,lines})})
+  .then(r=>r.json()).then(j=>{ JC.busy=false;
+    if(j.ok){ JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); JC.msg='Costs saved.'; JC.err=false;
+      const mq=(MQ.quotes||[]).find(x=>x.id===JC.id); if(mq&&j.admin){ mq.total_cost=j.quote.total_cost; mq.profit=j.quote.profit; }
+      jcRender();
+    } else { JC.msg=j.error||'Save failed.'; JC.err=true; jcRender(); }
+  }).catch(e=>{ JC.busy=false; JC.msg='Error: '+e; JC.err=true; jcRender(); });
+}
+
 function vJobCards(){
   const jobs=(MQ.quotes||[]).filter(q=>q.status==='invoiced'||q.zoho_invoice_number)
     .slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
@@ -7020,7 +7129,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); } });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); } });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){
