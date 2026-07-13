@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS project_costs (
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 -- columns added by later migrations:
 ALTER TABLE project_costs ADD COLUMN vat_mode VARCHAR(4) DEFAULT 'excl' AFTER amount;
+ALTER TABLE project_costs ADD COLUMN line_uid VARCHAR(32) DEFAULT '' AFTER line_index;
 
 -- ----------------------------------------------------------------------------
 -- project_payments

@@ -15,6 +15,8 @@ if (!function_exists('quote_price')) {
         foreach ((array)$rawItems as $it){
             $name = trim((string)($it['name'] ?? ''));
             if ($name === '') continue;
+            $lid = preg_replace('/[^a-z0-9]/i', '', substr((string)($it['lid'] ?? ''), 0, 32));
+            if ($lid === '') $lid = bin2hex(random_bytes(4));   // stable per-line id (see fix #10)
             $qty   = round((float)($it['qty'] ?? 0), 2);
             $rate  = round((float)($it['rate'] ?? 0), 2);
             $cost  = max(0, round((float)($it['cost'] ?? 0), 2));          // budgeted unit cost
@@ -29,6 +31,7 @@ if (!function_exists('quote_price')) {
             $costTotal += $lineCost;
             if ($tax === 'vat') $taxedBase += $amount;
             $items[] = [
+                'lid'         => $lid,
                 'name'        => substr($name, 0, 190),
                 'description' => substr(trim((string)($it['description'] ?? '')), 0, 500),
                 'qty'         => $qty,

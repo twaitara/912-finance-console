@@ -74,21 +74,23 @@ try {
     $assemble = function($quoteId) use ($pdo, $admin) {
         $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([(int)$quoteId]);
         $q = quote_out($st->fetch(PDO::FETCH_ASSOC));
-        $byLine = [];
+        $byUid = [];      // costs keyed by the stable line id (fix #10)
         foreach (pc_for_quote($pdo, $quoteId) as $c) {
-            $byLine[(int)$c['line_index']][] = [
+            $key = (string)($c['line_uid'] ?? '');
+            $byUid[$key][] = [
                 'id'=>(int)$c['id'], 'category'=>$c['category'], 'description'=>$c['description'],
                 'qty'=>(float)$c['qty'], 'unit_cost'=>(float)$c['unit_cost'], 'amount'=>(float)$c['amount'],
                 'vat'=>pc_vat_mode($c['vat_mode'] ?? 'none'),
             ];
         }
-        foreach ($q['line_items'] as $i => &$it) { $it['cost_rows'] = $byLine[$i] ?? []; }
+        foreach ($q['line_items'] as &$it) { $it['cost_rows'] = $byUid[(string)($it['lid'] ?? '')] ?? []; }
         unset($it);
         return $admin ? $q : quote_strip_prices($q);   // strip keeps cost_rows, zeroes prices/profit
     };
 
     if ($action === 'get') {
         $row = $load($in['id'] ?? 0);
+        quote_ensure_lids($pdo, (int)$row['id']);   // fix #10: stable line ids + backfill
         $out = ['ok'=>true, 'admin'=>$admin, 'quote'=>$assemble($row['id'])];
         if ($admin) $out['config'] = costcap_config();
         echo json_encode($out); exit;
@@ -97,7 +99,7 @@ try {
     if ($action === 'save_costs') {
         $row     = $load($in['id'] ?? 0);
         $quoteId = (int)$row['id'];
-        $items   = json_decode($row['line_items'] ?: '[]', true) ?: [];
+        $items   = quote_ensure_lids($pdo, $quoteId);   // fix #10: lids present + costs backfilled
         $invNo   = trim((string)($row['zoho_invoice_number'] ?? ''));
         $conf    = costcap_config();
         $billed  = ($invNo !== '');
@@ -112,11 +114,16 @@ try {
             $idx = (int)($ln['index'] ?? -1);
             if ($idx < 0) continue;
             $lineName = substr(trim((string)($ln['line_name'] ?? ($items[$idx]['name'] ?? 'Item'))), 0, 190);
+            // stable line id (fix #10): prefer the client's lid, else the ensured line's lid
+            $lid = preg_replace('/[^a-z0-9]/i', '', substr((string)($ln['lid'] ?? ''), 0, 32));
+            if ($lid === '') $lid = (string)($items[$idx]['lid'] ?? '');
 
-            // existing rows for this line, keyed by id
+            // existing rows for this line, matched by the stable line id (falls back to index)
             $oldById = [];
             foreach (pc_for_quote($pdo, $quoteId) as $c) {
-                if ((int)$c['line_index'] === $idx) $oldById[(int)$c['id']] = $c;
+                $match = ($lid !== '') ? ((string)($c['line_uid'] ?? '') === $lid)
+                                       : ((int)$c['line_index'] === $idx);
+                if ($match) $oldById[(int)$c['id']] = $c;
             }
 
             $keptIds = [];
@@ -158,8 +165,8 @@ try {
                     }
                 } else {
                     // new row
-                    $pdo->prepare("INSERT INTO project_costs (quote_id,line_index,line_name,category,description,qty,unit_cost,amount,vat_mode,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)")
-                        ->execute([$quoteId,$idx,$lineName,$cat,$desc,$qty,max(0,$unit),$amount,$vatMode,$me]);
+                    $pdo->prepare("INSERT INTO project_costs (quote_id,line_index,line_uid,line_name,category,description,qty,unit_cost,amount,vat_mode,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+                        ->execute([$quoteId,$idx,$lid,$lineName,$cat,$desc,$qty,max(0,$unit),$amount,$vatMode,$me]);
                     $newId = (int)$pdo->lastInsertId();
                     $keptIds[$newId] = true;
                     if ($canPost) {

@@ -97,7 +97,12 @@ try {
         exit;
     }
 
-    if ($action === 'get') { echo json_encode(['ok'=>true, 'quote'=>quote_out($own($in['id'] ?? 0))]); exit; }
+    if ($action === 'get') {
+        $qrow = $own($in['id'] ?? 0);
+        require_once __DIR__ . '/../project_costs.php';
+        quote_ensure_lids($pdo, (int)$qrow['id']);   // fix #10: stable line ids before any edit
+        echo json_encode(['ok'=>true, 'quote'=>quote_out($own($in['id'] ?? 0))]); exit;
+    }
 
     if ($action === 'delete') {
         $row = $own($in['id'] ?? 0);

@@ -4397,7 +4397,7 @@ const EDITABLE_STATUSES = ['local_draft','draft','pending_approval'];
 function mqEditable(q){ return ME.admin || EDITABLE_STATUSES.includes(q.status); }   /* admins can edit any quote */
 function qbBlank(){ return { id:0, zohoId:'', status:'local_draft', customerId:'', customerName:'', currency:'KES',
            reference:'', subject:'', quoteDate:today(), expiryDate:'',
-           items:[{name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
+           items:[{lid:newLid(),name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}], notes:'Looking forward for your business.', terms:'',
            discVal:0, discType:'percent',
            msg:'', err:false, busy:false }; }
 let QB = Object.assign(qbBlank(), { assignOpen:false, assignLoaded:false, assignments:[], users:[], aCust:null, aUsers:[] });
@@ -4581,8 +4581,9 @@ function qbItemNameFocus(i){ const dd=document.getElementById('qbIND'+i); if(dd)
 function qbItemNameBlur(i){ setTimeout(()=>{ const dd=document.getElementById('qbIND'+i); if(dd) dd.style.display='none'; },150); }
 function qbItemPickEl(i,el){ const n=el.getAttribute('data-name'); if(QB.items[i]) QB.items[i].name=n; const inp=document.getElementById('qbIN'+i); if(inp) inp.value=n; const dd=document.getElementById('qbIND'+i); if(dd) dd.style.display='none'; }
 function qbDisc(field,val){ QB[field]=val; const t=document.getElementById('qbTotals'); if(t) t.innerHTML=qbTotalsHtml(); }
-function qbAddRow(){ QB.items.push({name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
-function qbDelRow(i){ QB.items.splice(i,1); if(!QB.items.length) QB.items.push({name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
+function newLid(){ return Math.random().toString(36).slice(2,10)+Math.random().toString(36).slice(2,6); }  // stable per-line id (fix #10)
+function qbAddRow(){ QB.items.push({lid:newLid(),name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
+function qbDelRow(i){ QB.items.splice(i,1); if(!QB.items.length) QB.items.push({lid:newLid(),name:'',description:'',qty:1,rate:0,tax:'vat'}); render(); }
 function qbClearCust(){ QB.customerId=''; QB.customerName=''; render(); }
 /* ---- builder modal open/close ---- */
 function qbOpen(){ QB.modalOpen=true; const m=document.getElementById('qbModal'); if(m) m.classList.add('open');
@@ -4627,7 +4628,7 @@ function qbPick(id,name,cur){ cur=(cur||'KES');
 function qbPayload(){ return { id:QB.id||undefined, zoho_customer_id:QB.customerId, customer_name:QB.customerName,
   currency:QB.currency, reference:QB.reference, subject:QB.subject, quote_date:QB.quoteDate, expiry_date:QB.expiryDate,
   notes:QB.notes, terms:QB.terms, discount_value:QB.discVal, discount_type:QB.discType,
-  line_items:QB.items.map(it=>({name:it.name,description:it.description,qty:it.qty,rate:it.rate,cost:it.cost,actual_cost:it.acost,tax:it.tax||'vat'})) }; }
+  line_items:QB.items.map(it=>({lid:it.lid,name:it.name,description:it.description,qty:it.qty,rate:it.rate,cost:it.cost,actual_cost:it.acost,tax:it.tax||'vat'})) }; }
 function qbReqOk(){
   if(!QB.customerId && !QB.customerName){ QB.msg='Choose a customer.'; QB.err=true; render(); return false; }
   if(!String(QB.subject||'').trim()){ QB.msg='Subject is required.'; QB.err=true; render(); return false; }
@@ -4974,7 +4975,7 @@ function mqEdit(id){ fetch('api/quotes.php',{method:'POST',credentials:'same-ori
     QB.id=q.id; QB.zohoId=q.zoho_estimate_id||''; QB.status=q.status||'local_draft';
     QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
     QB.reference=q.reference||''; QB.subject=q.subject||''; QB.quoteDate=q.quote_date||today(); QB.expiryDate=q.expiry_date||'';
-    QB.items=(q.line_items||[]).map(it=>({name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,acost:it.actual_cost||0,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}];
+    QB.items=(q.line_items||[]).map(it=>({lid:it.lid||newLid(),name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,acost:it.actual_cost||0,tax:it.tax||'vat'})); if(!QB.items.length)QB.items=[{lid:newLid(),name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}];
     QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; qbOpen();
   }).catch(e=>alert(''+e)); }
 function mqRefreshZoho(id,eid){ if(!confirm("Re-pull this quote's line items and totals from Zoho?\n\nThis replaces the current line items with Zoho's latest (any budgeted costs set here are reset)."))return;
@@ -5000,7 +5001,7 @@ const JC_CATS=[['parts','Parts'],['labour','Labour'],['consumables','Consumables
 
 function jcLinesFrom(q){ return (q.line_items||[]).map(it=>{
   const qty=it.qty!=null?it.qty:1, bcost=(it.cost!=null?it.cost:0);
-  return { name:it.name||'', description:it.description||'', qty:qty,
+  return { lid:it.lid||'', name:it.name||'', description:it.description||'', qty:qty,
     amount:(it.amount!=null?it.amount:null),   // absent for non-admins (price-stripped server-side)
     bcost:bcost, budget:Math.round(qty*bcost*100)/100,   // budgeted unit + line cost
     rows:(it.cost_rows||[]).map(r=>({id:r.id||0,category:r.category||'other',description:r.description||'',qty:r.qty!=null?r.qty:1,unit_cost:r.unit_cost!=null?r.unit_cost:0,vat:(r.vat==='plus'||r.vat==='incl')?r.vat:'none'})) };
@@ -5162,7 +5163,7 @@ function jcRender(){
 }
 
 function jcCollectLines(){
-  return JC.lines.map((l,idx)=>({ index:idx, line_name:l.name||'', cost_rows:(l.rows||[])
+  return JC.lines.map((l,idx)=>({ index:idx, lid:l.lid||'', line_name:l.name||'', cost_rows:(l.rows||[])
     .filter(r=>(r.description||'').trim()!==''||(parseFloat(r.unit_cost)||0)>0)
     .map(r=>({id:r.id||0,category:r.category,description:r.description,qty:r.qty,unit_cost:r.unit_cost,vat:(r.vat==='plus'||r.vat==='incl')?r.vat:'none'})) }));
 }

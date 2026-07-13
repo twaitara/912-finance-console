@@ -56,9 +56,10 @@ try {
         if (!$admin) { http_response_code(403); echo 'The profit report is admin-only.'; exit; }
         require_once __DIR__ . '/../project_costs.php';
         pc_table($pdo);
+        $items = quote_ensure_lids($pdo, $id);   // fix #10: stable line ids + backfill costs' line_uid
         foreach (pc_for_quote($pdo, $id) as $c) {
-            $li  = (int)$c['line_index'];
-            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + pc_exvat($c['amount'], $c['vat_mode'] ?? 'none', $vat);
+            $key = (string)($c['line_uid'] ?? '');   // attribute by stable line id, not array position
+            $actualByLine[$key] = ($actualByLine[$key] ?? 0) + pc_exvat($c['amount'], $c['vat_mode'] ?? 'none', $vat);
             $inputVat += pc_vat_amount($c['amount'], $c['vat_mode'] ?? 'none', $vat);   // VAT on inclusive + plus rows
         }
     }
@@ -118,13 +119,24 @@ try {
             $qtyN    = (float)($it['qty'] ?? 0);
             $charged = isset($it['amount']) ? (float)$it['amount'] : round($qtyN * (float)($it['rate'] ?? 0), 2);
             $budget  = round($qtyN * (float)($it['cost'] ?? 0), 2);
-            $actual  = (float)($actualByLine[$i] ?? 0);
+            $actual  = (float)($actualByLine[(string)($it['lid'] ?? '')] ?? 0);   // by stable line id (fix #10)
             $profit  = $charged - $actual;
             $tCharged += $charged; $tBudget += $budget; $tActual += $actual;
             $pc = $profit < 0 ? '#c0392b' : '#1e7e34';
             $pRows .= '<tr><td class="c" style="width:30px">' . $k . '</td><td>' . jc_esc($it['name'] ?? '') . '</td>'
                 . '<td class="r">' . $money($charged) . '</td><td class="r">' . $money($budget) . '</td>'
                 . '<td class="r">' . $money($actual) . '</td><td class="r" style="color:' . $pc . ';font-weight:700">' . $money($profit) . '</td></tr>';
+        }
+        // costs whose line was later removed (orphaned by line_uid) — still counted so the
+        // total stays correct; shown on their own row rather than mis-attributed (fix #10)
+        $lineLids = array_map(function($it){ return (string)($it['lid'] ?? ''); }, $items);
+        $orphan = 0.0;
+        foreach ($actualByLine as $key => $amt) { if (!in_array($key, $lineLids, true)) $orphan += $amt; }
+        if ($orphan > 0.005) {
+            $tActual += $orphan;
+            $pRows .= '<tr><td class="c">–</td><td>Costs from removed lines</td>'
+                . '<td class="r">' . $money(0) . '</td><td class="r">' . $money(0) . '</td>'
+                . '<td class="r">' . $money($orphan) . '</td><td class="r" style="color:#c0392b;font-weight:700">' . $money(-$orphan) . '</td></tr>';
         }
     }
     $tProfit  = $tCharged - $tActual;

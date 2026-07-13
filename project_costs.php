@@ -29,6 +29,8 @@ function pc_table(PDO $pdo){
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     // whether the entered cost is inclusive or exclusive of VAT ('incl' | 'excl')
     try { $pdo->exec("ALTER TABLE project_costs ADD COLUMN vat_mode VARCHAR(4) DEFAULT 'excl' AFTER amount"); } catch (Exception $e) {}
+    // stable id of the quote line this cost belongs to (fix #10 — replaces fragile line_index)
+    try { $pdo->exec("ALTER TABLE project_costs ADD COLUMN line_uid VARCHAR(32) DEFAULT '' AFTER line_index"); } catch (Exception $e) {}
     // actual (captured) cost/profit cached on the quote for cheap list rendering,
     // plus the project markers (is_project = ever converted; project_closed = archived by admin)
     foreach ([
@@ -38,6 +40,50 @@ function pc_table(PDO $pdo){
         "ADD COLUMN project_closed TINYINT NOT NULL DEFAULT 0 AFTER is_project",
         "ADD COLUMN imported TINYINT NOT NULL DEFAULT 0 AFTER project_closed",
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
+}
+
+/* short stable id for a quote line (fix #10) */
+function pc_lid(){ return bin2hex(random_bytes(4)); }
+
+/* Ensure every line of a quote has a stable `lid`, and backfill project_costs.line_uid
+   from the current line_index mapping (idempotent, self-healing migration). Runs before
+   any edit/report so costs stay attached to the right line even if lines are later
+   reordered/deleted. Returns the (possibly updated) decoded line_items array. */
+function quote_ensure_lids(PDO $pdo, $quoteId){
+    pc_table($pdo);
+    $st = $pdo->prepare("SELECT line_items FROM quotes WHERE id=?");
+    $st->execute([(int)$quoteId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return [];
+    $items = json_decode($row['line_items'] ?: '[]', true) ?: [];
+
+    // 1) give every line a lid; persist only if something changed
+    $changed = false; $seen = [];
+    foreach ($items as $i => &$it) {
+        $lid = isset($it['lid']) ? preg_replace('/[^a-z0-9]/i', '', substr((string)$it['lid'], 0, 32)) : '';
+        if ($lid === '' || isset($seen[$lid])) { $lid = pc_lid(); $changed = true; }
+        $seen[$lid] = true;
+        if (($it['lid'] ?? null) !== $lid) { $it['lid'] = $lid; $changed = true; }
+    }
+    unset($it);
+    if ($changed) {
+        $pdo->prepare("UPDATE quotes SET line_items=? WHERE id=?")
+            ->execute([json_encode($items), (int)$quoteId]);
+    }
+
+    // 2) backfill line_uid on existing costs from their line_index (only where empty)
+    $need = $pdo->prepare("SELECT id, line_index FROM project_costs WHERE quote_id=? AND (line_uid IS NULL OR line_uid='')");
+    $need->execute([(int)$quoteId]);
+    $rows = $need->fetchAll(PDO::FETCH_ASSOC);
+    if ($rows) {
+        $upd = $pdo->prepare("UPDATE project_costs SET line_uid=? WHERE id=?");
+        foreach ($rows as $r) {
+            $idx = (int)$r['line_index'];
+            $lid = isset($items[$idx]['lid']) ? (string)$items[$idx]['lid'] : '';
+            if ($lid !== '') $upd->execute([$lid, (int)$r['id']]);
+        }
+    }
+    return $items;
 }
 
 /* client deposits/payments recorded against a project (before it is billed) */
