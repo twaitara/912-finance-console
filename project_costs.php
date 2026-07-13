@@ -131,22 +131,7 @@ function pc_actual_cost_exvat(PDO $pdo, $quoteId, $vat){
     return round($sum, 2);
 }
 
-/* the org's 16% VAT tax id (cached) — used to post VAT-inclusive expenses correctly */
-function zoho_vat_tax_id(){
-    $cache = __DIR__ . '/data/zoho_vat.json';
-    if (is_file($cache)) { $t = json_decode(@file_get_contents($cache), true); if (!empty($t['tax_id'])) return (string)$t['tax_id']; }
-    [$data, $code] = zoho_api('GET', 'settings/taxes');
-    $id = '';
-    if ($code < 400) {
-        foreach (($data['taxes'] ?? []) as $tax) {
-            $pct = (float)($tax['tax_percentage'] ?? 0); $nm = strtolower((string)($tax['tax_name'] ?? ''));
-            if (abs($pct - 16.0) < 0.01 || strpos($nm, 'vat') !== false) { $id = (string)($tax['tax_id'] ?? ''); if (abs($pct-16.0)<0.01) break; }
-        }
-        if (!is_dir(__DIR__ . '/data')) @mkdir(__DIR__ . '/data', 0775, true);
-        @file_put_contents($cache, json_encode(['tax_id'=>$id]));
-    }
-    return $id;
-}
+/* zoho_vat_tax_id() lives in zoho.php (required above) — single source of truth. */
 
 /* recompute actual_cost (ex-VAT) / actual_profit onto the quote — VAT is excluded from profit */
 function pc_refresh_quote(PDO $pdo, $quoteId, $vat = 0.16){

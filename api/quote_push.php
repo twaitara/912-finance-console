@@ -13,26 +13,7 @@ require __DIR__ . '/../db.php';
 require __DIR__ . '/../zoho.php';
 @set_time_limit(90);
 
-/* Find the org's 16% VAT tax_id (cached for a day). Returns '' if none found. */
-function quote_vat_tax_id(){
-    $cache = __DIR__ . '/../data/zoho_vat.json';
-    if (is_file($cache) && (time() - filemtime($cache) < 86400)) {
-        $t = json_decode(file_get_contents($cache), true);
-        if (isset($t['tax_id'])) return (string)$t['tax_id'];
-    }
-    [$data, $code] = zoho_api('GET', 'settings/taxes');
-    $id = '';
-    if ($code < 400) {
-        foreach (($data['taxes'] ?? []) as $tax) {
-            $pct = (float)($tax['tax_percentage'] ?? 0);
-            $nm  = strtolower((string)($tax['tax_name'] ?? ''));
-            if (abs($pct - 16.0) < 0.01 || strpos($nm, 'vat') !== false) { $id = (string)($tax['tax_id'] ?? ''); if (abs($pct-16.0)<0.01) break; }
-        }
-        if (!is_dir(__DIR__ . '/../data')) @mkdir(__DIR__ . '/../data', 0775, true);
-        @file_put_contents($cache, json_encode(['tax_id'=>$id]));
-    }
-    return $id;
-}
+/* VAT tax-id helper: zoho_vat_tax_id() in zoho.php (required above). */
 
 try {
     $pdo = db();
@@ -52,7 +33,7 @@ try {
     $items = json_decode($q['line_items'] ?: '[]', true) ?: [];
     if (!$items) throw new Exception('Quote has no line items.');
 
-    $taxId = quote_vat_tax_id();
+    $taxId = zoho_vat_tax_id();
     $lineItems = [];
     foreach ($items as $it) {
         $li = [

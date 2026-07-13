@@ -66,3 +66,29 @@ function zoho_api($method, $path, $body = null, $query = []) {
     if ($err) throw new Exception('API request failed: ' . $err);
     return [json_decode($res, true), (int)$code];
 }
+
+/* Canonical VAT tax-id lookup (was copy-pasted in quote_push/quote_invoice/
+   quote_update/project_costs). Picks the 16%-or-named-"vat" tax from Zoho and
+   caches it to data/zoho_vat.json for 24h; re-fetches if the cache is stale or
+   the cached id is empty. Same selection heuristic as before. */
+if (!function_exists('zoho_vat_tax_id')) {
+    function zoho_vat_tax_id() {
+        $cache = __DIR__ . '/data/zoho_vat.json';
+        if (is_file($cache) && (time() - filemtime($cache) < 86400)) {
+            $t = json_decode(@file_get_contents($cache), true);
+            if (!empty($t['tax_id'])) return (string)$t['tax_id'];
+        }
+        [$data, $code] = zoho_api('GET', 'settings/taxes');
+        $id = '';
+        if ($code < 400) {
+            foreach (($data['taxes'] ?? []) as $tax) {
+                $pct = (float)($tax['tax_percentage'] ?? 0);
+                $nm  = strtolower((string)($tax['tax_name'] ?? ''));
+                if (abs($pct - 16.0) < 0.01 || strpos($nm, 'vat') !== false) { $id = (string)($tax['tax_id'] ?? ''); if (abs($pct - 16.0) < 0.01) break; }
+            }
+            if (!is_dir(__DIR__ . '/data')) @mkdir(__DIR__ . '/data', 0775, true);
+            @file_put_contents($cache, json_encode(['tax_id' => $id]));
+        }
+        return $id;
+    }
+}
