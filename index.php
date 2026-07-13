@@ -7288,7 +7288,7 @@ function mqToProject(id){
 }
 
 /* ---------- Projects page (jobs converted from quotes) ---------- */
-var PROJ={loaded:false,loading:false,projects:[],admin:false,busyId:0,msg:'',err:false,q:'',filter:'open'};
+var PROJ={loaded:false,loading:false,projects:[],admin:false,busyId:0,msg:'',err:false,q:'',filter:'open',perPage:25,page:1};
 function projLoad(){ PROJ.loading=true; PROJ.msg='';
   fetch('api/projects.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ PROJ.loading=false; if(j.ok){ PROJ.projects=j.projects||[]; PROJ.admin=!!j.admin; PROJ.loaded=true; } else { PROJ.msg=j.error||'Could not load'; PROJ.err=true; } if(TAB==='projects')render(); })
@@ -7302,26 +7302,45 @@ function projMatch(p,qq){
   if(hay.includes(qq)) return true;
   return digits!=='' && hay.replace(/\D/g,'').includes(digits);
 }
-function projSearch(v){ PROJ.q=v; const b=document.getElementById('projListBox'); if(b) b.innerHTML=projListHtml(); }
+function projSearch(v){ PROJ.q=v; PROJ.page=1; const b=document.getElementById('projListBox'); if(b) b.innerHTML=projListHtml(); }
+function projRepaint(){ const b=document.getElementById('projListBox'); if(b) b.innerHTML=projListHtml(); }
+function projGoPage(n){ PROJ.page=n; projRepaint(); }
+function projPerPage(v){ PROJ.perPage=parseInt(v,10)||25; PROJ.page=1; projRepaint(); }
 function projListHtml(){
   let list=PROJ.projects||[];
   if(PROJ.admin && (PROJ.filter||'open')!=='all') list=list.filter(p=>projStageOf(p)===(PROJ.filter||'open'));
   const qq=(PROJ.q||'').trim().toLowerCase();
   if(qq) list=list.filter(p=>projMatch(p,qq));
-  if(!list.length) return `<div class="card muted" style="text-align:center;padding:22px">No ${PROJ.admin&&PROJ.filter!=='all'?qesc(PROJ.filter)+' ':''}projects${qq?(' matching “'+qesc(PROJ.q)+'”'):''}.</div>`;
-  return list.map(PROJ.admin?projCardAdmin:projCardTeam).join('');
+  const total=list.length;
+  if(!total) return `<div class="card muted" style="text-align:center;padding:22px">No ${PROJ.admin&&PROJ.filter!=='all'?qesc(PROJ.filter)+' ':''}projects${qq?(' matching “'+qesc(PROJ.q)+'”'):''}.</div>`;
+  const per=PROJ.perPage||25;
+  const pages=Math.max(1,Math.ceil(total/per));
+  if(PROJ.page>pages)PROJ.page=pages; if(PROJ.page<1)PROJ.page=1;
+  const slice=list.slice((PROJ.page-1)*per, PROJ.page*per);
+  const count=`<div class="muted" style="margin-bottom:8px;font-size:12px">${total} project${total===1?'':'s'}${qq?(' matching “'+qesc(PROJ.q)+'”'):''}${pages>1?(' · page '+PROJ.page+' of '+pages):''}</div>`;
+  const cards=slice.map(PROJ.admin?projCardAdmin:projCardTeam).join('');
+  const pager=pages>1?`<div class="row" style="justify-content:center;gap:8px;margin-top:14px">
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="projGoPage(${PROJ.page-1})" ${PROJ.page<=1?'disabled':''}>‹ Prev</button>
+      <span class="muted" style="font-size:12px">Page ${PROJ.page} of ${pages}</span>
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="projGoPage(${PROJ.page+1})" ${PROJ.page>=pages?'disabled':''}>Next ›</button>
+    </div>`:'';
+  return count+cards+pager;
 }
+function projPerPageSel(){ return `<select onchange="projPerPage(this.value)" ${tip('Records per page')} style="width:auto;margin:0;font-size:12px;padding:6px 8px">${[10,15,25,50,100].map(n=>`<option value="${n}" ${(PROJ.perPage||25)===n?'selected':''}>${n} / page</option>`).join('')}</select>`; }
 function vProjects(){
   if(!PROJ.loaded && PROJ.loading) return `<h2>Projects</h2><div class="card muted" style="text-align:center;padding:22px">Loading…</div>`;
   const all=PROJ.projects||[];
   const msg=PROJ.msg?`<div class="${PROJ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(PROJ.msg)}</div>`:'';
   if(!all.length) return `<h2>Projects</h2>${msg}<div class="card muted" style="text-align:center;padding:24px">${PROJ.admin?'No projects yet. Convert an approved quote to a project from <b>My Quotes</b>.':'No open projects right now.'}</div>`;
-  const search=`<input id="projSearch" type="text" autocomplete="off" ${tip('Filter by client, invoice/estimate number or subject')} placeholder="🔍 Filter by client or invoice #…" value="${qesc(PROJ.q||'')}" oninput="projSearch(this.value)" style="width:100%;margin-bottom:10px">`;
+  const search=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <input id="projSearch" type="text" autocomplete="off" ${tip('Filter by client, invoice/estimate number or subject')} placeholder="🔍 Filter by client or invoice #…" value="${qesc(PROJ.q||'')}" oninput="projSearch(this.value)" style="flex:1;min-width:180px;margin:0">
+      ${projPerPageSel()}
+    </div>`;
   if(!PROJ.admin){
     return `<h2>Projects</h2><div class="muted" style="font-size:11.5px;margin-bottom:10px">Open jobs — add the actual costs as you go. You won't see the price charged to the customer.</div>${msg}${search}<div id="projListBox">${projListHtml()}</div>`;
   }
   const cnt=s=>all.filter(p=>projStageOf(p)===s).length;
-  const chip=(k,label,n)=>`<button class="btn${(PROJ.filter||'open')===k?'':' sec'}" style="width:auto;padding:5px 12px;font-size:12px" onclick="PROJ.filter='${k}';render()">${label}${n!=null?(' ('+n+')'):''}</button>`;
+  const chip=(k,label,n)=>`<button class="btn${(PROJ.filter||'open')===k?'':' sec'}" style="width:auto;padding:5px 12px;font-size:12px" onclick="PROJ.filter='${k}';PROJ.page=1;render()">${label}${n!=null?(' ('+n+')'):''}</button>`;
   return `<div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <h2 style="margin:0;flex:1;min-width:160px">Projects</h2>
       <button class="btn" style="width:auto;padding:7px 14px;font-size:12px;background:#7A5AF8;box-shadow:none" ${tip('Open the full profit report')} onclick="navTo('report')">📊 Profit Report</button>
