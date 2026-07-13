@@ -7245,6 +7245,7 @@ function projCardAdmin(p){
   return `<div class="card" style="border-left:4px solid ${quoteAccent(p.status)};margin-bottom:10px">
     <div class="row" style="align-items:flex-start;gap:12px">
       <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
+        ${p.subject?`<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${qesc(p.subject)}</div>`:''}
         <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(num)} · ${p.line_count} item${p.line_count===1?'':'s'} · by ${qesc(p.created_by||'')}</div></div>
       <div style="text-align:right;white-space:nowrap;font-size:11px;line-height:1.6">
         <div style="margin-bottom:4px">${projStageBadge(stage)}</div>
@@ -7265,6 +7266,7 @@ function projCardTeam(p){
   return `<div class="card" style="border-left:4px solid #7A5AF8;margin-bottom:10px">
     <div class="row" style="align-items:flex-start;gap:12px">
       <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
+        ${p.subject?`<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${qesc(p.subject)}</div>`:''}
         <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(p.zoho_estimate_number||('#'+p.id))} · ${p.line_count} item${p.line_count===1?'':'s'}</div></div>
       <div style="text-align:right;white-space:nowrap"><div style="font-size:11px;color:var(--mute)">Cost so far</div><b>${fmtn(p.actual_cost||0)}</b></div>
     </div>

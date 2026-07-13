@@ -25,7 +25,7 @@ try {
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         $out = array_map(function($q){
             return [
-                'id'=>(int)$q['id'], 'customer_name'=>$q['customer_name'],
+                'id'=>(int)$q['id'], 'customer_name'=>$q['customer_name'], 'subject'=>$q['subject'],
                 'zoho_estimate_number'=>$q['zoho_estimate_number'], 'zoho_invoice_number'=>$q['zoho_invoice_number'],
                 'status'=>$q['status'], 'project_closed'=>(int)$q['project_closed'],
                 'created_by'=>$q['created_by'], 'quote_date'=>$q['quote_date'], 'created_at'=>$q['created_at'],
@@ -48,7 +48,7 @@ try {
     }
     $out = array_map(function($q){
         return [
-            'id'=>(int)$q['id'], 'customer_name'=>$q['customer_name'],
+            'id'=>(int)$q['id'], 'customer_name'=>$q['customer_name'], 'subject'=>$q['subject'],
             'zoho_estimate_number'=>$q['zoho_estimate_number'],
             'status'=>$q['status'], 'project_closed'=>0,
             'line_count'=>proj_line_count($q['line_items']),
