@@ -2052,6 +2052,14 @@ if (empty($_SESSION['auth'])):
   </div>
 </div>
 
+<div id="qvModal" class="qbmodal" onclick="if(event.target===this)qvClose()">
+  <div class="qbm-card" style="max-width:640px">
+    <div class="qbm-head"><b id="qvModalTitle">Quote preview</b>
+      <button class="qbm-x" onclick="qvClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body" id="qvModalBody"></div>
+  </div>
+</div>
+
 <div id="benAiModal" class="qbmodal" onclick="if(event.target===this)benAiClose()">
   <div class="qbm-card" style="max-width:680px">
     <div class="qbm-head"><b>💬 Ask AI — Ben's questions</b>
@@ -7318,6 +7326,7 @@ function projCardAdmin(p){
       </div>
     </div>
     <div class="qact">
+      <button class="btn sec qb" ${tip('Preview the quote — line items and totals')} onclick="qvOpen(${p.id})">👁 Preview</button>
       <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('View / edit the actual costs on this project')} onclick="jcOpen(${p.id},'capture')">💰 Costs</button>
       <button class="btn sec qb" ${tip('Record client deposits/payments and see the balance')} onclick="ppOpen(${p.id})">💵 Payments</button>
       <button class="btn sec qb" ${tip('Assign which team members can view and cost this project')} onclick="paOpen(${p.id})">👤 Assign</button>
@@ -7355,6 +7364,22 @@ function projReopen(id){ PROJ.busyId=id; render();
   .then(r=>r.json()).then(j=>{ PROJ.busyId=0; if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p)p.project_closed=0; PROJ.msg='Project reopened.'; PROJ.err=false; } else { PROJ.msg=j.error||'Could not reopen'; PROJ.err=true; } render(); })
   .catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
 }
+
+/* ---------- Preview the quote in a popup (line items + totals) ---------- */
+function qvOpen(id){
+  document.getElementById('qvModalBody').innerHTML='<div class="muted" style="padding:22px;text-align:center">Loading…</div>';
+  document.getElementById('qvModalTitle').textContent='Quote preview';
+  document.getElementById('qvModal').classList.add('open'); document.body.style.overflow='hidden';
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',id})})
+  .then(r=>r.json()).then(j=>{
+    if(!j.ok){ document.getElementById('qvModalBody').innerHTML='<div class="warn" style="margin:10px">'+qesc(j.error||'Could not load')+'</div>'; return; }
+    const quote=j.quote;
+    document.getElementById('qvModalTitle').textContent='Quote '+qesc(quote.zoho_estimate_number||('#'+quote.id))+' · '+qesc(quote.customer_name||'');
+    document.getElementById('qvModalBody').innerHTML=mqPreviewHtml(quote)
+      + `<div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">${quote.zoho_estimate_id?`<button class="btn sec" style="width:auto" onclick="mqPdf(${quote.id})">⤓ PDF</button>`:''}<button class="btn sec" style="width:auto" onclick="qvClose()">Close</button></div>`;
+  }).catch(e=>{ document.getElementById('qvModalBody').innerHTML='<div class="warn" style="margin:10px">Error: '+qesc(''+e)+'</div>'; });
+}
+function qvClose(){ document.getElementById('qvModal').classList.remove('open'); document.body.style.overflow=''; }
 
 /* ---------- Assign which team members can view/cost a project (admin) ---------- */
 var PA={quoteId:0,users:[],busy:false,msg:'',err:false};
@@ -7530,7 +7555,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); const ppm=document.getElementById('ppModal'); if(ppm&&ppm.classList.contains('open')) ppClose(); const pam=document.getElementById('paModal'); if(pam&&pam.classList.contains('open')) paClose(); } });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); const ppm=document.getElementById('ppModal'); if(ppm&&ppm.classList.contains('open')) ppClose(); const pam=document.getElementById('paModal'); if(pam&&pam.classList.contains('open')) paClose(); const qvm=document.getElementById('qvModal'); if(qvm&&qvm.classList.contains('open')) qvClose(); } });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){
