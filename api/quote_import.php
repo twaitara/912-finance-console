@@ -106,7 +106,17 @@ try {
         $number = (string)($e['estimate_number'] ?? '');
         $custNm = (string)($e['customer_name'] ?? '');
         $ref    = substr((string)($e['reference_number'] ?? ''), 0, 80);
-        $subj   = substr(($ref !== '' ? $ref : ('Estimate ' . $number)) ?: 'Imported quote', 0, 190);
+        // Subject as shown on the Zoho quote: a custom field labelled "subject", else a native
+        // subject field, else the reference, else the estimate number. (Editable later in-app.)
+        $subj = '';
+        foreach (($e['custom_fields'] ?? []) as $f) {
+            $lbl = strtolower((string)($f['label'] ?? '') . ' ' . (string)($f['placeholder'] ?? ''));
+            if (strpos($lbl, 'subject') !== false) { $subj = trim((string)($f['value'] ?? '')); if ($subj !== '') break; }
+        }
+        if ($subj === '') $subj = trim((string)($e['subject'] ?? ''));
+        if ($subj === '') $subj = $ref;
+        if ($subj === '') $subj = 'Estimate ' . $number;
+        $subj = substr($subj, 0, 190);
         $status = qimport_status($e['status'] ?? '');
         $notes  = substr((string)($e['notes'] ?? ''), 0, 1000);
         $terms  = substr((string)($e['terms'] ?? ''), 0, 2000);
