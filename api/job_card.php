@@ -49,15 +49,22 @@ try {
     $isProfit = ($doc === 'profit');
     $vat = (float)($cfg['vat_rate'] ?? 0.16);
     $actualByLine = []; $curr = $q['currency'] ?: 'KES';
+    $inputVat = 0.0;   // reclaimable VAT paid on VAT-inclusive costs
     if ($isProfit) {
         if (!$admin) { http_response_code(403); echo 'The profit report is admin-only.'; exit; }
         require_once __DIR__ . '/../project_costs.php';
         pc_table($pdo);
         foreach (pc_for_quote($pdo, $id) as $c) {
-            $li = (int)$c['line_index'];
-            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + pc_exvat($c['amount'], $c['vat_mode'] ?? 'excl', $vat);
+            $li  = (int)$c['line_index'];
+            $ex  = pc_exvat($c['amount'], $c['vat_mode'] ?? 'excl', $vat);
+            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + $ex;
+            $inputVat += ((float)$c['amount'] - $ex);   // VAT portion of an inclusive cost
         }
     }
+    $inputVat  = round($inputVat, 2);
+    $outputVat = round((float)($q['tax_amount'] ?? 0), 2);   // VAT charged to the client on the sale
+    $netVat    = round($outputVat - $inputVat, 2);            // VAT to remit to KRA
+    $grossCharged = round((float)($q['total'] ?? 0), 2);     // invoice total incl VAT
     $money = function($n) use ($curr) { return $curr . ' ' . number_format((float)$n, 0); };
 
     $docLabel = $doc === 'boq' ? 'BOQ' : ($isProfit ? 'Profit Report' : 'Job Card');
@@ -207,8 +214,18 @@ try {
         <b>Expected profit</b> (from budget): <b><?php echo $money($expProfit); ?></b>
         &nbsp;·&nbsp; <b>Actual profit</b>: <b style="color:<?php echo $actProfit<0?'#c0392b':'#1e7e34'; ?>"><?php echo $money($actProfit); ?></b>
         &nbsp;·&nbsp; Margin: <b><?php echo $margin; ?>%</b>
-        <div style="color:#8a98a8;font-size:11px;margin-top:4px">All figures are ex-VAT — VAT is never included in profit. VAT-inclusive costs are shown at their ex-VAT value. Actual cost = expenses captured against this job (labour included).</div>
+        <div style="color:#8a98a8;font-size:11px;margin-top:4px">All figures above are ex-VAT — VAT is never included in profit. VAT-inclusive costs are shown at their ex-VAT value. Actual cost = expenses captured against this job (labour included).</div>
       </div>
+      <!-- VAT element (shown for reconciliation only; not part of profit) -->
+      <table class="items" style="margin-top:6px">
+        <thead><tr><th>VAT element (not part of profit)</th><th class="r" style="width:150px">Amount</th></tr></thead>
+        <tbody>
+          <tr><td>Output VAT — VAT charged to the client on the sale</td><td class="r"><?php echo $money($outputVat); ?></td></tr>
+          <tr><td>Input VAT — reclaimable VAT paid on VAT-inclusive costs</td><td class="r"><?php echo $money($inputVat); ?></td></tr>
+          <tr style="font-weight:800;border-top:2px solid #3a6ea5"><td>Net VAT to remit (output − input)</td><td class="r" style="color:<?php echo $netVat<0?'#1e7e34':'#15202B'; ?>"><?php echo $money($netVat); ?></td></tr>
+          <tr><td style="color:#8a98a8">Invoice total charged to client (incl VAT)</td><td class="r" style="color:#8a98a8"><?php echo $money($grossCharged); ?></td></tr>
+        </tbody>
+      </table>
       <?php else: ?>
       <table class="items">
         <thead><tr><th class="c" style="width:34px">#</th><th><?php echo $itemsHdr; ?></th><th class="r" style="width:90px">Qty</th></tr></thead>
