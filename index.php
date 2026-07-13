@@ -6355,6 +6355,7 @@ function vTodo(){
 
 function themeIsDark(){ return document.documentElement.classList.contains('dark'); }
 function openJobCard(id){ window.open('api/job_card.php?id='+id+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* job card follows dark mode on screen, prints light */
+function openBoq(id){ window.open('api/job_card.php?id='+id+'&doc=boq'+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* Bill of Quantities: materials only, labour excluded */
 function syncThemeBtn(){ const b=document.getElementById('themeBtn'); if(b) b.textContent = themeIsDark()?'☀️':'🌙'; }
 function toggleTheme(){
   const dark=document.documentElement.classList.toggle('dark');
@@ -6830,6 +6831,7 @@ function mqListHtml(){
         ${canCost?`<button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Enter or edit the actual costs that went into this job, broken down per line')} onclick="jcOpen(${q.id},'capture')">${isInvoiced?'💰 Capture costs':'💰 Costs'}</button>`:''}
         ${canBill?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? Review costs vs profit, create the invoice, and post the expenses to Zoho')} onclick="jcOpen(${q.id},'bill')" ${busy?'disabled':''}>${busy?'Working…':'🧾 Bill client'}</button>`:''}
         ${(ME.admin && isInvoiced)?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${q.id})">⤓ Job card</button>`:''}
+        ${(ME.admin && (isProject||isInvoiced))?`<button class="btn sec qb" ${tip('Bill of Quantities — materials required (labour excluded), branded PDF')} onclick="openBoq(${q.id})">⤓ BOQ</button>`:''}
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
@@ -7042,7 +7044,8 @@ function jcOpen(id,mode){
   document.getElementById('jcModalBody').innerHTML='<div class="muted" style="padding:22px;text-align:center">Loading…</div>';
   document.getElementById('jcModalTitle').textContent=(mode==='bill')?'Review & bill':'Capture costs';
   document.getElementById('jcModal').classList.add('open'); document.body.style.overflow='hidden';
-  const done=()=>{ if(JC.admin && !JCACC){ fetch('api/accounts.php',{credentials:'same-origin'}).then(r=>r.json()).then(a=>{ if(a.ok) JCACC={expense:a.expense||[],paid:a.paid||[]}; jcRender(); }).catch(()=>jcRender()); } else { jcRender(); } };
+  const finish=()=>{ jcAutoDefaultBooking(); jcRender(); };
+  const done=()=>{ if(JC.admin && !JCACC){ fetch('api/accounts.php',{credentials:'same-origin'}).then(r=>r.json()).then(a=>{ if(a.ok) JCACC={expense:a.expense||[],paid:a.paid||[]}; finish(); }).catch(()=>jcRender()); } else { finish(); } };
   // both modes load line items + the project's captured cost rows (from the project_costs table)
   fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',id})})
   .then(r=>r.json()).then(j=>{
@@ -7052,6 +7055,21 @@ function jcOpen(id,mode){
   }).catch(e=>{ document.getElementById('jcModalBody').innerHTML='<div class="warn" style="margin:10px">Error: '+qesc(''+e)+'</div>'; });
 }
 function jcClose(){ document.getElementById('jcModal').classList.remove('open'); document.body.style.overflow=''; }
+
+/* Pick a sensible default booking account the first time (Cost of Goods Sold + a KES bank)
+   and save it, so captured costs post to Zoho without an admin having to set anything. */
+function jcAutoDefaultBooking(){
+  if(!JC.admin || !JCACC) return;
+  if(JC.config && JC.config.account_id) return;          // already configured — leave it
+  const exp=JCACC.expense||[], paid=JCACC.paid||[];
+  const cogs = exp.find(a=>a.type==='cost_of_goods_sold') || exp.find(a=>/cost of goods|cogs/i.test(a.name||'')) || exp[0];
+  if(!cogs) return;
+  const pay = paid.find(a=>/kes/i.test(a.name||'')) || paid[0];
+  const acc=cogs.id, pth=pay?pay.id:'';
+  JC.config={account_id:acc,paid_through_account_id:pth};   // optimistic so the UI/warning updates now
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'config_set',account_id:acc,paid_through_account_id:pth})})
+    .then(r=>r.json()).then(j=>{ if(j.ok&&j.config){ JC.config=j.config; jcRender(); } }).catch(()=>{});
+}
 function jcAddBudgetRow(li){ const l=JC.lines[li]; l.rows.push({id:0,category:'other',description:'Budgeted estimate',qty:l.qty||1,unit_cost:l.bcost||0}); jcRender(); }
 
 function jcSaveConfig(){
@@ -7255,6 +7273,7 @@ function projCardAdmin(p){
     </div>
     <div class="qact">
       <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('View / edit the actual costs on this project')} onclick="jcOpen(${p.id},'capture')">💰 Costs</button>
+      <button class="btn sec qb" ${tip('Bill of Quantities — materials required (labour excluded), branded PDF')} onclick="openBoq(${p.id})">⤓ BOQ</button>
       ${stage==='open'?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Review costs vs profit, create the invoice and post expenses to Zoho')} onclick="jcOpen(${p.id},'bill')" ${busy?'disabled':''}>🧾 Bill client</button>`:''}
       ${p.zoho_invoice_number?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${p.id})">⤓ Job card</button>`:''}
       ${p.project_closed?`<button class="btn sec qb" ${tip('Reopen so the team can see and cost it again')} onclick="projReopen(${p.id})" ${busy?'disabled':''}>${busy?'…':'↺ Reopen'}</button>`:`<button class="btn sec qb" ${tip('Close this project — hides it from the team; you can reopen anytime')} onclick="projClose(${p.id})" ${busy?'disabled':''}>${busy?'…':'✓ Close'}</button>`}

@@ -26,6 +26,20 @@ try {
     $date   = date('d M Y');
     $theme  = (($_GET['theme'] ?? '') === 'dark') ? 'dark' : '';   // match the app's dark mode on screen (prints light)
 
+    // BOQ (Bill of Quantities) mode: a materials-required list that EXCLUDES labour lines.
+    $doc = (($_GET['doc'] ?? '') === 'boq') ? 'boq' : 'jobcard';
+    if ($doc === 'boq') {
+        // Conservative labour match so materials like "network installation accessories" stay in.
+        $labourRe = '/\blabou?r\b|workmanship|man[\s\-]?hours?|service\s*charge/i';
+        $items = array_values(array_filter($items, function($it) use ($labourRe) {
+            $hay = (string)($it['name'] ?? '') . ' ' . (string)($it['description'] ?? '');
+            return !preg_match($labourRe, $hay);
+        }));
+    }
+    $docLabel = $doc === 'boq' ? 'BOQ'                     : 'Job Card';
+    $docTop   = $doc === 'boq' ? 'BILL OF<br>QUANTITIES'   : 'DELIVERY NOTE /<br>JOB CARD';
+    $itemsHdr = $doc === 'boq' ? 'Material &amp; Description' : 'Item &amp; Description';
+
     // company (letterhead) — defaults match the org; overridable in config.php
     $coName = $cfg['business_name']    ?? 'Nine One Two Holdings';
     $coPin  = $cfg['company_pin']      ?? 'P051475285Q';
@@ -66,7 +80,7 @@ try {
 
     header('Content-Type: text/html; charset=utf-8');
     ?><!doctype html><html class="<?php echo $theme; ?>"><head><meta charset="utf-8">
-<title>Job Card <?php echo jc_esc($docNo); ?></title>
+<title><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?></title>
 <style>
   @page{size:A4;margin:14mm}
   *{box-sizing:border-box}
@@ -113,14 +127,14 @@ try {
   @media print{.bar{display:none}body{background:#fff}.sheet{border:none;margin:0;max-width:none}}
 </style></head>
 <body>
-  <div class="bar"><span>Job Card <?php echo jc_esc($docNo); ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
+  <div class="bar"><span><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
     <div class="top">
       <div class="co"><?php echo $logoUrl !== '' ? '<img class="logo-img" src="'.jc_esc($logoUrl).'" alt="'.jc_esc($coName).'">' : '<div class="logo">912</div>'; ?>
         <div><div class="name"><?php echo jc_esc($coName); ?></div>
           <div class="meta">KRA PIN: <?php echo jc_esc($coPin); ?><br><?php echo $addrHtml; ?></div></div>
       </div>
-      <div class="title"><div class="t">DELIVERY NOTE /<br>JOB CARD</div>
+      <div class="title"><div class="t"><?php echo $docTop; ?></div>
         <div class="no"># <b><?php echo jc_esc($docNo); ?></b></div></div>
     </div>
     <div class="rowline"><div class="k">Date</div><div class="k" style="font-weight:400">: <b><?php echo jc_esc($date); ?></b></div></div>
@@ -131,8 +145,8 @@ try {
     </div>
     <div class="body">
       <table class="items">
-        <thead><tr><th class="c" style="width:34px">#</th><th>Item &amp; Description</th><th class="r" style="width:90px">Qty</th></tr></thead>
-        <tbody><?php echo $rows ?: '<tr><td colspan="3" style="text-align:center;color:#8a98a8;padding:18px">No items.</td></tr>'; ?></tbody>
+        <thead><tr><th class="c" style="width:34px">#</th><th><?php echo $itemsHdr; ?></th><th class="r" style="width:90px">Qty</th></tr></thead>
+        <tbody><?php echo $rows ?: '<tr><td colspan="3" style="text-align:center;color:#8a98a8;padding:18px">' . ($doc === 'boq' ? 'No materials (all lines are labour).' : 'No items.') . '</td></tr>'; ?></tbody>
       </table>
     </div>
     <div class="sign"><span>Authorized Signature</span></div>
