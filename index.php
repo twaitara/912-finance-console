@@ -4112,6 +4112,14 @@ function qlistDates(){
   if(QLIST.preset==='custom')    return {from:QLIST.from,               to:QLIST.to};
   return {from:'',to:''};
 }
+var QLIMPORTED={};   // estimate_id -> already imported into the app (this session)
+function qlImport(eid){
+  fetch('api/quote_import.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'import',estimate_id:eid})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ QLIMPORTED[eid]=true; MQ.loaded=false; mqLoad();
+      const w=j.warnings||[]; if(w.length) alert('Imported with a note:\n\n'+w.join('\n'));
+      if(TAB==='qlist') render();
+    } else alert(j.error||'Import failed'); }).catch(e=>alert(''+e));
+}
 function qlistLoad(more=false){
   if(QLIST.loading) return;
   if(!more){QLIST.page=1;QLIST.allItems=[];QLIST.hasMore=false;QLIST.error='';}
@@ -4156,6 +4164,7 @@ function vQList(){
     <td style="padding:7px 10px">${badge(x.status)}</td>
     <td style="padding:7px 10px;font-size:11.5px;font-weight:700;text-align:right;white-space:nowrap">KES ${Math.round(x.total).toLocaleString('en-KE')}</td>
     ${x.ref?`<td style="padding:7px 10px;font-size:10.5px;color:var(--mute)">${x.ref}</td>`:'<td></td>'}
+    ${ME.admin?`<td style="padding:7px 10px;white-space:nowrap">${QLIMPORTED[x.id]?'<span class="pill" style="background:#E7F6EC;color:#0F7A34;padding:3px 8px;font-size:10.5px">✓ In app</span>':(x.status==='invoiced'?'':`<button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="qlImport('${x.id}')">Import</button>`)}</td>`:''}
   </tr>`).join('');
   return `
   <h2>Quotes</h2>
@@ -4188,8 +4197,9 @@ function vQList(){
         <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Status</th>
         <th style="padding:7px 10px;font-size:10px;text-align:right;color:var(--mute);font-weight:600">Amount</th>
         <th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Ref</th>
+        ${ME.admin?'<th style="padding:7px 10px;font-size:10px;text-align:left;color:var(--mute);font-weight:600">Import</th>':''}
       </tr></thead>
-      <tbody style="divide-y">${rows||'<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--mute);font-size:12px">No quotes found</td></tr>'}</tbody>
+      <tbody style="divide-y">${rows||`<tr><td colspan="${ME.admin?8:7}" style="text-align:center;padding:20px;color:var(--mute);font-size:12px">No quotes found</td></tr>`}</tbody>
     </table>
     </div>
     ${QLIST.hasMore?`<div style="padding:10px 14px;border-top:1px solid var(--line);text-align:center">
@@ -6837,9 +6847,48 @@ function mqListHtml(){
       <span class="muted" style="font-size:12px">Page ${MQ.page} of ${pages2}</span>
       <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqGoPage(${MQ.page+1})" ${MQ.page>=pages2?'disabled':''}>Next ›</button>
     </div>` : '';
-  return count + cards + pager;
+  // admins: if a search doesn't match locally, it may be a quote made straight in Zoho — offer to import it
+  const zohoPanel = (ME.admin && qq) ? `
+    <div class="card" style="margin-top:14px;padding:14px">
+      <div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:0"><b style="font-size:12.5px">Made this quote in Zoho?</b>
+          <div class="muted" style="font-size:11.5px">Quotes created directly in Zoho aren't here until you import them. Search Zoho and pull it in.</div></div>
+        <button class="btn" style="width:auto;padding:7px 14px;font-size:12px" onclick="mqZohoSearch()" ${ZQ.loading?'disabled':''}>${ZQ.loading?'Searching Zoho…':('🔎 Search Zoho for “'+qesc(MQ.q)+'”')}</button>
+      </div>
+      ${(ZQ.forQ===qq && ZQ.results)?mqZohoResultsHtml():''}
+      ${ZQ.msg?`<div class="${ZQ.err?'warn':'ok'}" style="margin-top:10px;font-size:11.5px">${qesc(ZQ.msg)}</div>`:''}
+    </div>` : '';
+  return count + cards + pager + zohoPanel;
 }
 function mqSearch(v){ MQ.q=v; MQ.page=1; const b=document.getElementById('mqListBox'); if(b) b.innerHTML=mqListHtml(); }
+
+/* ---- Import a quote that was created directly in Zoho ---- */
+var ZQ={loading:false,results:null,msg:'',err:false,forQ:''};
+function mqRepaintList(){ const b=document.getElementById('mqListBox'); if(b) b.innerHTML=mqListHtml(); }
+function mqZohoResultsHtml(){
+  const r=ZQ.results||[];
+  if(!r.length) return `<div class="muted" style="margin-top:10px;font-size:11.5px">No Zoho estimates matched “${qesc(MQ.q)}”.</div>`;
+  return `<div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${r.map(e=>`
+    <div class="row" style="align-items:center;gap:10px;border:1px solid var(--line);border-radius:9px;padding:8px 10px">
+      <div style="flex:1;min-width:0"><b style="font-size:12px">${qesc(e.number||'—')}</b>
+        <span class="muted" style="font-size:11px">· ${qesc(e.customer||'')} · ${qesc(e.date||'')} · ${qesc(e.currency||'KES')} ${fmtn(e.total||0)} · ${qesc(e.status||'')}</span></div>
+      ${e.imported?`<span class="pill" style="background:#E7F6EC;color:#0F7A34;padding:4px 9px">✓ In app</span>`:`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px" onclick="mqImport('${qesc(e.estimate_id)}')">Import</button>`}
+    </div>`).join('')}</div>`;
+}
+function mqZohoSearch(){ const q=(MQ.q||'').trim(); if(!q)return; ZQ.loading=true; ZQ.msg=''; ZQ.forQ=q.toLowerCase(); mqRepaintList();
+  fetch('api/quote_import.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'search',q})})
+  .then(r=>r.json()).then(j=>{ ZQ.loading=false; if(j.ok){ ZQ.results=j.items||[]; ZQ.forQ=q.toLowerCase(); } else { ZQ.msg=j.error||'Zoho search failed.'; ZQ.err=true; } mqRepaintList(); })
+  .catch(e=>{ ZQ.loading=false; ZQ.msg='Error: '+e; ZQ.err=true; mqRepaintList(); });
+}
+function mqImport(eid){ ZQ.msg='';
+  fetch('api/quote_import.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'import',estimate_id:eid})})
+  .then(r=>r.json()).then(j=>{
+    if(j.ok){ const w=j.warnings||[]; ZQ.msg='Imported '+((j.quote&&j.quote.zoho_estimate_number)||'')+(j.already?' (already in app).':' — it now appears in your quotes.')+(w.length?(' ⚠ '+w.join(' ')):''); ZQ.err=w.length>0;
+      if(ZQ.results){ const it=ZQ.results.find(x=>x.estimate_id===eid); if(it){ it.imported=true; it.local_id=(j.quote&&j.quote.id)||0; } }
+      MQ.loaded=false; mqLoad(); mqRepaintList();
+    } else { ZQ.msg=j.error||'Import failed.'; ZQ.err=true; mqRepaintList(); }
+  }).catch(e=>{ ZQ.msg='Error: '+e; ZQ.err=true; mqRepaintList(); });
+}
 
 function vMyQuotes(){
   const all=MQ.quotes||[];
