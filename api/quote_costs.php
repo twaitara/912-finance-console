@@ -48,13 +48,19 @@ try {
         echo json_encode(['ok'=>true, 'config'=>$c]); exit;
     }
 
-    /* load a project / invoiced job the caller may cost */
+    /* load a project / invoiced job the caller may cost.
+       Admins can cost any project or invoiced job. The team can only cost OPEN
+       projects (status='project', not closed) — once you close it, they lose access. */
     $load = function($id) use ($pdo, $me, $admin, $costcap) {
         $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([(int)$id]);
         $row = $st->fetch(PDO::FETCH_ASSOC);
         if (!$row) throw new Exception('Job not found.');
-        if (!$admin && $row['created_by'] !== $me && !$costcap) throw new Exception('You do not have access to this job.');
-        if (!in_array($row['status'], ['project','invoiced'], true)) throw new Exception('Costs are captured on a project (or an invoiced job).');
+        if ($admin) {
+            if (!in_array($row['status'], ['project','invoiced'], true)) throw new Exception('Costs are captured on a project (or an invoiced job).');
+            return $row;
+        }
+        if ($row['created_by'] !== $me && !$costcap) throw new Exception('You do not have access to this job.');
+        if ($row['status'] !== 'project' || !empty($row['project_closed'])) throw new Exception('This project is closed — ask an admin to reopen it to add costs.');
         return $row;
     };
 

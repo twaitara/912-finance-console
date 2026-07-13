@@ -27,10 +27,13 @@ function pc_table(PDO $pdo){
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX (quote_id), INDEX (quote_id, line_index), INDEX (category)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    // actual (captured) cost/profit cached on the quote for cheap list rendering
+    // actual (captured) cost/profit cached on the quote for cheap list rendering,
+    // plus the project markers (is_project = ever converted; project_closed = archived by admin)
     foreach ([
         "ADD COLUMN actual_cost DECIMAL(14,2) DEFAULT 0 AFTER profit",
         "ADD COLUMN actual_profit DECIMAL(14,2) DEFAULT 0 AFTER actual_cost",
+        "ADD COLUMN is_project TINYINT NOT NULL DEFAULT 0 AFTER actual_profit",
+        "ADD COLUMN project_closed TINYINT NOT NULL DEFAULT 0 AFTER is_project",
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
 }
 

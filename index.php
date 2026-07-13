@@ -1878,6 +1878,7 @@ if (empty($_SESSION['auth'])):
       <div class="submenu">
         <button data-tab="newquote">📝 New Quote</button>
         <button data-tab="myquotes">📂 My Quotes</button>
+        <button data-tab="projects">📋 Projects</button>
         <button data-tab="jobcards">🛠️ Job Cards</button>
       </div>
     </div>
@@ -1966,6 +1967,7 @@ if (empty($_SESSION['auth'])):
     <div class="mob-sect">✏️ Create</div>
     <button class="mob-item mob-sub" data-tab="newquote">📝 New Quote</button>
     <button class="mob-item mob-sub" data-tab="myquotes">📂 My Quotes</button>
+    <button class="mob-item mob-sub" data-tab="projects">📋 Projects</button>
     <button class="mob-item mob-sub" data-tab="jobcards">🛠️ Job Cards</button>
 
     <div class="mob-sect">✅ Tasks</div>
@@ -2217,7 +2219,7 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals'||t==='report') return !!ME.admin; if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals'||t==='report') return !!ME.admin; if(t==='projects') return !!ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap'); if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
@@ -2257,6 +2259,7 @@ function tabRefresh(){
     case 'todo':      TASK.loaded=false;TASK.loading=false;TASK.tasks=[];render();todoLoad();break;
     case 'loans':     LOANS=[];render();loadLoans();break;
     case 'myquotes':  MQ.loaded=false;MQ.loading=false;MQ.quotes=[];render();mqLoad();break;
+    case 'projects':  PROJ.loaded=false;PROJ.loading=false;render();projLoad();break;
     case 'jobcards':  render();loadJobCards();break;
     case 'clientaccess': render();if(ME.admin)qbAssignLoad();break;
     case 'activity':  render();if(ME.admin)loadActivity();break;
@@ -2282,7 +2285,7 @@ function render(){
   const _fid=(_ae&&_ae.id&&(_ae.tagName==='INPUT'||_ae.tagName==='TEXTAREA')&&_ae.type!=='checkbox'&&_ae.type!=='radio')?_ae.id:null;
   const _ss=_fid?_ae.selectionStart:0, _se=_fid?_ae.selectionEnd:0;
   if(!tabAllowed(TAB)) TAB = firstAllowedTab();
-  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers',bulkexp:'Log Expenses',ask:'Ask your books',portals:'Portals'};
+  const _tabNames={dash:'Dashboard',deploy:'Deployments',ledger:'Ledger',loans:'Loans',growth:'Growth',report:'Profit Report',etr:'ETR',invrep:'Invoice Report',quotes:'Quotes',payments:'Payments',bulkpay:'Bulk Mark Paid',settings:'Settings',emails:'Email Clients',todo:'To-Do',newquote:'New Quote',myquotes:'My Quotes',projects:'Projects',jobcards:'Job Cards',clientaccess:'Client Access',activity:'Activity',qlist:'Quotes Browser',ivlist:'Invoice Browser',stmtbuild:'Statement Builder',latepay:'Late Payers',bulkexp:'Log Expenses',ask:'Ask your books',portals:'Portals'};
   document.title = (ME.user||'Console') + ' · ' + (_tabNames[TAB]||TAB) + ' · 912';
   if(TAB==='dash') p.innerHTML = vDash();
   if(TAB==='deploy') p.innerHTML = vDeploy();
@@ -2307,6 +2310,7 @@ function render(){
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
   if(TAB==='myquotes') p.innerHTML = vMyQuotes();
+  if(TAB==='projects'){ p.innerHTML = vProjects(); if(!PROJ.loaded && !PROJ.loading) projLoad(); }
   if(TAB==='jobcards') p.innerHTML = vJobCards();
   if(TAB==='clientaccess') p.innerHTML = vClientAccess();
   if(TAB==='activity') p.innerHTML = vActivity();
@@ -6761,7 +6765,14 @@ function mqListHtml(){
   if(MQ.users.length) filtered=filtered.filter(q=>MQ.users.includes(q.created_by));
   if(MQ.statuses.length){ const ss=mqStatusSet(); filtered=filtered.filter(q=>ss.has(q.status)); }
   const qq=(MQ.q||'').trim().toLowerCase();
-  if(qq) filtered=filtered.filter(q=>((q.zoho_estimate_number||'')+' '+(q.customer_name||'')+' '+(q.subject||'')).toLowerCase().includes(qq));
+  if(qq){
+    const digits=qq.replace(/\D/g,'');   // let "2642" match "NOT-2642", "INV 2642", etc.
+    filtered=filtered.filter(q=>{
+      const hay=((q.zoho_estimate_number||'')+' '+(q.zoho_invoice_number||'')+' '+(q.reference||'')+' '+(q.customer_name||'')+' '+(q.subject||'')+' #'+(q.id||'')).toLowerCase();
+      if(hay.includes(qq)) return true;
+      return digits!=='' && hay.replace(/\D/g,'').includes(digits);
+    });
+  }
   const pages=Math.max(1,Math.ceil(filtered.length/MQ_PER_PAGE));
   if(MQ.page>pages) MQ.page=pages; if(MQ.page<1) MQ.page=1;
   const slice=filtered.slice((MQ.page-1)*MQ_PER_PAGE, MQ.page*MQ_PER_PAGE);
@@ -6857,7 +6868,7 @@ function vMyQuotes(){
   return `<h2>My quotes</h2>
     ${MQ.msg?`<div class="${MQ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(MQ.msg)}</div>`:''}
     <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="mqSearch" type="text" autocomplete="off" ${tip('Find a quote by its number, client, or subject')} placeholder="🔍 Search quote #, client or subject…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
+      <input id="mqSearch" type="text" autocomplete="off" ${tip('Find by quote/estimate number, invoice number, reference, client or subject')} placeholder="🔍 Search quote #, invoice #, client or subject…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
       <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
     </div>
@@ -7098,6 +7109,7 @@ function jcSave(){
     if(j.ok){ JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); JC.warnings=j.warnings||[];
       JC.msg=(JC.warnings.length?'Costs saved (see notes below).':'Costs saved.'); JC.err=false;
       if(j.admin) jcSyncCard(j.quote);
+      PROJ.loaded=false; if(TAB==='projects') projLoad();
       jcRender();
     } else { JC.msg=j.error||'Save failed.'; JC.err=true; jcRender(); }
   }).catch(e=>{ JC.busy=false; JC.msg='Error: '+e; JC.err=true; jcRender(); });
@@ -7119,7 +7131,7 @@ function jcBill(){
           MQ.msg='Invoice '+(j.invoice_number||'')+(j.already?' (already invoiced).':' created — costs posted to Zoho.')+(w.length?(' ⚠ '+w.join(' ')):''); MQ.err=w.length>0;
           jcClose();
           window.open('api/job_card.php?id='+JC.id,'_blank');
-          MQ.loaded=false; mqLoad(); render();
+          MQ.loaded=false; mqLoad(); PROJ.loaded=false; if(TAB==='projects') projLoad(); render();
         } else { JC.msg=j.error||'Could not bill.'; JC.err=true; jcRender(); }
       });
   }).catch(e=>{ JC.busy=false; JC.msg='Error: '+e; JC.err=true; jcRender(); });
@@ -7130,9 +7142,77 @@ function mqToProject(id){
   MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
-    if(j.ok){ const q=(MQ.quotes||[]).find(x=>x.id===id); if(q)q.status='project'; MQ.msg='Project started — capture costs as the job runs.'; MQ.err=false; }
+    if(j.ok){ const q=(MQ.quotes||[]).find(x=>x.id===id); if(q)q.status='project'; PROJ.loaded=false; MQ.msg='Project started — capture costs on the Projects page.'; MQ.err=false; }
     else { MQ.msg=j.error||'Could not start project.'; MQ.err=true; } render();
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
+
+/* ---------- Projects page (jobs converted from quotes) ---------- */
+var PROJ={loaded:false,loading:false,projects:[],admin:false,busyId:0,msg:'',err:false};
+function projLoad(){ PROJ.loading=true; PROJ.msg='';
+  fetch('api/projects.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
+  .then(r=>r.json()).then(j=>{ PROJ.loading=false; if(j.ok){ PROJ.projects=j.projects||[]; PROJ.admin=!!j.admin; PROJ.loaded=true; } else { PROJ.msg=j.error||'Could not load'; PROJ.err=true; } if(TAB==='projects')render(); })
+  .catch(()=>{ PROJ.loading=false; if(TAB==='projects')render(); });
+}
+function projStageOf(p){ if(p.project_closed) return 'closed'; if(p.status==='invoiced'||p.zoho_invoice_number) return 'billed'; return 'open'; }
+function projStageBadge(stage){ const m={open:['🟣 Open','#7A5AF8','#EEEAFE'],billed:['🔵 Billed','#2350C5','#EEF2FE'],closed:['⚪ Closed','#64748B','#F1F4F8']}; const b=m[stage]||m.open; return `<span class="pill" style="color:${b[1]};background:${b[2]}">${b[0]}</span>`; }
+
+function vProjects(){
+  if(!PROJ.loaded && PROJ.loading) return `<h2>Projects</h2><div class="card muted" style="text-align:center;padding:22px">Loading…</div>`;
+  const list=PROJ.projects||[];
+  const msg=PROJ.msg?`<div class="${PROJ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(PROJ.msg)}</div>`:'';
+  if(!list.length) return `<h2>Projects</h2>${msg}<div class="card muted" style="text-align:center;padding:24px">${PROJ.admin?'No projects yet. Convert an approved quote to a project from <b>My Quotes</b>.':'No open projects right now.'}</div>`;
+  if(PROJ.admin){
+    const groups=[['open','Open — capturing costs'],['billed','Billed'],['closed','Closed']];
+    const secs=groups.map(g=>{ const c=list.filter(p=>projStageOf(p)===g[0]).map(projCardAdmin).join(''); return c?`<div style="margin:16px 0 8px;font-weight:700;font-size:13px;color:var(--mute)">${g[1]}</div>${c}`:''; }).join('');
+    return `<h2>Projects</h2>${msg}${secs}`;
+  }
+  return `<h2>Projects</h2><div class="muted" style="font-size:11.5px;margin-bottom:10px">Open jobs — add the actual costs as you go. You won't see the price charged to the customer.</div>${msg}${list.map(projCardTeam).join('')}`;
+}
+
+function projCardAdmin(p){
+  const stage=projStageOf(p); const busy=PROJ.busyId===p.id;
+  const num=p.zoho_invoice_number||p.zoho_estimate_number||('#'+p.id);
+  const prof=p.actual_profit||0;
+  return `<div class="card" style="border-left:4px solid ${quoteAccent(p.status)};margin-bottom:10px">
+    <div class="row" style="align-items:flex-start;gap:12px">
+      <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
+        <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(num)} · ${p.line_count} item${p.line_count===1?'':'s'} · by ${qesc(p.created_by||'')}</div></div>
+      <div style="text-align:right;white-space:nowrap">
+        <div style="margin-bottom:4px">${projStageBadge(stage)}</div>
+        <div style="font-size:11px;color:var(--mute)">Charged ${fmtn(p.total||0)} · Cost ${fmtn(p.actual_cost||0)}</div>
+        <div style="font-size:11px;font-weight:700;color:${prof<0?'var(--bad)':'var(--good)'}">Actual profit ${fmtn(prof)}${(p.total>0)?(' · '+Math.round(prof/p.total*100)+'%'):''}</div>
+      </div>
+    </div>
+    <div class="qact">
+      <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('View / edit the actual costs on this project')} onclick="jcOpen(${p.id},'capture')">💰 Costs</button>
+      ${stage==='open'?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Review costs vs profit, create the invoice and post expenses to Zoho')} onclick="jcOpen(${p.id},'bill')" ${busy?'disabled':''}>🧾 Bill client</button>`:''}
+      ${p.zoho_invoice_number?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="window.open('api/job_card.php?id='+${p.id},'_blank')">⤓ Job card</button>`:''}
+      ${p.project_closed?`<button class="btn sec qb" ${tip('Reopen so the team can see and cost it again')} onclick="projReopen(${p.id})" ${busy?'disabled':''}>${busy?'…':'↺ Reopen'}</button>`:`<button class="btn sec qb" ${tip('Close this project — hides it from the team; you can reopen anytime')} onclick="projClose(${p.id})" ${busy?'disabled':''}>${busy?'…':'✓ Close'}</button>`}
+    </div>
+  </div>`;
+}
+
+function projCardTeam(p){
+  return `<div class="card" style="border-left:4px solid #7A5AF8;margin-bottom:10px">
+    <div class="row" style="align-items:flex-start;gap:12px">
+      <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
+        <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(p.zoho_estimate_number||('#'+p.id))} · ${p.line_count} item${p.line_count===1?'':'s'}</div></div>
+      <div style="text-align:right;white-space:nowrap"><div style="font-size:11px;color:var(--mute)">Cost so far</div><b>${fmtn(p.actual_cost||0)}</b></div>
+    </div>
+    <div class="qact"><button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Add the parts, labour and materials that went into this job')} onclick="jcOpen(${p.id},'capture')">💰 Input costs</button></div>
+  </div>`;
+}
+
+function projClose(id){ if(!confirm('Close this project? Your team will no longer see it or add costs. You can reopen it anytime.'))return; PROJ.busyId=id; render();
+  fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action:'close'})})
+  .then(r=>r.json()).then(j=>{ PROJ.busyId=0; if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p)p.project_closed=1; PROJ.msg='Project closed.'; PROJ.err=false; } else { PROJ.msg=j.error||'Could not close'; PROJ.err=true; } render(); })
+  .catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
+}
+function projReopen(id){ PROJ.busyId=id; render();
+  fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action:'reopen'})})
+  .then(r=>r.json()).then(j=>{ PROJ.busyId=0; if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p)p.project_closed=0; PROJ.msg='Project reopened.'; PROJ.err=false; } else { PROJ.msg=j.error||'Could not reopen'; PROJ.err=true; } render(); })
+  .catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
 }
 
 function vJobCards(){
