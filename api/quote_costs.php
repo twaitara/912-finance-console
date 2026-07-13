@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_costs.php — capture the ACTUAL cost of each line of a PROJECT (or an
    invoiced job) into the relational project_costs table.
 
@@ -187,5 +188,5 @@ try {
 
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

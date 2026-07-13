@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/projects.php — list projects (quotes converted to a project).
    Admin: every project (open / billed / closed) with cost + profit.
    Team (costcap): only OPEN projects (status='project', not closed), cost-only —
@@ -74,5 +75,5 @@ try {
     }, $st->fetchAll(PDO::FETCH_ASSOC));
     echo json_encode(['ok'=>true, 'admin'=>false, 'projects'=>$out]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

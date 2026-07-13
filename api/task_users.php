@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/task_users.php — people available to assign tasks to = the users created in the system. */
 session_start();
 header('Content-Type: application/json; charset=utf-8');
@@ -13,5 +14,5 @@ try {
     foreach ($rows as $r) { $users[] = ['name'=>$r['username'], 'email'=>($r['email'] ?? '')]; }
     echo json_encode(['ok'=>true, 'users'=>$users]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage(), 'users'=>[]]);
+    echo api_fail($e, ['users'=>[]]);
 }

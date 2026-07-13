@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_set_status.php — admin/owner: change a quote's status.
    For approved/declined/sent it drives the matching Zoho action so it sticks;
    other statuses are set locally (a manual override).
@@ -46,5 +47,5 @@ try {
     activity_log_session($pdo, 'changed quote status', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' → ' . $status);
     echo json_encode(['ok'=>true, 'status'=>$status, 'note'=>$note]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

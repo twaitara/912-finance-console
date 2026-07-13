@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_pdf.php — stream a quote's Zoho estimate as a PDF (so the creator can
    download/share the file). GET ?id=NN. Owner or the quote's creator only. */
 session_start();
@@ -50,5 +51,5 @@ try {
 } catch (Exception $e) {
     http_response_code(500);
     header('Content-Type: application/json');
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

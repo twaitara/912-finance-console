@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/users.php — admin-only user management (app_users table). */
 session_start();
 header('Content-Type: application/json; charset=utf-8');
@@ -141,5 +142,5 @@ try {
 
 } catch (Exception $e) {
     http_response_code(400);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

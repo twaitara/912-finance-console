@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/activity.php — admin-only activity/audit log viewer.
    GET ?limit=300 [&q=search] -> recent activity, newest first. */
 session_start();
@@ -24,5 +25,5 @@ try {
     }
     echo json_encode(['ok'=>true, 'log'=>$st->fetchAll(PDO::FETCH_ASSOC)]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

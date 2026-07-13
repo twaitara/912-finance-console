@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/email_book.php — saved email addresses per customer (autocomplete book).
    GET-style read:  POST { customer_id }              -> { ok, emails:[...] }
    Add:             POST { customer_id, add:"a@b.com" } -> { ok, emails:[...] }
@@ -50,5 +51,5 @@ try {
     echo json_encode(['ok'=>true, 'emails'=>eb_emails($pdo, $cid)]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

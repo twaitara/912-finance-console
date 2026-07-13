@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/job_card.php — printable Delivery Note / Job Card for a quote (no prices).
    GET ?id=NN  -> renders an A4 print page. Owner or the quote's creator.
    The quote should already be invoiced (use Generate Job Card, which converts first). */
@@ -242,5 +243,5 @@ try {
 } catch (Exception $e) {
     http_response_code(500);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<p style="font-family:Arial;padding:20px;color:#b00">Could not generate job card: ' . jc_esc($e->getMessage()) . '</p>';
+    echo '<p style="font-family:Arial;padding:20px;color:#b00">Could not generate job card: ' . jc_esc(err_ref($e)) . '</p>';
 }

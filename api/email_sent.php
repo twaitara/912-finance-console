@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/email_sent.php — mark/unmark a client as "statement sent" (hides them for 30 days).
    {action:'mark', customer_id} | {action:'unmark', customer_id} | {action:'list'} */
 session_start();
@@ -38,5 +39,5 @@ try {
     echo json_encode(['ok'=>true, 'marked'=>$st->fetchAll(PDO::FETCH_ASSOC)]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/expense_quick.php — log a general Zoho Books expense from the dashboard.
    Unlike expense_add.php this is NOT tied to an invoice (no reference_number by default),
    so it won't be counted as a specific invoice's cost in the Profit report. Admin only. KES. */
@@ -37,5 +38,5 @@ try {
 
     echo json_encode(['ok'=>true, 'expense_id'=>$d['expense']['expense_id'] ?? null]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

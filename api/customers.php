@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/customers.php — customers for the quote builder.
    GET ?q=term   -> live search Zoho contacts (customers). Admins search all;
                     staff search only customers assigned to them.
@@ -52,5 +53,5 @@ try {
     }
     echo json_encode(['ok'=>true, 'customers'=>$out]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage(), 'customers'=>[]]);
+    echo api_fail($e, ['customers'=>[]]);
 }

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_approve.php — approve a pending quote from inside the app (admin/owner only).
    Calls Zoho's estimate approve action, so it mirrors approving in Zoho Books.
    POST JSON: {id} */
@@ -34,5 +35,5 @@ try {
     activity_log_session($pdo, 'approved quote', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' for ' . ($q['customer_name'] ?? ''));
     echo json_encode(['ok'=>true, 'status'=>$status, 'number'=>$q['zoho_estimate_number']]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

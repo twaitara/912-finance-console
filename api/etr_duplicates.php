@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/etr_duplicates.php — find files in the scanned WorkDrive folder(s) that share the
    same invoice number (i.e. an invoice number appears on more than one file). 24h cache. */
 session_start();
@@ -59,5 +60,5 @@ try {
     @file_put_contents($cacheFile, json_encode($out));
     echo json_encode($out);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

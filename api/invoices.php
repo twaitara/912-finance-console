@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /** Returns live unpaid invoices (KES + USD) straight from Zoho Books.
  *  USD invoices are converted to KES (live rate, with fallbacks) and tagged. */
 session_start();
@@ -50,5 +51,5 @@ try {
                       'fx' => ['rate' => round($fx['rate'], 4), 'src' => $fx['src']]]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /** Returns recent expenses from Zoho Books, so the cost (COGS) can be picked instead of typed. */
 session_start();
 header('Content-Type: application/json');
@@ -35,5 +36,5 @@ try {
     echo json_encode(['ok' => true, 'expenses' => $all, 'count' => count($all)]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

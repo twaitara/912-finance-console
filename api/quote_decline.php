@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_decline.php — decline/reject a pending quote (admin/owner only).
    Records the decline in the app, and best-effort marks the Zoho estimate declined
    (Zoho's approval flow has no guaranteed reject endpoint, so this may not update Zoho).
@@ -35,5 +36,5 @@ try {
     activity_log_session($pdo, 'declined quote', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' for ' . ($q['customer_name'] ?? ''));
     echo json_encode(['ok'=>true, 'status'=>'declined', 'zohoUpdated'=>$zohoUpdated, 'number'=>$q['zoho_estimate_number']]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

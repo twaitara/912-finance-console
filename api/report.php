@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /** Profit-per-invoice report: all Zoho invoices in a period, matched to their
  *  expenses by reference number (which equals the invoice number). KES only.
  *  Query: ?month=06&year=2026  (month optional; empty = whole year; year empty = all). */
@@ -192,5 +193,5 @@ try {
     echo json_encode($payload);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

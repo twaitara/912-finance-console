@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/cache_meta.php — remembers when the full cache was last pulled from Zoho.
    GET  -> {ok, last: ISO8601|null}
    POST -> stamps now, returns {ok, last}. Stored in data/cache_meta.json. */
@@ -24,5 +25,5 @@ try {
     }
     echo json_encode(['ok' => true, 'last' => $last]);
 } catch (Exception $e) {
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

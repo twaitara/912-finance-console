@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_invoice.php — "Bill client": turn a project/quote into a Zoho INVOICE and
    push its captured project_costs rows to Zoho as expenses attached to that invoice.
    Admins only. Idempotent: if already invoiced, returns the existing invoice number.
@@ -142,5 +143,5 @@ try {
     activity_log($pdo, $me, 'billed client', $invNo . ' for ' . ($q['customer_name'] ?? '') . ' (from ' . ($q['zoho_estimate_number'] ?: ('#'.$id)) . ')');
     echo json_encode(['ok'=>true, 'invoice_number'=>$invNo, 'warnings'=>$warnings]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

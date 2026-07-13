@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/audrey_statement.php  (PUBLIC) — POST { client | customer_id, from?, to? }
    Full statement for ONE Dunhill client over a period. Locked to the Dunhill
    list so a public page can never pull a non-Dunhill client.
@@ -102,5 +103,5 @@ try {
 
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

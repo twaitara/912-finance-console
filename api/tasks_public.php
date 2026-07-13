@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/tasks_public.php — PUBLIC (no password) read + light-write for the shared Task Board.
    Allowed actions only: list, toggle (done/open), note. No create / delete / reassign.
    Writes sync to the SAME tasks the in-app To-Do tab uses. */
@@ -84,5 +85,5 @@ try {
     throw new Exception('Not allowed.');
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

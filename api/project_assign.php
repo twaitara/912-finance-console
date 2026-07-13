@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/project_assign.php — assign which system users may view/cost a project (admin only).
    Actions (POST JSON):
      {action:'get', quote_id}                 -> {ok, users:[{username,email,assigned}], assignees[]}
@@ -44,5 +45,5 @@ try {
     }, $us);
     echo json_encode(['ok'=>true, 'users'=>$users, 'assignees'=>$assigned]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

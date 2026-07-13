@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* =============================================================
    api/etr_exclude.php — mark invoices that will never have an
    ETR file ("no tax invoice"), so they drop off the missing list.
@@ -68,5 +69,5 @@ try {
 
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/invoice_search.php — live invoice lookup by number/customer for the cost form. */
 session_start();
 header('Content-Type: application/json; charset=utf-8');
@@ -22,5 +23,5 @@ try {
     }
     echo json_encode(['ok'=>true, 'invoices'=>$out]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage(), 'invoices'=>[]]);
+    echo api_fail($e, ['invoices'=>[]]);
 }

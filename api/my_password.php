@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/my_password.php — let the signed-in user change THEIR OWN password.
    POST JSON: {current, new}. Verifies the current password first. */
 session_start();
@@ -29,5 +30,5 @@ try {
     echo json_encode(['ok'=>true]);
 } catch (Exception $e) {
     http_response_code(400);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

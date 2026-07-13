@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_update.php — update an already-pushed quote in Zoho, but only while it is
    still awaiting approval (draft / pending_approval). Approved/declined/sent quotes are
    locked. After updating, it re-submits for approval so the edited version is re-checked.
@@ -103,5 +104,5 @@ try {
 
     echo json_encode(['ok'=>true, 'status'=>$status, 'estimate_number'=>$q['zoho_estimate_number'], 'note'=>$note]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

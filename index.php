@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/errors.php';
 /* ============================================================================
    Self-hosted PWA assets — served straight from THIS file via ?pwa=… so that a
    partial deploy (uploading only index.php) can never leave the manifest,
@@ -299,7 +300,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
         header('Content-Type: application/json; charset=utf-8');
         if (!$bpAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
         try { $bpData = bp_build(isset($_GET['refresh'])); bp_apply_overrides($bpData, bp_load_overrides(__DIR__ . '/data')); echo json_encode($bpData); }
-        catch (\Throwable $e) { http_response_code(500); echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]); }
+        catch (\Throwable $e) { http_response_code(500); echo api_fail($e); }
         exit;
     }
 
@@ -769,7 +770,7 @@ if (isset($_GET['bendesc'])) {
         @file_put_contents($bdFile, json_encode($ov));
         echo json_encode(['ok'=>true, 'number'=>$num, 'label'=>$label]); exit;
     }
-    try { $data = bp_build(false); } catch (\Throwable $e) { http_response_code(500); echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]); exit; }
+    try { $data = bp_build(false); } catch (\Throwable $e) { http_response_code(500); echo api_fail($e); exit; }
     $ov = bp_load_overrides($bdDir);
     $list = [];
     foreach (($data['years'] ?? []) as $y => $yd) {

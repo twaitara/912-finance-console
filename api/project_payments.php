@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/project_payments.php — record client deposits/payments against a project (admin only).
    Open projects aren't invoiced yet, so this tracks money received in the app.
    Actions (POST JSON):
@@ -71,5 +72,5 @@ try {
 
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

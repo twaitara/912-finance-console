@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/audrey_mark.php (PUBLIC) — POST {invoice, status?, note?} */
 header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../db.php';
@@ -36,5 +37,5 @@ try {
     echo json_encode(['ok'=>true, 'invoice'=>$invoice, 'status'=>$row['status'] ?? 'unpaid', 'note'=>$row['note'] ?? '']);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

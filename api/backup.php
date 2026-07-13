@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/backup.php — backs up the app's own MySQL data (the only copies that exist).
    Tables: deployments, audrey_marks, email_book, tasks (whichever exist) + data/settings.json.
    Actions (POST JSON):
@@ -93,10 +94,10 @@ try {
     } catch (Exception $e) {
         // upload failed (often: WorkDrive token lacks files.CREATE scope) — tell the user, offer download
         echo json_encode(['ok'=>false, 'uploaded'=>false, 'name'=>$name, 'size'=>strlen($dump),
-            'error'=>$e->getMessage(),
+            'error'=>err_ref($e),
             'hint'=>'If this mentions scope/permission, re-mint the WorkDrive token with WorkDrive.files.ALL and delete data/wd_token.json. You can still use “Download backup” below in the meantime.']);
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

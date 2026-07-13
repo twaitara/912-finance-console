@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/wd_folders.php — browse WorkDrive folders (for the backup folder picker).
    Uses the app's own WorkDrive token.
    {action:'roots'}              -> known starting folders [{id,name}]
@@ -37,5 +38,5 @@ try {
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

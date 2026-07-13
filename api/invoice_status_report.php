@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* =============================================================
    api/invoice_status_report.php
    -------------------------------------------------------------
@@ -140,5 +141,5 @@ try {
 
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

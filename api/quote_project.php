@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_project.php — project lifecycle actions (admin only).
    POST JSON: {id, action}
      action 'start'  -> approved/sent/accepted quote becomes a project (status='project', is_project=1)
@@ -76,5 +77,5 @@ try {
 
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

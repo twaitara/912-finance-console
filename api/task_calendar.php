@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/task_calendar.php — email a calendar invite for a task to its (ticked) assignees.
    Uses the app's Zoho Mail token to SEND. Each email has a one-click "Add to calendar"
    (Google) link + a signed .ics link that opens in Zoho/Outlook/Apple calendars.
@@ -121,5 +122,5 @@ try {
     echo json_encode(['ok'=>true, 'direct'=>$direct, 'sent'=>$sent, 'fails'=>$fails, 'when'=>$prettyWhen]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

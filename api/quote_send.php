@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_send.php — email an APPROVED quote straight to the customer via Zoho Books
    (Zoho attaches the PDF and, if the customer portal is on, a view/accept link).
    POST JSON: {id}
@@ -61,5 +62,5 @@ try {
     activity_log($pdo, $me, 'sent quote to customer', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' → ' . $email);
     echo json_encode(['ok'=>true, 'email'=>$email, 'number'=>$q['zoho_estimate_number']]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

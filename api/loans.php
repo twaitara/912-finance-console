@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /** Fund loans + a registry of named money pools ("funds").
  *  Lend from a chosen fund to the business or a person; log repayments.
  *  Each fund tracks its own balance; outstanding loans reduce that fund's available.
@@ -197,5 +198,5 @@ try {
 
 } catch (Exception $e) {
     http_response_code(400);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

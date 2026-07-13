@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_push.php — push a local quote to Zoho Books as an Estimate, then submit it
    for approval so the boss can Approve/Decline natively in Zoho.
    POST JSON: {id}
@@ -108,5 +109,5 @@ try {
     activity_log($pdo, $me, 'pushed quote', $estNo . ' for ' . ($q['customer_name'] ?? '') . ' — ' . $status);
     echo json_encode(['ok'=>true, 'estimate_number'=>$estNo, 'status'=>$status, 'note'=>$submitNote]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

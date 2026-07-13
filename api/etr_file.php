@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/etr_file.php — stream a WorkDrive file's bytes inline (for previewing a scanned ETR file).
    Same-origin proxy so images/PDFs preview in the app without exposing the WorkDrive token. */
 session_start();
@@ -28,5 +29,5 @@ try {
     header('Cache-Control: private, max-age=300');
     echo $body;
 } catch (Exception $e) {
-    http_response_code(500); header('Content-Type: text/plain'); echo 'Preview error: ' . $e->getMessage();
+    http_response_code(500); header('Content-Type: text/plain'); echo 'Preview error: ' . err_ref($e);
 }

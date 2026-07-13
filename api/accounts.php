@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/accounts.php — list Zoho expense accounts + paid-through (cash/bank) accounts
    for the "add a cost to an invoice" form. Admin only. */
 session_start();
@@ -22,5 +23,5 @@ try {
     if (is_file($f)) { $j = json_decode(@file_get_contents($f), true); if (is_array($j)) $def = $j; }
     echo json_encode(['ok'=>true, 'expense'=>$exp, 'paid'=>$paid, 'defaults'=>$def]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

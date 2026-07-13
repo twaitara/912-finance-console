@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /** Lists invoice custom fields so you can confirm the exact api_name
  *  for "Funded by Working Capital" to put in config.php. Admin-only diagnostic. */
 session_start();
@@ -20,5 +21,5 @@ try {
         'hint' => 'Copy the api_name whose label is "Funded by Working Capital" into config.php → wc_custom_field'], JSON_PRETTY_PRINT);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_sync.php — refresh the Zoho status of pushed quotes so staff see
    whether their quote was approved / declined. Reads each linked estimate from Zoho
    and updates the local status. In-app only (no emails).
@@ -48,5 +49,5 @@ try {
 
     echo json_encode(['ok'=>true, 'synced'=>count($updated), 'quotes'=>$updated]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

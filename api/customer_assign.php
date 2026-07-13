@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/customer_assign.php — map Zoho customers to app users (many users per customer).
    Drives who a staff member can raise quotes for. Admin only for changes.
    Tables (auto-created): customer_assignees.
@@ -68,6 +69,6 @@ if (basename($_SERVER['SCRIPT_FILENAME'] ?? '') === 'customer_assign.php') {
 
         throw new Exception('Unknown action.');
     } catch (Exception $e) {
-        echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+        echo api_fail($e);
     }
 }

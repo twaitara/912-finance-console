@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quotes.php — local quote drafts (before/after they are pushed to Zoho as estimates).
    Each quote is owned by the app user who created it. Admins see/edit all; staff see only their own.
    Tables (auto-created): quotes.
@@ -151,5 +152,5 @@ try {
 
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

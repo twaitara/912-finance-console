@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/expense_add.php — create a Zoho Books expense booked against a specific invoice.
    The expense's reference_number = the invoice number, so the Profit report (which sums
    expenses by reference_number) counts it as that invoice's cost. Admin only. KES. */
@@ -37,5 +38,5 @@ try {
 
     echo json_encode(['ok'=>true, 'expense_id'=>$d['expense']['expense_id'] ?? null]);
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

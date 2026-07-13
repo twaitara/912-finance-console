@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/settings.php — read/save user-editable settings (data/settings.json).
    GET  -> effective values (config defaults merged with saved overrides)
    POST -> save whitelisted numeric + string settings, returns effective values
@@ -51,5 +52,5 @@ try {
 
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

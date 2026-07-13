@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /** Deployment records: list, create (with Zoho flag write-back), log cost, restore, delete. */
 session_start();
 header('Content-Type: application/json');
@@ -103,5 +104,5 @@ try {
     echo json_encode(['ok' => false, 'error' => 'Unknown action']);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    echo api_fail($e);
 }

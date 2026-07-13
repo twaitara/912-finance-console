@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/quote_import.php — bring a Zoho estimate into the app as a local quote so it can
    be converted to a project, costed, and billed like any app quote. Admin only.
 
@@ -158,5 +159,5 @@ try {
 
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

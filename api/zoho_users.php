@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/zoho_users.php — lists Zoho Books users (for task assignment).
    Returns { ok, users:[{id,name,email,role,status}] }. Cached 6h in data/. */
 session_start();
@@ -42,5 +43,5 @@ try {
     echo json_encode(['ok'=>true, 'users'=>$users, 'cached'=>false]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }

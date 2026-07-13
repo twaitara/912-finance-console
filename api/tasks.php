@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../errors.php';
 /* api/tasks.php — to-do list with MULTIPLE assignees (each tickable).
    Tables (auto-created): tasks, task_assignees.
    Actions (POST JSON):
@@ -216,5 +217,5 @@ try {
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    echo api_fail($e);
 }
