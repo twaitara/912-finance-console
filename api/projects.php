@@ -18,7 +18,8 @@ try {
     $me    = $_SESSION['user'] ?? '';
     $admin = !empty($_SESSION['is_admin']);
     $tabsS   = (string)($_SESSION['tabs'] ?? '');
-    $costcap = ($tabsS === '*') || in_array('costcap', array_map('trim', explode(',', $tabsS)), true);
+    $tabsArr = array_map('trim', explode(',', $tabsS));
+    $costcap = ($tabsS === '*') || in_array('costcap', $tabsArr, true) || in_array('projects', $tabsArr, true);
 
     if ($admin) {
         $st = $pdo->query("SELECT * FROM quotes WHERE is_project=1 ORDER BY project_closed ASC, updated_at DESC");

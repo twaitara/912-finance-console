@@ -1841,6 +1841,7 @@ if (empty($_SESSION['auth'])):
 
   <div class="tabs">
     <button class="active" data-tab="dash">🏠 Dashboard</button>
+    <button data-tab="projects">📋 Projects</button>
 
     <div class="navgroup">
       <button class="grp">💰 Working Capital <span class="car">▾</span></button>
@@ -1880,7 +1881,6 @@ if (empty($_SESSION['auth'])):
       <div class="submenu">
         <button data-tab="newquote">📝 New Quote</button>
         <button data-tab="myquotes">📂 My Quotes</button>
-        <button data-tab="projects">📋 Projects</button>
         <button data-tab="jobcards">🛠️ Job Cards</button>
       </div>
     </div>
@@ -1944,6 +1944,7 @@ if (empty($_SESSION['auth'])):
   </div>
   <div id="mobDrawerBody">
     <button class="mob-item" data-tab="dash">🏠 Dashboard</button>
+    <button class="mob-item" data-tab="projects">📋 Projects</button>
 
     <div class="mob-sect">💰 Working Capital</div>
     <button class="mob-item mob-sub" data-tab="deploy">🚀 Deploy</button>
@@ -1969,7 +1970,6 @@ if (empty($_SESSION['auth'])):
     <div class="mob-sect">✏️ Create</div>
     <button class="mob-item mob-sub" data-tab="newquote">📝 New Quote</button>
     <button class="mob-item mob-sub" data-tab="myquotes">📂 My Quotes</button>
-    <button class="mob-item mob-sub" data-tab="projects">📋 Projects</button>
     <button class="mob-item mob-sub" data-tab="jobcards">🛠️ Job Cards</button>
 
     <div class="mob-sect">✅ Tasks</div>
@@ -2221,7 +2221,7 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals'||t==='report') return !!ME.admin; if(t==='projects') return !!ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap'); if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals'||t==='report') return !!ME.admin; if(t==='projects') return !!ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('projects') || (ME.tabs||[]).includes('costcap'); if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
@@ -6356,6 +6356,7 @@ function vTodo(){
 function themeIsDark(){ return document.documentElement.classList.contains('dark'); }
 function openJobCard(id){ window.open('api/job_card.php?id='+id+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* job card follows dark mode on screen, prints light */
 function openBoq(id){ window.open('api/job_card.php?id='+id+'&doc=boq'+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* Bill of Quantities: materials only, labour excluded */
+function openProfit(id){ window.open('api/job_card.php?id='+id+'&doc=profit'+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* per-invoice profit report (admin), branded PDF */
 function syncThemeBtn(){ const b=document.getElementById('themeBtn'); if(b) b.textContent = themeIsDark()?'☀️':'🌙'; }
 function toggleTheme(){
   const dark=document.documentElement.classList.toggle('dark');
@@ -6802,7 +6803,7 @@ function mqListHtml(){
     const canProject=ME.admin && pushed && ['approved','sent','accepted'].includes(q.status);
     const isInvoiced=q.status==='invoiced'||!!q.zoho_invoice_number;
     const canBill=ME.admin && isProject;
-    const canCost=(isProject||isInvoiced) && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || q.created_by===ME.user);
+    const canCost=(isProject||isInvoiced) && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || (ME.tabs||[]).includes('projects') || q.created_by===ME.user);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
                  q.zoho_invoice_number?`<span style="color:var(--blue);font-weight:700">${qesc(q.zoho_invoice_number)}</span>`:null,
@@ -7298,6 +7299,7 @@ function projCardAdmin(p){
       <button class="btn sec qb" ${tip('Bill of Quantities — materials required (labour excluded), branded PDF')} onclick="openBoq(${p.id})">⤓ BOQ</button>
       ${stage==='open'?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Review costs vs profit, create the invoice and post expenses to Zoho')} onclick="jcOpen(${p.id},'bill')" ${busy?'disabled':''}>🧾 Bill client</button>`:''}
       ${p.zoho_invoice_number?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${p.id})">⤓ Job card</button>`:''}
+      <button class="btn sec qb" ${tip('Per-invoice profit report — charged vs budgeted vs actual cost and profit, branded PDF')} onclick="openProfit(${p.id})">📊 Profit report</button>
       ${p.project_closed?`<button class="btn sec qb" ${tip('Reopen so the team can see and cost it again')} onclick="projReopen(${p.id})" ${busy?'disabled':''}>${busy?'…':'↺ Reopen'}</button>`:`<button class="btn sec qb" ${tip('Close this project — hides it from the team; you can reopen anytime')} onclick="projClose(${p.id})" ${busy?'disabled':''}>${busy?'…':'✓ Close'}</button>`}
     </div>
   </div>`;

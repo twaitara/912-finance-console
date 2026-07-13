@@ -26,8 +26,9 @@ try {
     $date   = date('d M Y');
     $theme  = (($_GET['theme'] ?? '') === 'dark') ? 'dark' : '';   // match the app's dark mode on screen (prints light)
 
-    // BOQ (Bill of Quantities) mode: a materials-required list that EXCLUDES labour lines.
-    $doc = (($_GET['doc'] ?? '') === 'boq') ? 'boq' : 'jobcard';
+    // Document mode: jobcard (default) | boq (materials, no labour) | profit (per-invoice P&L, admin only)
+    $g = strtolower((string)($_GET['doc'] ?? ''));
+    $doc = in_array($g, ['boq','profit'], true) ? $g : 'jobcard';
     if ($doc === 'boq') {
         // Conservative labour match so materials like "network installation accessories" stay in.
         $labourRe = '/\blabou?r\b|workmanship|man[\s\-]?hours?|service\s*charge/i';
@@ -36,8 +37,23 @@ try {
             return !preg_match($labourRe, $hay);
         }));
     }
-    $docLabel = $doc === 'boq' ? 'BOQ'                     : 'Job Card';
-    $docTop   = $doc === 'boq' ? 'BILL OF<br>QUANTITIES'   : 'DELIVERY NOTE /<br>JOB CARD';
+
+    // Profit report: admin only; pull ACTUAL cost per line from project_costs.
+    $isProfit = ($doc === 'profit');
+    $actualByLine = []; $curr = $q['currency'] ?: 'KES';
+    if ($isProfit) {
+        if (!$admin) { http_response_code(403); echo 'The profit report is admin-only.'; exit; }
+        require_once __DIR__ . '/../project_costs.php';
+        pc_table($pdo);
+        foreach (pc_for_quote($pdo, $id) as $c) {
+            $li = (int)$c['line_index'];
+            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + (float)$c['amount'];
+        }
+    }
+    $money = function($n) use ($curr) { return $curr . ' ' . number_format((float)$n, 0); };
+
+    $docLabel = $doc === 'boq' ? 'BOQ' : ($isProfit ? 'Profit Report' : 'Job Card');
+    $docTop   = $doc === 'boq' ? 'BILL OF<br>QUANTITIES' : ($isProfit ? 'PROFIT<br>REPORT' : 'DELIVERY NOTE /<br>JOB CARD');
     $itemsHdr = $doc === 'boq' ? 'Material &amp; Description' : 'Item &amp; Description';
 
     // company (letterhead) — defaults match the org; overridable in config.php
@@ -76,6 +92,30 @@ try {
         $qty  = rtrim(rtrim(number_format((float)($it['qty'] ?? 0), 2), '0'), '.');
         $rows .= '<tr><td class="c" style="width:34px">' . $n . '</td><td>' . $desc . '</td><td class="r" style="width:90px">' . jc_esc($qty) . '</td></tr>';
     }
+
+    // Profit report rows (per line: charged ex-VAT, budgeted cost, actual cost, profit)
+    $pRows = ''; $tCharged = 0; $tBudget = 0; $tActual = 0;
+    if ($isProfit) {
+        $k = 0;
+        foreach ($items as $i => $it) {
+            $k++;
+            $qtyN    = (float)($it['qty'] ?? 0);
+            $charged = isset($it['amount']) ? (float)$it['amount'] : round($qtyN * (float)($it['rate'] ?? 0), 2);
+            $budget  = round($qtyN * (float)($it['cost'] ?? 0), 2);
+            $actual  = (float)($actualByLine[$i] ?? 0);
+            $profit  = $charged - $actual;
+            $tCharged += $charged; $tBudget += $budget; $tActual += $actual;
+            $pc = $profit < 0 ? '#c0392b' : '#1e7e34';
+            $pRows .= '<tr><td class="c" style="width:30px">' . $k . '</td><td>' . jc_esc($it['name'] ?? '') . '</td>'
+                . '<td class="r">' . $money($charged) . '</td><td class="r">' . $money($budget) . '</td>'
+                . '<td class="r">' . $money($actual) . '</td><td class="r" style="color:' . $pc . ';font-weight:700">' . $money($profit) . '</td></tr>';
+        }
+    }
+    $tProfit  = $tCharged - $tActual;
+    $expProfit = (float)($q['profit'] ?? 0);          // budgeted (expected) profit, cached on the quote
+    $actProfit = (float)($q['actual_profit'] ?? 0);   // actual profit, cached on the quote
+    $margin   = $tCharged > 0 ? round($tProfit / $tCharged * 100) : 0;
+
     $addrHtml = nl2br(jc_esc($coAddr));
 
     header('Content-Type: text/html; charset=utf-8');
@@ -144,12 +184,31 @@ try {
         <?php if ($custPin !== '') echo '<div class="pin">KRA PIN: ' . jc_esc($custPin) . '</div>'; ?></div>
     </div>
     <div class="body">
+      <?php if ($isProfit): ?>
+      <table class="items">
+        <thead><tr><th class="c" style="width:30px">#</th><th>Item</th><th class="r">Charged</th><th class="r">Budget cost</th><th class="r">Actual cost</th><th class="r">Profit</th></tr></thead>
+        <tbody>
+          <?php echo $pRows ?: '<tr><td colspan="6" style="text-align:center;color:#8a98a8;padding:18px">No line items.</td></tr>'; ?>
+          <tr style="font-weight:800;border-top:2px solid #3a6ea5"><td></td><td>TOTAL</td>
+            <td class="r"><?php echo $money($tCharged); ?></td><td class="r"><?php echo $money($tBudget); ?></td>
+            <td class="r"><?php echo $money($tActual); ?></td>
+            <td class="r" style="color:<?php echo $tProfit<0?'#c0392b':'#1e7e34'; ?>"><?php echo $money($tProfit); ?></td></tr>
+        </tbody>
+      </table>
+      <div style="padding:14px 30px;font-size:12.5px;line-height:1.8">
+        <b>Expected profit</b> (from budget): <b><?php echo $money($expProfit); ?></b>
+        &nbsp;·&nbsp; <b>Actual profit</b>: <b style="color:<?php echo $actProfit<0?'#c0392b':'#1e7e34'; ?>"><?php echo $money($actProfit); ?></b>
+        &nbsp;·&nbsp; Margin: <b><?php echo $margin; ?>%</b>
+        <div style="color:#8a98a8;font-size:11px;margin-top:4px">Figures are ex-VAT. Actual cost = expenses captured against this job. Labour is included in cost.</div>
+      </div>
+      <?php else: ?>
       <table class="items">
         <thead><tr><th class="c" style="width:34px">#</th><th><?php echo $itemsHdr; ?></th><th class="r" style="width:90px">Qty</th></tr></thead>
         <tbody><?php echo $rows ?: '<tr><td colspan="3" style="text-align:center;color:#8a98a8;padding:18px">' . ($doc === 'boq' ? 'No materials (all lines are labour).' : 'No items.') . '</td></tr>'; ?></tbody>
       </table>
+      <?php endif; ?>
     </div>
-    <div class="sign"><span>Authorized Signature</span></div>
+    <?php if (!$isProfit): ?><div class="sign"><span>Authorized Signature</span></div><?php endif; ?>
   </div>
   <div style="text-align:center;padding:14px 12px 18px;line-height:1.7">
     <div style="font-size:11px;color:#64748B">This system is designed for <b>912 Holdings</b>, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited &amp; Global IT Limited</div>

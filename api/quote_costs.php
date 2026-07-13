@@ -32,7 +32,8 @@ try {
     $me    = $_SESSION['user'] ?? '';
     $admin = !empty($_SESSION['is_admin']);
     $tabsS   = (string)($_SESSION['tabs'] ?? '');
-    $costcap = ($tabsS === '*') || in_array('costcap', array_map('trim', explode(',', $tabsS)), true);
+    $tabsArr = array_map('trim', explode(',', $tabsS));
+    $costcap = ($tabsS === '*') || in_array('costcap', $tabsArr, true) || in_array('projects', $tabsArr, true);
 
     $in = json_decode(file_get_contents('php://input'), true); if (!is_array($in)) $in = $_POST;
     $action = $in['action'] ?? 'get';

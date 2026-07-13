@@ -30,6 +30,7 @@ function users_all_tabs() {
         'newquote' => 'New Quote',
         'myquotes' => 'My Quotes',
         'jobcards' => 'Job Cards',
+        'projects' => 'Projects',
         'costcap'  => 'Capture Costs',
         'emails'   => 'Emails',
         'todo'     => 'To-Do',
