@@ -7,3 +7,10 @@ wms_schema.sql
 make_blueprint_pdf.py
 make_features_pdf.py
 data/
+
+# secrets & local/stray files — never commit (added before XAMPP move)
+config.php
+mail_token.php
+.htaccess1
+api/error_log
+912-finance-console/
