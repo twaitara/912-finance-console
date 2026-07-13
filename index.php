@@ -7232,7 +7232,9 @@ function jcSave(){
 }
 
 function jcBill(){
-  if(!confirm('Bill this client now?\n\nThis creates the INVOICE in Zoho and posts the captured costs as expenses attached to it. This cannot be undone.')) return;
+  const cust=(JC.quote&&JC.quote.customer_name)||'this client';
+  if(!confirm('Bill '+cust+' now?\n\nThis creates the INVOICE in Zoho and posts the captured costs as expenses attached to it. This cannot be undone.')) return;
+  if(!confirm('Please confirm once more.\n\nAre you sure you want to bill '+cust+' and create the invoice in Zoho?')) return;
   JC.busy=true; JC.msg=''; JC.warnings=[]; jcRender();
   // 1) persist the latest cost edits to the project, then 2) create the invoice + push expenses
   fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_costs',id:JC.id,lines:jcCollectLines()})})
