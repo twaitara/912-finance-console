@@ -7324,7 +7324,9 @@ function projCardAdmin(p){
   return `<div class="card" style="border-left:4px solid ${quoteAccent(p.status)};margin-bottom:10px">
     <div class="row" style="align-items:flex-start;gap:12px">
       <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
-        ${p.subject?`<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${qesc(p.subject)}</div>`:''}
+        ${p.subject
+          ? `<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px">${qesc(p.subject)} <span onclick="projSetSubject(${p.id})" style="cursor:pointer;color:var(--mute);font-size:11px" title="Edit subject">✎</span></div>`
+          : `<div style="margin-top:2px"><button class="btn sec" style="width:auto;padding:2px 9px;font-size:11px" ${tip('Add a subject so everyone can see what this job is')} onclick="projSetSubject(${p.id})">＋ Add subject</button></div>`}
         <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(num)} · ${p.line_count} item${p.line_count===1?'':'s'} · by ${qesc(p.created_by||'')}</div>
         <div style="margin-top:3px;font-size:11px;font-weight:600">💰 Cost <b style="color:var(--ink)">${fmtn(p.actual_cost||0)}</b> · VAT <b style="color:var(--ink)">${fmtn(Math.max(0,(p.cost_gross||0)-(p.actual_cost||0)))}</b> · Total cost <b style="color:var(--ink)">${fmtn(p.cost_gross||0)}</b></div>
         <div class="muted" style="margin-top:3px;font-size:11px">👤 ${(p.assignees&&p.assignees.length)?('Assigned: '+p.assignees.map(qesc).join(', ')):'<span style="color:var(--orange)">Unassigned</span>'}</div></div>
@@ -7373,6 +7375,17 @@ function projReopen(id){ PROJ.busyId=id; render();
   fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action:'reopen'})})
   .then(r=>r.json()).then(j=>{ PROJ.busyId=0; if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p)p.project_closed=0; PROJ.msg='Project reopened.'; PROJ.err=false; } else { PROJ.msg=j.error||'Could not reopen'; PROJ.err=true; } render(); })
   .catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
+}
+
+/* ---------- Add/edit a project's subject (admin) ---------- */
+function projSetSubject(id){
+  const p=(PROJ.projects||[]).find(x=>x.id===id);
+  const s=prompt('Subject for this project (what the job is):', (p&&p.subject)||'');
+  if(s===null) return;
+  fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,action:'set_subject',subject:s})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ if(p)p.subject=j.subject; const mq=(MQ.quotes||[]).find(x=>x.id===id); if(mq)mq.subject=j.subject;
+      const b=document.getElementById('projListBox'); if(b&&TAB==='projects') b.innerHTML=projListHtml(); else render();
+    } else alert(j.error||'Could not save subject'); }).catch(e=>alert(''+e));
 }
 
 /* ---------- Preview the quote in a popup (line items + totals) ---------- */

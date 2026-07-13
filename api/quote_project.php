@@ -57,6 +57,13 @@ try {
         echo json_encode(['ok'=>true, 'project_closed'=>0]); exit;
     }
 
+    if ($action === 'set_subject') {
+        $subj = substr(trim((string)($in['subject'] ?? '')), 0, 190);
+        $pdo->prepare("UPDATE quotes SET subject=? WHERE id=?")->execute([$subj, $id]);
+        activity_log($pdo, $me, 'set project subject', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' · ' . $subj);
+        echo json_encode(['ok'=>true, 'subject'=>$subj]); exit;
+    }
+
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
