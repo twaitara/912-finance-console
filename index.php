@@ -7326,6 +7326,7 @@ function projCardAdmin(p){
       <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
         ${p.subject?`<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${qesc(p.subject)}</div>`:''}
         <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(num)} · ${p.line_count} item${p.line_count===1?'':'s'} · by ${qesc(p.created_by||'')}</div>
+        <div style="margin-top:3px;font-size:11px;font-weight:600">💰 Cost <b style="color:var(--ink)">${fmtn(p.actual_cost||0)}</b> · VAT <b style="color:var(--ink)">${fmtn(Math.max(0,(p.cost_gross||0)-(p.actual_cost||0)))}</b> · Total cost <b style="color:var(--ink)">${fmtn(p.cost_gross||0)}</b></div>
         <div class="muted" style="margin-top:3px;font-size:11px">👤 ${(p.assignees&&p.assignees.length)?('Assigned: '+p.assignees.map(qesc).join(', ')):'<span style="color:var(--orange)">Unassigned</span>'}</div></div>
       <div style="text-align:right;white-space:nowrap;font-size:11px;line-height:1.6">
         <div style="margin-bottom:4px">${projStageBadge(stage)}</div>
