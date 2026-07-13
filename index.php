@@ -7333,7 +7333,10 @@ function projCardTeam(p){
         <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(p.zoho_estimate_number||('#'+p.id))} · ${p.line_count} item${p.line_count===1?'':'s'}</div></div>
       <div style="text-align:right;white-space:nowrap"><div style="font-size:11px;color:var(--mute)">Cost so far</div><b>${fmtn(p.actual_cost||0)}</b></div>
     </div>
-    <div class="qact"><button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Add the parts, labour and materials that went into this job')} onclick="jcOpen(${p.id},'capture')">💰 Input costs</button></div>
+    <div class="qact">
+      <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Add the parts, labour and materials that went into this job')} onclick="jcOpen(${p.id},'capture')">💰 Input costs</button>
+      <button class="btn sec qb" ${tip('Bill of Quantities — the materials required for this job (branded PDF)')} onclick="openBoq(${p.id})">⤓ BOQ</button>
+    </div>
   </div>`;
 }
 

@@ -19,7 +19,13 @@ try {
     $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([$id]);
     $q = $st->fetch(PDO::FETCH_ASSOC);
     if (!$q) throw new Exception('Quote not found.');
-    if (!$admin && $q['created_by'] !== $me) throw new Exception('Not your quote.');
+    // admins and the creator always; assigned team members may view the no-price docs (job card / BOQ)
+    // (the profit report is further gated to admins only below)
+    if (!$admin && $q['created_by'] !== $me) {
+        require_once __DIR__ . '/../project_costs.php';
+        pa_table($pdo);
+        if (!in_array($me, pa_for_quote($pdo, $id), true)) throw new Exception('You do not have access to this job.');
+    }
 
     $items  = json_decode($q['line_items'] ?: '[]', true) ?: [];
     $docNo  = $q['zoho_invoice_number'] ?: ($q['zoho_estimate_number'] ?: ('Q-' . $id));
