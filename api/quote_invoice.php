@@ -37,6 +37,8 @@ function bill_reconcile_decision(array $invoices, $customerId, $ref, array $clai
 try {
     $pdo = db();
     pc_table($pdo);
+    $cfg = require __DIR__ . '/../config.php';
+    $vat = (float)($cfg['vat_rate'] ?? 0.16);   // was undefined -> pc_refresh_quote got null (fix)
     $me    = $_SESSION['user'] ?? '';
     if (empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Only an admin can bill a client / create an invoice.']); exit; }
 
