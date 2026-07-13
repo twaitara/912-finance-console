@@ -36,9 +36,11 @@ try {
         [$d, $c] = zoho_api('GET', 'estimates/' . rawurlencode($q['zoho_estimate_id']));
         if ($c >= 400 || empty($d['estimate'])) continue;
         $status = (string)($d['estimate']['status'] ?? $q['status']);
-        // a quote that has been converted to an invoice stays "invoiced" — don't let the
-        // estimate's own status (still sent/approved) overwrite it
+        // Don't let the estimate's own Zoho status overwrite our local lifecycle states:
+        //  - invoiced stays invoiced
+        //  - a project (converted to a job) stays 'project' until it is billed
         if (!empty($q['zoho_invoice_id']) || !empty($q['zoho_invoice_number'])) $status = 'invoiced';
+        elseif (!empty($q['is_project']) || $q['status'] === 'project')          $status = 'project';
         $pdo->prepare("UPDATE quotes SET status=?, zoho_estimate_number=?, last_synced_at=NOW() WHERE id=?")
             ->execute([$status, (string)($d['estimate']['estimate_number'] ?? $q['zoho_estimate_number']), (int)$q['id']]);
         $updated[] = ['id'=>(int)$q['id'], 'status'=>$status];

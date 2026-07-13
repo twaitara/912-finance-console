@@ -39,12 +39,13 @@ try {
         echo json_encode(['ok'=>true, 'admin'=>true, 'projects'=>$out]); exit;
     }
 
-    // team / staff — OPEN projects only, cost-only (no price/profit)
+    // team / staff — OPEN projects only (is_project, not closed, not yet billed), cost-only
+    $openWhere = "is_project=1 AND project_closed=0 AND status<>'invoiced' AND (zoho_invoice_number IS NULL OR zoho_invoice_number='')";
     if ($costcap) {
-        $st = $pdo->prepare("SELECT * FROM quotes WHERE is_project=1 AND status='project' AND project_closed=0 ORDER BY updated_at DESC");
+        $st = $pdo->prepare("SELECT * FROM quotes WHERE $openWhere ORDER BY updated_at DESC");
         $st->execute();
     } else {
-        $st = $pdo->prepare("SELECT * FROM quotes WHERE is_project=1 AND status='project' AND project_closed=0 AND created_by=? ORDER BY updated_at DESC");
+        $st = $pdo->prepare("SELECT * FROM quotes WHERE $openWhere AND created_by=? ORDER BY updated_at DESC");
         $st->execute([$me]);
     }
     $out = array_map(function($q){

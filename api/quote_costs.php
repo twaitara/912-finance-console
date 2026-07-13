@@ -56,12 +56,15 @@ try {
         $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([(int)$id]);
         $row = $st->fetch(PDO::FETCH_ASSOC);
         if (!$row) throw new Exception('Job not found.');
+        // Eligibility is driven by the is_project flag (not the estimate status, which Zoho sync can change)
+        $isInvoiced = ($row['status'] === 'invoiced') || (trim((string)$row['zoho_invoice_number']) !== '');
+        $isProj     = !empty($row['is_project']) || $row['status'] === 'project';
         if ($admin) {
-            if (!in_array($row['status'], ['project','invoiced'], true)) throw new Exception('Costs are captured on a project (or an invoiced job).');
+            if (!$isProj && !$isInvoiced) throw new Exception('Convert this quote to a project first, then you can capture costs.');
             return $row;
         }
         if ($row['created_by'] !== $me && !$costcap) throw new Exception('You do not have access to this job.');
-        if ($row['status'] !== 'project' || !empty($row['project_closed'])) throw new Exception('This project is closed — ask an admin to reopen it to add costs.');
+        if (!$isProj || !empty($row['project_closed']) || $isInvoiced) throw new Exception('This project is closed or already billed — ask an admin.');
         return $row;
     };
 
