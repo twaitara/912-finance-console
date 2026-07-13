@@ -38,6 +38,25 @@ function pc_table(PDO $pdo){
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
 }
 
+/* client deposits/payments recorded against a project (before it is billed) */
+function pp_table(PDO $pdo){
+    $pdo->exec("CREATE TABLE IF NOT EXISTS project_payments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        quote_id INT NOT NULL,
+        amount DECIMAL(14,2) DEFAULT 0,
+        paid_date DATE NULL,
+        note VARCHAR(190) DEFAULT '',
+        created_by VARCHAR(80) DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (quote_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+function pp_total(PDO $pdo, $quoteId){
+    $st = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM project_payments WHERE quote_id=?");
+    $st->execute([(int)$quoteId]);
+    return round((float)$st->fetchColumn(), 2);
+}
+
 /* all cost rows for a quote, ordered for stable rendering */
 function pc_for_quote(PDO $pdo, $quoteId){
     $st = $pdo->prepare("SELECT * FROM project_costs WHERE quote_id=? ORDER BY line_index, id");

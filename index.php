@@ -2036,6 +2036,14 @@ if (empty($_SESSION['auth'])):
   </div>
 </div>
 
+<div id="ppModal" class="qbmodal" onclick="if(event.target===this)ppClose()">
+  <div class="qbm-card" style="max-width:560px">
+    <div class="qbm-head"><b id="ppModalTitle">Client payments</b>
+      <button class="qbm-x" onclick="ppClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body" id="ppModalBody"></div>
+  </div>
+</div>
+
 <div id="benAiModal" class="qbmodal" onclick="if(event.target===this)benAiClose()">
   <div class="qbm-card" style="max-width:680px">
     <div class="qbm-head"><b>💬 Ask AI — Ben's questions</b>
@@ -7292,10 +7300,12 @@ function projCardAdmin(p){
         <div style="margin-bottom:4px">${projStageBadge(stage)}</div>
         <div style="color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(p.total||0)}</b> · Budget <b style="color:var(--ink)">${fmtn(p.budget_cost||0)}</b> · Actual <b style="color:var(--ink)">${fmtn(p.actual_cost||0)}</b></div>
         <div style="font-weight:700"><span style="color:${(p.expected_profit||0)<0?'var(--bad)':'var(--good)'}">Exp. profit ${fmtn(p.expected_profit||0)}</span> · <span style="color:${prof<0?'var(--bad)':'var(--good)'}">Actual profit ${fmtn(prof)}${(p.total>0)?(' · '+Math.round(prof/p.total*100)+'%'):''}</span></div>
+        <div style="color:var(--mute)">Paid <b style="color:var(--ink)">${fmtn(p.paid_total||0)}</b> · Balance <b style="color:${(p.balance||0)>0?'var(--orange)':'var(--good)'}">${fmtn(p.balance||0)}</b></div>
       </div>
     </div>
     <div class="qact">
       <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('View / edit the actual costs on this project')} onclick="jcOpen(${p.id},'capture')">💰 Costs</button>
+      <button class="btn sec qb" ${tip('Record client deposits/payments and see the balance')} onclick="ppOpen(${p.id})">💵 Payments</button>
       <button class="btn sec qb" ${tip('Bill of Quantities — materials required (labour excluded), branded PDF')} onclick="openBoq(${p.id})">⤓ BOQ</button>
       ${stage==='open'?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Review costs vs profit, create the invoice and post expenses to Zoho')} onclick="jcOpen(${p.id},'bill')" ${busy?'disabled':''}>🧾 Bill client</button>`:''}
       ${p.zoho_invoice_number?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${p.id})">⤓ Job card</button>`:''}
@@ -7326,6 +7336,55 @@ function projReopen(id){ PROJ.busyId=id; render();
   fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action:'reopen'})})
   .then(r=>r.json()).then(j=>{ PROJ.busyId=0; if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p)p.project_closed=0; PROJ.msg='Project reopened.'; PROJ.err=false; } else { PROJ.msg=j.error||'Could not reopen'; PROJ.err=true; } render(); })
   .catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
+}
+
+/* ---------- Client payments / deposits on a project (admin) ---------- */
+var PP={quoteId:0,customer:'',currency:'KES',payments:[],total:0,quoteTotal:0,balance:0,busy:false,msg:'',err:false};
+function ppOpen(quoteId){
+  PP={quoteId:quoteId,customer:'',currency:'KES',payments:[],total:0,quoteTotal:0,balance:0,busy:false,msg:'',err:false};
+  document.getElementById('ppModalBody').innerHTML='<div class="muted" style="padding:22px;text-align:center">Loading…</div>';
+  document.getElementById('ppModal').classList.add('open'); document.body.style.overflow='hidden';
+  fetch('api/project_payments.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list',quote_id:quoteId})})
+  .then(r=>r.json()).then(j=>{ if(!j.ok){ document.getElementById('ppModalBody').innerHTML='<div class="warn" style="margin:10px">'+qesc(j.error||'Could not load')+'</div>'; return; }
+    PP.payments=j.payments||[]; PP.total=j.total; PP.quoteTotal=j.quote_total; PP.balance=j.balance; PP.customer=j.customer_name||''; PP.currency=j.currency||'KES'; ppRender();
+  }).catch(e=>{ document.getElementById('ppModalBody').innerHTML='<div class="warn" style="margin:10px">Error: '+qesc(''+e)+'</div>'; });
+}
+function ppClose(){ document.getElementById('ppModal').classList.remove('open'); document.body.style.overflow=''; }
+function ppSyncCard(){ const mp=(PROJ.projects||[]).find(x=>x.id===PP.quoteId); if(mp){ mp.paid_total=PP.total; mp.balance=PP.balance; } const b=document.getElementById('projListBox'); if(b&&TAB==='projects') b.innerHTML=projListHtml(); }
+function ppRender(){
+  const box=document.getElementById('ppModalBody'); if(!box)return;
+  document.getElementById('ppModalTitle').textContent='Client payments · '+(PP.customer||'');
+  const cur=PP.currency;
+  const rows=(PP.payments||[]).map(p=>`<div class="row" style="border-bottom:1px solid var(--line);padding:7px 0;font-size:12.5px">
+      <div style="flex:1;min-width:0"><b>${cur} ${fmtn(p.amount)}</b> <span class="muted" style="font-size:11px">· ${qesc(p.paid_date||'')}${p.note?(' · '+qesc(p.note)):''}</span></div>
+      <button class="btn sec" style="width:auto;padding:3px 9px;font-size:11px;color:var(--bad)" onclick="ppDelete(${p.id})" title="Remove">✕</button>
+    </div>`).join('') || '<div class="muted" style="font-size:12px;padding:6px 0">No payments recorded yet.</div>';
+  box.innerHTML=(PP.msg?`<div class="${PP.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(PP.msg)}</div>`:'')
+    + `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)">
+        <div class="row"><span class="muted">Quote total</span><b>${cur} ${fmtn(PP.quoteTotal)}</b></div>
+        <div class="row" style="margin-top:4px"><span class="muted">Paid</span><b style="color:var(--good)">${cur} ${fmtn(PP.total)}</b></div>
+        <div class="row" style="margin-top:4px"><b>Balance</b><b style="color:${PP.balance>0?'var(--orange)':'var(--good)'}">${cur} ${fmtn(PP.balance)}</b></div></div>`
+    + `<div style="font-weight:700;font-size:12.5px;margin-bottom:4px">Payments received</div>${rows}`
+    + `<div class="card" style="padding:12px;margin-top:12px">
+        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:110px"><label style="font-size:11px;margin:0">Amount (${cur})</label><input id="ppAmt" type="number" step="0.01" min="0" style="margin:0" placeholder="0"></div>
+          <div style="min-width:130px"><label style="font-size:11px;margin:0">Date</label><input id="ppDate" type="date" value="${today()}" style="margin:0"></div>
+          <div style="flex:1;min-width:130px"><label style="font-size:11px;margin:0">Note</label><input id="ppNote" type="text" style="margin:0" placeholder="e.g. deposit, mpesa"></div>
+          <button class="btn" style="width:auto" onclick="ppAdd()" ${PP.busy?'disabled':''}>${PP.busy?'Saving…':'Record payment'}</button>
+        </div></div>`;
+}
+function ppAdd(){
+  const amt=parseFloat((document.getElementById('ppAmt')||{}).value)||0; if(amt<=0){ PP.msg='Enter a payment amount.'; PP.err=true; ppRender(); return; }
+  const date=(document.getElementById('ppDate')||{}).value||today(); const note=(document.getElementById('ppNote')||{}).value||'';
+  PP.busy=true; PP.msg=''; ppRender();
+  fetch('api/project_payments.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',quote_id:PP.quoteId,amount:amt,date:date,note:note})})
+  .then(r=>r.json()).then(j=>{ PP.busy=false; if(j.ok){ if(j.payment)PP.payments.push(j.payment); PP.total=j.total; PP.balance=j.balance; PP.msg='Payment recorded.'; PP.err=false; ppSyncCard(); ppRender(); } else { PP.msg=j.error||'Could not save.'; PP.err=true; ppRender(); } })
+  .catch(e=>{ PP.busy=false; PP.msg='Error: '+e; PP.err=true; ppRender(); });
+}
+function ppDelete(id){ if(!confirm('Remove this payment?'))return;
+  fetch('api/project_payments.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id:id})})
+  .then(r=>r.json()).then(j=>{ if(j.ok){ PP.payments=PP.payments.filter(p=>p.id!==id); PP.total=j.total; PP.balance=j.balance; ppSyncCard(); ppRender(); } else { PP.msg=j.error||'Could not delete.'; PP.err=true; ppRender(); } })
+  .catch(e=>{ PP.msg='Error: '+e; PP.err=true; ppRender(); });
 }
 
 function vJobCards(){
@@ -7417,7 +7476,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); } });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); const ppm=document.getElementById('ppModal'); if(ppm&&ppm.classList.contains('open')) ppClose(); } });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){
