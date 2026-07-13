@@ -7234,26 +7234,48 @@ function mqToProject(id){
 }
 
 /* ---------- Projects page (jobs converted from quotes) ---------- */
-var PROJ={loaded:false,loading:false,projects:[],admin:false,busyId:0,msg:'',err:false};
+var PROJ={loaded:false,loading:false,projects:[],admin:false,busyId:0,msg:'',err:false,q:'',filter:'open'};
 function projLoad(){ PROJ.loading=true; PROJ.msg='';
   fetch('api/projects.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
   .then(r=>r.json()).then(j=>{ PROJ.loading=false; if(j.ok){ PROJ.projects=j.projects||[]; PROJ.admin=!!j.admin; PROJ.loaded=true; } else { PROJ.msg=j.error||'Could not load'; PROJ.err=true; } if(TAB==='projects')render(); })
   .catch(()=>{ PROJ.loading=false; if(TAB==='projects')render(); });
 }
 function projStageOf(p){ if(p.project_closed) return 'closed'; if(p.status==='invoiced'||p.zoho_invoice_number) return 'billed'; return 'open'; }
-function projStageBadge(stage){ const m={open:['🟣 Open','#7A5AF8','#EEEAFE'],billed:['🔵 Billed','#2350C5','#EEF2FE'],closed:['⚪ Closed','#64748B','#F1F4F8']}; const b=m[stage]||m.open; return `<span class="pill" style="color:${b[1]};background:${b[2]}">${b[0]}</span>`; }
-
+function projStageBadge(stage){ const m={open:['🟣 Open','#7A5AF8'],billed:['🔵 Billed','var(--blue)'],closed:['⚪ Closed','var(--mute)']}; const b=m[stage]||m.open; return `<span class="pill" style="color:${b[1]};background:var(--surface-2);border:1px solid var(--line)">${b[0]}</span>`; }
+function projMatch(p,qq){
+  const digits=qq.replace(/\D/g,'');
+  const hay=((p.customer_name||'')+' '+(p.zoho_invoice_number||'')+' '+(p.zoho_estimate_number||'')+' '+(p.subject||'')+' #'+(p.id||'')).toLowerCase();
+  if(hay.includes(qq)) return true;
+  return digits!=='' && hay.replace(/\D/g,'').includes(digits);
+}
+function projSearch(v){ PROJ.q=v; const b=document.getElementById('projListBox'); if(b) b.innerHTML=projListHtml(); }
+function projListHtml(){
+  let list=PROJ.projects||[];
+  if(PROJ.admin && (PROJ.filter||'open')!=='all') list=list.filter(p=>projStageOf(p)===(PROJ.filter||'open'));
+  const qq=(PROJ.q||'').trim().toLowerCase();
+  if(qq) list=list.filter(p=>projMatch(p,qq));
+  if(!list.length) return `<div class="card muted" style="text-align:center;padding:22px">No ${PROJ.admin&&PROJ.filter!=='all'?qesc(PROJ.filter)+' ':''}projects${qq?(' matching “'+qesc(PROJ.q)+'”'):''}.</div>`;
+  return list.map(PROJ.admin?projCardAdmin:projCardTeam).join('');
+}
 function vProjects(){
   if(!PROJ.loaded && PROJ.loading) return `<h2>Projects</h2><div class="card muted" style="text-align:center;padding:22px">Loading…</div>`;
-  const list=PROJ.projects||[];
+  const all=PROJ.projects||[];
   const msg=PROJ.msg?`<div class="${PROJ.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(PROJ.msg)}</div>`:'';
-  if(!list.length) return `<h2>Projects</h2>${msg}<div class="card muted" style="text-align:center;padding:24px">${PROJ.admin?'No projects yet. Convert an approved quote to a project from <b>My Quotes</b>.':'No open projects right now.'}</div>`;
-  if(PROJ.admin){
-    const groups=[['open','Open — capturing costs'],['billed','Billed'],['closed','Closed']];
-    const secs=groups.map(g=>{ const c=list.filter(p=>projStageOf(p)===g[0]).map(projCardAdmin).join(''); return c?`<div style="margin:16px 0 8px;font-weight:700;font-size:13px;color:var(--mute)">${g[1]}</div>${c}`:''; }).join('');
-    return `<h2>Projects</h2>${msg}${secs}`;
+  if(!all.length) return `<h2>Projects</h2>${msg}<div class="card muted" style="text-align:center;padding:24px">${PROJ.admin?'No projects yet. Convert an approved quote to a project from <b>My Quotes</b>.':'No open projects right now.'}</div>`;
+  const search=`<input id="projSearch" type="text" autocomplete="off" ${tip('Filter by client, invoice/estimate number or subject')} placeholder="🔍 Filter by client or invoice #…" value="${qesc(PROJ.q||'')}" oninput="projSearch(this.value)" style="width:100%;margin-bottom:10px">`;
+  if(!PROJ.admin){
+    return `<h2>Projects</h2><div class="muted" style="font-size:11.5px;margin-bottom:10px">Open jobs — add the actual costs as you go. You won't see the price charged to the customer.</div>${msg}${search}<div id="projListBox">${projListHtml()}</div>`;
   }
-  return `<h2>Projects</h2><div class="muted" style="font-size:11.5px;margin-bottom:10px">Open jobs — add the actual costs as you go. You won't see the price charged to the customer.</div>${msg}${list.map(projCardTeam).join('')}`;
+  const cnt=s=>all.filter(p=>projStageOf(p)===s).length;
+  const chip=(k,label,n)=>`<button class="btn${(PROJ.filter||'open')===k?'':' sec'}" style="width:auto;padding:5px 12px;font-size:12px" onclick="PROJ.filter='${k}';render()">${label}${n!=null?(' ('+n+')'):''}</button>`;
+  return `<div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="margin:0;flex:1;min-width:160px">Projects</h2>
+      <button class="btn" style="width:auto;padding:7px 14px;font-size:12px;background:#7A5AF8;box-shadow:none" ${tip('Open the full profit report')} onclick="navTo('report')">📊 Profit Report</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      ${chip('open','🟣 Open',cnt('open'))}${chip('billed','🔵 Billed',cnt('billed'))}${chip('closed','⚪ Closed',cnt('closed'))}${chip('all','All',all.length)}
+    </div>
+    ${search}${msg}<div id="projListBox">${projListHtml()}</div>`;
 }
 
 function projCardAdmin(p){
