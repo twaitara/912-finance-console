@@ -2044,6 +2044,14 @@ if (empty($_SESSION['auth'])):
   </div>
 </div>
 
+<div id="paModal" class="qbmodal" onclick="if(event.target===this)paClose()">
+  <div class="qbm-card" style="max-width:480px">
+    <div class="qbm-head"><b id="paModalTitle">Assign viewers</b>
+      <button class="qbm-x" onclick="paClose()" aria-label="Close" title="Close">✕</button></div>
+    <div class="qbm-body" id="paModalBody"></div>
+  </div>
+</div>
+
 <div id="benAiModal" class="qbmodal" onclick="if(event.target===this)benAiClose()">
   <div class="qbm-card" style="max-width:680px">
     <div class="qbm-head"><b>💬 Ask AI — Ben's questions</b>
@@ -7295,7 +7303,8 @@ function projCardAdmin(p){
     <div class="row" style="align-items:flex-start;gap:12px">
       <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
         ${p.subject?`<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${qesc(p.subject)}</div>`:''}
-        <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(num)} · ${p.line_count} item${p.line_count===1?'':'s'} · by ${qesc(p.created_by||'')}</div></div>
+        <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(num)} · ${p.line_count} item${p.line_count===1?'':'s'} · by ${qesc(p.created_by||'')}</div>
+        <div class="muted" style="margin-top:3px;font-size:11px">👤 ${(p.assignees&&p.assignees.length)?('Assigned: '+p.assignees.map(qesc).join(', ')):'<span style="color:var(--orange)">Unassigned</span>'}</div></div>
       <div style="text-align:right;white-space:nowrap;font-size:11px;line-height:1.6">
         <div style="margin-bottom:4px">${projStageBadge(stage)}</div>
         <div style="color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(p.total||0)}</b> · Budget <b style="color:var(--ink)">${fmtn(p.budget_cost||0)}</b> · Actual <b style="color:var(--ink)">${fmtn(p.actual_cost||0)}</b></div>
@@ -7306,6 +7315,7 @@ function projCardAdmin(p){
     <div class="qact">
       <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('View / edit the actual costs on this project')} onclick="jcOpen(${p.id},'capture')">💰 Costs</button>
       <button class="btn sec qb" ${tip('Record client deposits/payments and see the balance')} onclick="ppOpen(${p.id})">💵 Payments</button>
+      <button class="btn sec qb" ${tip('Assign which team members can view and cost this project')} onclick="paOpen(${p.id})">👤 Assign</button>
       <button class="btn sec qb" ${tip('Bill of Quantities — materials required (labour excluded), branded PDF')} onclick="openBoq(${p.id})">⤓ BOQ</button>
       ${stage==='open'?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Review costs vs profit, create the invoice and post expenses to Zoho')} onclick="jcOpen(${p.id},'bill')" ${busy?'disabled':''}>🧾 Bill client</button>`:''}
       ${p.zoho_invoice_number?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${p.id})">⤓ Job card</button>`:''}
@@ -7336,6 +7346,42 @@ function projReopen(id){ PROJ.busyId=id; render();
   fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action:'reopen'})})
   .then(r=>r.json()).then(j=>{ PROJ.busyId=0; if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p)p.project_closed=0; PROJ.msg='Project reopened.'; PROJ.err=false; } else { PROJ.msg=j.error||'Could not reopen'; PROJ.err=true; } render(); })
   .catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
+}
+
+/* ---------- Assign which team members can view/cost a project (admin) ---------- */
+var PA={quoteId:0,users:[],busy:false,msg:'',err:false};
+function paOpen(quoteId){
+  PA={quoteId:quoteId,users:[],busy:false,msg:'',err:false};
+  document.getElementById('paModalBody').innerHTML='<div class="muted" style="padding:22px;text-align:center">Loading…</div>';
+  document.getElementById('paModal').classList.add('open'); document.body.style.overflow='hidden';
+  fetch('api/project_assign.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',quote_id:quoteId})})
+  .then(r=>r.json()).then(j=>{ if(!j.ok){ document.getElementById('paModalBody').innerHTML='<div class="warn" style="margin:10px">'+qesc(j.error||'Could not load')+'</div>'; return; }
+    PA.users=j.users||[]; paRender();
+  }).catch(e=>{ document.getElementById('paModalBody').innerHTML='<div class="warn" style="margin:10px">Error: '+qesc(''+e)+'</div>'; });
+}
+function paClose(){ document.getElementById('paModal').classList.remove('open'); document.body.style.overflow=''; }
+function paRender(){
+  const box=document.getElementById('paModalBody'); if(!box)return;
+  const list=(PA.users||[]).map((u,i)=>`<label class="row" style="gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer">
+      <input type="checkbox" ${u.assigned?'checked':''} onchange="PA.users[${i}].assigned=this.checked" style="width:auto;margin:0">
+      <span style="flex:1;min-width:0"><b style="font-size:12.5px">${qesc(u.username)}</b>${u.email?`<span class="muted" style="font-size:11px"> · ${qesc(u.email)}</span>`:''}</span>
+    </label>`).join('');
+  box.innerHTML=(PA.msg?`<div class="${PA.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(PA.msg)}</div>`:'')
+    + `<div class="muted" style="font-size:11.5px;margin-bottom:8px">Tick the team members who should see and cost this project. They'll only see projects assigned to them.</div>`
+    + (list || '<div class="muted" style="font-size:12px;padding:8px 0">No staff users yet — create them under <b>Settings → Users</b>.</div>')
+    + `<div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn sec" style="width:auto" onclick="paClose()">Close</button>
+       <button class="btn" style="width:auto" onclick="paSave()" ${PA.busy?'disabled':''}>${PA.busy?'Saving…':'Save assignment'}</button></div>`;
+}
+function paSave(){
+  const names=(PA.users||[]).filter(u=>u.assigned).map(u=>u.username);
+  PA.busy=true; PA.msg=''; paRender();
+  fetch('api/project_assign.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'set',quote_id:PA.quoteId,usernames:names})})
+  .then(r=>r.json()).then(j=>{ PA.busy=false;
+    if(j.ok){ const mp=(PROJ.projects||[]).find(x=>x.id===PA.quoteId); if(mp) mp.assignees=j.assignees||[];
+      const b=document.getElementById('projListBox'); if(b&&TAB==='projects') b.innerHTML=projListHtml();
+      PA.msg='Assignment saved.'; PA.err=false; paRender();
+    } else { PA.msg=j.error||'Could not save.'; PA.err=true; paRender(); }
+  }).catch(e=>{ PA.busy=false; PA.msg='Error: '+e; PA.err=true; paRender(); });
 }
 
 /* ---------- Client payments / deposits on a project (admin) ---------- */
@@ -7476,7 +7522,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); const ppm=document.getElementById('ppModal'); if(ppm&&ppm.classList.contains('open')) ppClose(); } });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); const ppm=document.getElementById('ppModal'); if(ppm&&ppm.classList.contains('open')) ppClose(); const pam=document.getElementById('paModal'); if(pam&&pam.classList.contains('open')) paClose(); } });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){

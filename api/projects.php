@@ -22,11 +22,15 @@ try {
     $costcap = ($tabsS === '*') || in_array('costcap', $tabsArr, true) || in_array('projects', $tabsArr, true);
 
     if ($admin) {
-        pp_table($pdo);
+        pp_table($pdo); pa_table($pdo);
         $st = $pdo->query("SELECT q.*, (SELECT COALESCE(SUM(amount),0) FROM project_payments pp WHERE pp.quote_id=q.id) AS paid_total
                            FROM quotes q WHERE q.is_project=1 ORDER BY q.project_closed ASC, q.updated_at DESC");
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-        $out = array_map(function($q){
+        $assigneesBy = [];
+        foreach ($pdo->query("SELECT quote_id, username FROM project_assignees ORDER BY username")->fetchAll(PDO::FETCH_ASSOC) as $a) {
+            $assigneesBy[(int)$a['quote_id']][] = $a['username'];
+        }
+        $out = array_map(function($q) use ($assigneesBy){
             $total=(float)$q['total']; $paid=(float)($q['paid_total'] ?? 0);
             return [
                 'id'=>(int)$q['id'], 'customer_name'=>$q['customer_name'], 'subject'=>$q['subject'],
@@ -38,20 +42,19 @@ try {
                 'budget_cost'=>(float)($q['total_cost'] ?? 0), 'expected_profit'=>(float)($q['profit'] ?? 0),
                 'actual_cost'=>(float)($q['actual_cost'] ?? 0), 'actual_profit'=>(float)($q['actual_profit'] ?? 0),
                 'paid_total'=>$paid, 'balance'=>round($total-$paid, 2),
+                'assignees'=>$assigneesBy[(int)$q['id']] ?? [],
             ];
         }, $rows);
         echo json_encode(['ok'=>true, 'admin'=>true, 'projects'=>$out]); exit;
     }
 
-    // team / staff — OPEN projects only (is_project, not closed, not yet billed), cost-only
+    // team / staff — OPEN projects the admin has ASSIGNED them (or ones they created), cost-only
+    pa_table($pdo);
     $openWhere = "is_project=1 AND project_closed=0 AND status<>'invoiced' AND (zoho_invoice_number IS NULL OR zoho_invoice_number='')";
-    if ($costcap) {
-        $st = $pdo->prepare("SELECT * FROM quotes WHERE $openWhere ORDER BY updated_at DESC");
-        $st->execute();
-    } else {
-        $st = $pdo->prepare("SELECT * FROM quotes WHERE $openWhere AND created_by=? ORDER BY updated_at DESC");
-        $st->execute([$me]);
-    }
+    $st = $pdo->prepare("SELECT * FROM quotes
+        WHERE $openWhere AND (created_by=? OR id IN (SELECT quote_id FROM project_assignees WHERE username=?))
+        ORDER BY updated_at DESC");
+    $st->execute([$me, $me]);
     $out = array_map(function($q){
         return [
             'id'=>(int)$q['id'], 'customer_name'=>$q['customer_name'], 'subject'=>$q['subject'],

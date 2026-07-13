@@ -57,6 +57,24 @@ function pp_total(PDO $pdo, $quoteId){
     return round((float)$st->fetchColumn(), 2);
 }
 
+/* per-project viewer assignment: which system users may see/cost a project */
+function pa_table(PDO $pdo){
+    $pdo->exec("CREATE TABLE IF NOT EXISTS project_assignees (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        quote_id INT NOT NULL,
+        username VARCHAR(80) NOT NULL,
+        assigned_by VARCHAR(80) DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_pa (quote_id, username),
+        INDEX (username)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+function pa_for_quote(PDO $pdo, $quoteId){
+    $st = $pdo->prepare("SELECT username FROM project_assignees WHERE quote_id=? ORDER BY username");
+    $st->execute([(int)$quoteId]);
+    return $st->fetchAll(PDO::FETCH_COLUMN);
+}
+
 /* all cost rows for a quote, ordered for stable rendering */
 function pc_for_quote(PDO $pdo, $quoteId){
     $st = $pdo->prepare("SELECT * FROM project_costs WHERE quote_id=? ORDER BY line_index, id");
