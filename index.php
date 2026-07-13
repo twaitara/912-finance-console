@@ -7097,7 +7097,7 @@ function jcLinesFrom(q){ return (q.line_items||[]).map(it=>{
   return { name:it.name||'', description:it.description||'', qty:qty,
     amount:(it.amount!=null?it.amount:null),   // absent for non-admins (price-stripped server-side)
     bcost:bcost, budget:Math.round(qty*bcost*100)/100,   // budgeted unit + line cost
-    rows:(it.cost_rows||[]).map(r=>({id:r.id||0,category:r.category||'other',description:r.description||'',qty:r.qty!=null?r.qty:1,unit_cost:r.unit_cost!=null?r.unit_cost:0,vat:(r.vat==='incl')?'incl':'excl'})) };
+    rows:(it.cost_rows||[]).map(r=>({id:r.id||0,category:r.category||'other',description:r.description||'',qty:r.qty!=null?r.qty:1,unit_cost:r.unit_cost!=null?r.unit_cost:0,vat:(r.vat==='plus'||r.vat==='incl')?r.vat:'none'})) };
 }); }
 
 function jcOpen(id,mode){
@@ -7132,7 +7132,7 @@ function jcAutoDefaultBooking(){
   fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'config_set',account_id:acc,paid_through_account_id:pth})})
     .then(r=>r.json()).then(j=>{ if(j.ok&&j.config){ JC.config=j.config; jcRender(); } }).catch(()=>{});
 }
-function jcAddBudgetRow(li){ const l=JC.lines[li]; l.rows.push({id:0,category:'other',description:'Budgeted estimate',qty:l.qty||1,unit_cost:l.bcost||0,vat:'excl'}); jcRender(); }
+function jcAddBudgetRow(li){ const l=JC.lines[li]; l.rows.push({id:0,category:'other',description:'Budgeted estimate',qty:l.qty||1,unit_cost:l.bcost||0,vat:'none'}); jcRender(); }
 
 function jcSaveConfig(){
   const acc=document.getElementById('jcAcc'), paid=document.getElementById('jcPaid');
@@ -7142,13 +7142,18 @@ function jcSaveConfig(){
 }
 
 function jcVatRate(){ return (typeof CFG!=='undefined' && CFG.vat)?CFG.vat:0.16; }
-function jcRowAmt(r){ const q=parseFloat(r.qty)||0, u=parseFloat(r.unit_cost)||0; return Math.round(q*u*100)/100; }   /* raw spend */
-function jcRowExVat(r){ const a=jcRowAmt(r); return (r.vat==='incl')? Math.round(a/(1+jcVatRate())*100)/100 : a; }   /* ex-VAT (for profit) */
+function jcVatMode(r){ return (r.vat==='plus'||r.vat==='incl')?r.vat:'none'; }
+function jcRowAmt(r){ const q=parseFloat(r.qty)||0, u=parseFloat(r.unit_cost)||0; return Math.round(q*u*100)/100; }   /* entered line amount */
+function jcRowExVat(r){ const a=jcRowAmt(r); return (jcVatMode(r)==='incl')? Math.round(a/(1+jcVatRate())*100)/100 : a; }   /* net (for profit) */
+function jcRowVat(r){ const a=jcRowAmt(r),m=jcVatMode(r); if(m==='incl')return Math.round((a-a/(1+jcVatRate()))*100)/100; if(m==='plus')return Math.round(a*jcVatRate()*100)/100; return 0; }
+function jcRowGross(r){ return Math.round((jcRowExVat(r)+jcRowVat(r))*100)/100; }   /* total spent */
 function jcLineCost(l){ return (l.rows||[]).reduce((s,r)=>s+jcRowExVat(r),0); }   /* ex-VAT cost — VAT is never in profit */
 function jcTotalCost(){ return JC.lines.reduce((s,l)=>s+jcLineCost(l),0); }
+function jcTotalVat(){ return JC.lines.reduce((s,l)=>s+(l.rows||[]).reduce((a,r)=>a+jcRowVat(r),0),0); }
+function jcTotalGross(){ return jcTotalCost()+jcTotalVat(); }
 function jcTotalCharged(){ return JC.lines.reduce((s,l)=>s+(parseFloat(l.amount)||0),0); }
 function jcTotalBudget(){ return JC.lines.reduce((s,l)=>s+(parseFloat(l.budget)||0),0); }
-function jcAddRow(li){ JC.lines[li].rows.push({id:0,category:'other',description:'',qty:1,unit_cost:0,vat:'excl'}); jcRender(); }
+function jcAddRow(li){ JC.lines[li].rows.push({id:0,category:'other',description:'',qty:1,unit_cost:0,vat:'none'}); jcRender(); }
 function jcDelRow(li,ri){ JC.lines[li].rows.splice(ri,1); jcRender(); }
 
 /* update only the computed figures so typing doesn't lose input focus */
@@ -7159,6 +7164,8 @@ function jcRepaint(){
     if(JC.admin){ const lp=document.getElementById('jclp-'+li); if(lp){ const ch=parseFloat(l.amount)||0, pr=ch-jcLineCost(l); lp.textContent=fmtn(pr)+(ch>0?(' · '+Math.round(pr/ch*100)+'%'):''); lp.style.color=pr<0?'var(--bad)':'var(--good)'; } }
   });
   const tc=document.getElementById('jctc'); if(tc) tc.textContent=fmtn(jcTotalCost());
+  const tv=document.getElementById('jctvat'); if(tv) tv.textContent=fmtn(jcTotalVat());
+  const tg=document.getElementById('jctgross'); if(tg) tg.textContent=fmtn(jcTotalGross());
   if(JC.admin){ const tp=document.getElementById('jctp'); if(tp){ const ch=jcTotalCharged(), pr=ch-jcTotalCost(); tp.textContent=fmtn(pr)+(ch>0?(' · '+Math.round(pr/ch*100)+'%'):''); tp.style.color=pr<0?'var(--bad)':'var(--good)'; } }
 }
 
@@ -7192,7 +7199,7 @@ function jcRender(){
         <td><input class="in" style="margin:0;padding:5px 7px;font-size:12px" placeholder="e.g. Paint, beating labour…" value="${qesc(r.description||'')}" oninput="JC.lines[${li}].rows[${ri}].description=this.value"></td>
         <td><input class="in" type="number" step="0.01" min="0" style="margin:0;padding:5px 6px;font-size:12px;width:66px;text-align:right" value="${r.qty}" oninput="JC.lines[${li}].rows[${ri}].qty=this.value;jcRepaint()"></td>
         <td><input class="in" type="number" step="0.01" min="0" style="margin:0;padding:5px 6px;font-size:12px;width:94px;text-align:right" value="${r.unit_cost}" oninput="JC.lines[${li}].rows[${ri}].unit_cost=this.value;jcRepaint()"></td>
-        <td><select class="in" style="margin:0;padding:5px 4px;font-size:11.5px" onchange="JC.lines[${li}].rows[${ri}].vat=this.value;jcRepaint()"><option value="excl" ${r.vat==='incl'?'':'selected'}>Excl VAT</option><option value="incl" ${r.vat==='incl'?'selected':''}>Incl VAT</option></select></td>
+        <td><select class="in" style="margin:0;padding:5px 4px;font-size:11.5px" onchange="JC.lines[${li}].rows[${ri}].vat=this.value;jcRepaint()"><option value="none" ${jcVatMode(r)==='none'?'selected':''}>No VAT</option><option value="plus" ${jcVatMode(r)==='plus'?'selected':''}>+ 16% VAT</option><option value="incl" ${jcVatMode(r)==='incl'?'selected':''}>VAT incl.</option></select></td>
         <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px"><b id="jcamt-${li}-${ri}">${fmtn(jcRowAmt(r))}</b></td>
         <td style="text-align:center"><button class="btn sec" style="width:auto;padding:3px 8px;font-size:12px;color:var(--bad)" onclick="jcDelRow(${li},${ri})" title="Remove this cost">✕</button></td>
       </tr>`).join('');
@@ -7226,11 +7233,13 @@ function jcRender(){
     ? `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)">
         <div class="row" style="align-items:flex-start"><b style="font-size:12.5px">${conv?'INVOICE TOTAL':'PROJECT TOTAL'}</b>
         <span style="font-size:12px;color:var(--mute);text-align:right;line-height:1.7">
-          Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Budgeted cost <b style="color:var(--ink)">${fmtn(jcTotalBudget())}</b> · Actual cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b><br>
+          Charged <b style="color:var(--ink)">${fmtn(jcTotalCharged())}</b> · Budgeted cost <b style="color:var(--ink)">${fmtn(jcTotalBudget())}</b><br>
+          Net cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · VAT <b id="jctvat" style="color:var(--ink)">${fmtn(jcTotalVat())}</b> · Total spent <b id="jctgross" style="color:var(--ink)">${fmtn(jcTotalGross())}</b><br>
           Expected profit <b style="color:${tExpP<0?'var(--bad)':'var(--good)'}">${fmtn(tExpP)}${jcTotalCharged()>0?(' · '+Math.round(tExpP/jcTotalCharged()*100)+'%'):''}</b> · Actual profit <b id="jctp">—</b>
         </span></div></div>`
-    : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row"><b style="font-size:12.5px">TOTAL ACTUAL COST</b><b id="jctc" style="font-size:13px">${fmtn(jcTotalCost())}</b></div></div>`;
-  const vatNote = `<div class="muted" style="font-size:11px;margin-bottom:10px">💡 Mark each cost <b>Excl</b> or <b>Incl VAT</b>. VAT is never counted in profit — inclusive costs are taken at their ex-VAT value, so “Actual cost” below is ex-VAT.</div>`;
+    : `<div class="card" style="padding:12px;margin-bottom:12px;background:var(--surface-2)"><div class="row" style="align-items:flex-start"><b style="font-size:12.5px">TOTALS</b>
+        <span style="font-size:12px;color:var(--mute);text-align:right;line-height:1.7">Net cost <b id="jctc" style="color:var(--ink)">${fmtn(jcTotalCost())}</b> · VAT <b id="jctvat" style="color:var(--ink)">${fmtn(jcTotalVat())}</b> · Total spent <b id="jctgross" style="color:var(--ink)">${fmtn(jcTotalGross())}</b></span></div></div>`;
+  const vatNote = `<div class="muted" style="font-size:11px;margin-bottom:10px">💡 Per line, choose <b>No VAT</b>, <b>+ 16% VAT</b> (amount is net, VAT added — like a supplier receipt), or <b>VAT incl.</b> (amount already includes VAT). VAT is never counted in profit; “Net cost” is ex-VAT and “Total spent” includes VAT.</div>`;
   const intro = (conv
     ? `<div class="muted" style="font-size:11.5px;margin-bottom:6px">Review budgeted vs actual cost and profit, then bill. <b>Expected profit</b> uses the budgeted cost from the quote; <b>Actual profit</b> uses the actual costs entered here — which post to Zoho as expenses on the invoice.</div>`
     : (JC.admin
@@ -7249,7 +7258,7 @@ function jcRender(){
 function jcCollectLines(){
   return JC.lines.map((l,idx)=>({ index:idx, line_name:l.name||'', cost_rows:(l.rows||[])
     .filter(r=>(r.description||'').trim()!==''||(parseFloat(r.unit_cost)||0)>0)
-    .map(r=>({id:r.id||0,category:r.category,description:r.description,qty:r.qty,unit_cost:r.unit_cost,vat:(r.vat==='incl')?'incl':'excl'})) }));
+    .map(r=>({id:r.id||0,category:r.category,description:r.description,qty:r.qty,unit_cost:r.unit_cost,vat:(r.vat==='plus'||r.vat==='incl')?r.vat:'none'})) }));
 }
 
 /* reflect updated actual cost/profit onto the My Quotes card */
@@ -7386,7 +7395,7 @@ function projCardAdmin(p){
       <div style="text-align:right;white-space:nowrap;font-size:11px;line-height:1.6">
         <div style="margin-bottom:4px">${projStageBadge(stage)}</div>
         <div style="color:var(--mute)">Charged <b style="color:var(--ink)">${fmtn(p.total||0)}</b> · Budget <b style="color:var(--ink)">${fmtn(p.budget_cost||0)}</b></div>
-        <div style="color:var(--mute)">Cost <b style="color:var(--ink)">${fmtn(p.actual_cost||0)}</b> · VAT <b style="color:var(--ink)">${fmtn(Math.max(0,(p.cost_gross||0)-(p.actual_cost||0)))}</b> · Total cost <b style="color:var(--ink)">${fmtn(p.cost_gross||0)}</b></div>
+        <div style="color:var(--mute)">Cost <b style="color:var(--ink)">${fmtn(p.actual_cost||0)}</b> · VAT <b style="color:var(--ink)">${fmtn(p.cost_vat||0)}</b> · Total cost <b style="color:var(--ink)">${fmtn((p.actual_cost||0)+(p.cost_vat||0))}</b></div>
         <div style="font-weight:700"><span style="color:${(p.expected_profit||0)<0?'var(--bad)':'var(--good)'}">Exp. profit ${fmtn(p.expected_profit||0)}</span> · <span style="color:${prof<0?'var(--bad)':'var(--good)'}">Actual profit ${fmtn(prof)}${(p.total>0)?(' · '+Math.round(prof/p.total*100)+'%'):''}</span></div>
         <div style="color:var(--mute)">Paid <b style="color:var(--ink)">${fmtn(p.paid_total||0)}</b> · Balance <b style="color:${(p.balance||0)>0?'var(--orange)':'var(--good)'}">${fmtn(p.balance||0)}</b></div>
       </div>

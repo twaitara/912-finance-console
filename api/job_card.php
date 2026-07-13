@@ -56,9 +56,8 @@ try {
         pc_table($pdo);
         foreach (pc_for_quote($pdo, $id) as $c) {
             $li  = (int)$c['line_index'];
-            $ex  = pc_exvat($c['amount'], $c['vat_mode'] ?? 'excl', $vat);
-            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + $ex;
-            $inputVat += ((float)$c['amount'] - $ex);   // VAT portion of an inclusive cost
+            $actualByLine[$li] = ($actualByLine[$li] ?? 0) + pc_exvat($c['amount'], $c['vat_mode'] ?? 'none', $vat);
+            $inputVat += pc_vat_amount($c['amount'], $c['vat_mode'] ?? 'none', $vat);   // VAT on inclusive + plus rows
         }
     }
     $inputVat  = round($inputVat, 2);

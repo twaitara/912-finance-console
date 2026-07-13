@@ -9,6 +9,8 @@ header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../db.php';
 require __DIR__ . '/../project_costs.php';
+$cfg = require __DIR__ . '/../config.php';
+$VAT = (float)($cfg['vat_rate'] ?? 0.16);
 
 function proj_line_count($json){ $a = json_decode($json ?: '[]', true); return is_array($a) ? count($a) : 0; }
 
@@ -23,9 +25,12 @@ try {
 
     if ($admin) {
         pp_table($pdo); pa_table($pdo);
+        $vplus = $VAT; $vdiv = 1 + $VAT;   // VAT-aware: 'plus' adds VAT, 'incl' has VAT inside, else 0
         $st = $pdo->query("SELECT q.*,
                              (SELECT COALESCE(SUM(amount),0) FROM project_payments pp WHERE pp.quote_id=q.id) AS paid_total,
-                             (SELECT COALESCE(SUM(amount),0) FROM project_costs  pc WHERE pc.quote_id=q.id) AS cost_gross
+                             (SELECT COALESCE(SUM(CASE WHEN pc.vat_mode='incl' THEN pc.amount - pc.amount/$vdiv
+                                                       WHEN pc.vat_mode='plus' THEN pc.amount*$vplus
+                                                       ELSE 0 END),0) FROM project_costs pc WHERE pc.quote_id=q.id) AS cost_vat
                            FROM quotes q WHERE q.is_project=1 ORDER BY q.project_closed ASC, q.updated_at DESC");
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         $assigneesBy = [];
@@ -43,7 +48,7 @@ try {
                 'total'=>$total,
                 'budget_cost'=>(float)($q['total_cost'] ?? 0), 'expected_profit'=>(float)($q['profit'] ?? 0),
                 'actual_cost'=>(float)($q['actual_cost'] ?? 0), 'actual_profit'=>(float)($q['actual_profit'] ?? 0),
-                'cost_gross'=>(float)($q['cost_gross'] ?? 0),   // total spend incl VAT; VAT = cost_gross - actual_cost(ex-VAT)
+                'cost_vat'=>round((float)($q['cost_vat'] ?? 0), 2),   // input VAT; total spend = actual_cost(ex-VAT) + cost_vat
                 'paid_total'=>$paid, 'balance'=>round($total-$paid, 2),
                 'assignees'=>$assigneesBy[(int)$q['id']] ?? [],
             ];

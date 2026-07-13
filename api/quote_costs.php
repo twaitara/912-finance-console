@@ -77,7 +77,7 @@ try {
             $byLine[(int)$c['line_index']][] = [
                 'id'=>(int)$c['id'], 'category'=>$c['category'], 'description'=>$c['description'],
                 'qty'=>(float)$c['qty'], 'unit_cost'=>(float)$c['unit_cost'], 'amount'=>(float)$c['amount'],
-                'vat'=>((string)($c['vat_mode'] ?? 'excl') === 'incl') ? 'incl' : 'excl',
+                'vat'=>pc_vat_mode($c['vat_mode'] ?? 'none'),
             ];
         }
         foreach ($q['line_items'] as $i => &$it) { $it['cost_rows'] = $byLine[$i] ?? []; }
@@ -125,7 +125,7 @@ try {
                 if ($desc === '' && $unit <= 0) continue;                 // empty row — skip
                 $cat  = strtolower(trim((string)($r['category'] ?? 'other')));
                 if (!in_array($cat, $CATS, true)) $cat = 'other';
-                $vatMode = ((string)($r['vat'] ?? 'excl') === 'incl') ? 'incl' : 'excl';
+                $vatMode = pc_vat_mode($r['vat'] ?? 'none');
                 $desc = substr($desc, 0, 190);
                 $amount = round($qty * max(0, $unit), 2);
                 $rid  = (int)($r['id'] ?? 0);

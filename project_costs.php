@@ -101,10 +101,25 @@ function pc_total(PDO $pdo, $quoteId){
     return round((float)$st->fetchColumn(), 2);
 }
 
-/* ex-VAT value of a cost (VAT is never part of profit) */
+/* VAT mode of a cost row: 'none' (no VAT) | 'plus' (net, +VAT) | 'incl' (VAT-inclusive).
+   Legacy 'excl' == 'none'. */
+function pc_vat_mode($m){ $m = (string)$m; return ($m === 'plus' || $m === 'incl') ? $m : 'none'; }
+
+/* ex-VAT value of a cost (the net — VAT is never part of profit) */
 function pc_exvat($amount, $vatMode, $vat){
     $amount = (float)$amount;
-    return round(($vatMode === 'incl') ? $amount / (1 + (float)$vat) : $amount, 2);
+    return round((pc_vat_mode($vatMode) === 'incl') ? $amount / (1 + (float)$vat) : $amount, 2);
+}
+/* the VAT portion of a cost */
+function pc_vat_amount($amount, $vatMode, $vat){
+    $amount = (float)$amount; $v = (float)$vat; $m = pc_vat_mode($vatMode);
+    if ($m === 'incl') return round($amount - $amount / (1 + $v), 2);
+    if ($m === 'plus') return round($amount * $v, 2);
+    return 0.0;
+}
+/* the gross (total actually spent) = net + VAT */
+function pc_gross($amount, $vatMode, $vat){
+    return round(pc_exvat($amount, $vatMode, $vat) + pc_vat_amount($amount, $vatMode, $vat), 2);
 }
 
 /* total ACTUAL cost ex-VAT (used for profit) */
@@ -151,7 +166,10 @@ function pc_refresh_quote(PDO $pdo, $quoteId, $vat = 0.16){
 function pc_expense_body(array $row, $invNo, array $conf, $vatTaxId = ''){
     $desc = trim((string)($row['line_name'] ?? '')) . ' — ' . ucfirst((string)($row['category'] ?? 'other'))
           . ((trim((string)($row['description'] ?? '')) !== '') ? (': ' . trim((string)$row['description'])) : '');
-    $incl = ((string)($row['vat_mode'] ?? 'excl') === 'incl') && ($vatTaxId !== '');
+    $mode  = pc_vat_mode($row['vat_mode'] ?? 'none');
+    $taxed = ($mode === 'plus' || $mode === 'incl') && ($vatTaxId !== '');
+    // 'plus': amount is NET, Zoho adds VAT on top (not inclusive). 'incl': amount is GROSS, VAT inside.
+    $incl  = ($mode === 'incl') && ($vatTaxId !== '');
     $body = [
         'account_id'       => (string)($conf['account_id'] ?? ''),
         'date'             => date('Y-m-d'),
@@ -160,7 +178,7 @@ function pc_expense_body(array $row, $invNo, array $conf, $vatTaxId = ''){
         'description'      => substr($desc, 0, 500),
         'is_inclusive_tax' => $incl,
     ];
-    if ($incl) $body['tax_id'] = (string)$vatTaxId;
+    if ($taxed) $body['tax_id'] = (string)$vatTaxId;
     if (!empty($conf['paid_through_account_id'])) $body['paid_through_account_id'] = (string)$conf['paid_through_account_id'];
     return $body;
 }
