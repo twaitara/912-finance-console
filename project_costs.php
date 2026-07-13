@@ -59,6 +59,17 @@ function pp_total(PDO $pdo, $quoteId){
     return round((float)$st->fetchColumn(), 2);
 }
 
+/* the real subject shown on a Zoho estimate: a custom field labelled "subject",
+   else a native subject field. Returns '' when the quote has no subject. */
+function zoho_estimate_subject(array $e){
+    foreach (($e['custom_fields'] ?? []) as $f) {
+        $lbl = strtolower((string)($f['label'] ?? '') . ' ' . (string)($f['placeholder'] ?? ''));
+        if (strpos($lbl, 'subject') !== false) { $v = trim((string)($f['value'] ?? '')); if ($v !== '') return substr($v, 0, 190); }
+    }
+    $v = trim((string)($e['subject'] ?? ''));
+    return $v !== '' ? substr($v, 0, 190) : '';
+}
+
 /* per-project viewer assignment: which system users may see/cost a project */
 function pa_table(PDO $pdo){
     $pdo->exec("CREATE TABLE IF NOT EXISTS project_assignees (

@@ -64,6 +64,16 @@ try {
         echo json_encode(['ok'=>true, 'subject'=>$subj]); exit;
     }
 
+    if ($action === 'pull_subject') {
+        if (empty($q['zoho_estimate_id'])) throw new Exception('This project has no linked Zoho quote to read the subject from.');
+        [$d, $c] = zoho_api('GET', 'estimates/' . rawurlencode($q['zoho_estimate_id']));
+        if ($c >= 400 || empty($d['estimate'])) throw new Exception($d['message'] ?? 'Could not load the Zoho quote.');
+        $subj = zoho_estimate_subject($d['estimate']);
+        $pdo->prepare("UPDATE quotes SET subject=? WHERE id=?")->execute([$subj, $id]);
+        activity_log($pdo, $me, 'pulled project subject', ($q['zoho_estimate_number'] ?: ('#'.$id)) . ' · ' . ($subj !== '' ? $subj : '(none on quote)'));
+        echo json_encode(['ok'=>true, 'subject'=>$subj]); exit;
+    }
+
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
     echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
