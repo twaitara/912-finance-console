@@ -2060,6 +2060,17 @@ if (empty($_SESSION['auth'])):
   </div>
 </div>
 
+<div id="docModal" class="qbmodal" onclick="if(event.target===this)docClose()">
+  <div class="qbm-card" style="max-width:900px;width:96%;height:92vh;display:flex;flex-direction:column;overflow:hidden">
+    <div class="qbm-head"><b id="docModalTitle">Document</b>
+      <span style="display:flex;gap:8px;align-items:center">
+        <button class="btn" style="width:auto;padding:6px 13px;font-size:12px" onclick="docPrint()">⤓ Print / Save PDF</button>
+        <button class="qbm-x" onclick="docClose()" aria-label="Close" title="Close">✕</button>
+      </span></div>
+    <iframe id="docFrame" style="flex:1;width:100%;border:0;background:#fff" title="Document"></iframe>
+  </div>
+</div>
+
 <div id="benAiModal" class="qbmodal" onclick="if(event.target===this)benAiClose()">
   <div class="qbm-card" style="max-width:680px">
     <div class="qbm-head"><b>💬 Ask AI — Ben's questions</b>
@@ -6379,8 +6390,12 @@ function vTodo(){
 
 function themeIsDark(){ return document.documentElement.classList.contains('dark'); }
 function openJobCard(id){ window.open('api/job_card.php?id='+id+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* job card follows dark mode on screen, prints light */
-function openBoq(id){ window.open('api/job_card.php?id='+id+'&doc=boq'+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* Bill of Quantities: materials only, labour excluded */
-function openProfit(id){ window.open('api/job_card.php?id='+id+'&doc=profit'+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* per-invoice profit report (admin), branded PDF */
+/* open a branded document (BOQ / profit report) in a popup with a print/save-PDF button */
+function docOpen(url,title){ document.getElementById('docModalTitle').textContent=title||'Document'; document.getElementById('docFrame').src=url; document.getElementById('docModal').classList.add('open'); document.body.style.overflow='hidden'; }
+function docClose(){ document.getElementById('docModal').classList.remove('open'); document.body.style.overflow=''; const f=document.getElementById('docFrame'); if(f) f.src='about:blank'; }
+function docPrint(){ const f=document.getElementById('docFrame'); if(f&&f.contentWindow){ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){ window.open(f.src.replace('&embed=1',''),'_blank'); } } }
+function openBoq(id){ docOpen('api/job_card.php?id='+id+'&doc=boq&embed=1'+(themeIsDark()?'&theme=dark':''),'Bill of Quantities'); }   /* materials only, labour excluded */
+function openProfit(id){ docOpen('api/job_card.php?id='+id+'&doc=profit&embed=1'+(themeIsDark()?'&theme=dark':''),'Profit Report'); }   /* per-invoice profit (admin) */
 function syncThemeBtn(){ const b=document.getElementById('themeBtn'); if(b) b.textContent = themeIsDark()?'☀️':'🌙'; }
 function toggleTheme(){
   const dark=document.documentElement.classList.toggle('dark');
@@ -7587,7 +7602,7 @@ document.querySelectorAll('.tabs .navgroup .grp').forEach(g=>g.onclick=(e)=>{
 });
 /* click anywhere else closes open dropdowns */
 document.addEventListener('click',(e)=>{ if(!e.target.closest('.navgroup')) closeNavGroups(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); const ppm=document.getElementById('ppModal'); if(ppm&&ppm.classList.contains('open')) ppClose(); const pam=document.getElementById('paModal'); if(pam&&pam.classList.contains('open')) paClose(); const qvm=document.getElementById('qvModal'); if(qvm&&qvm.classList.contains('open')) qvClose(); } });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ if(QB.modalOpen) qbClose(); const pm=document.getElementById('pwModal'); if(pm&&pm.classList.contains('open')) pwClose(); const tm=document.getElementById('taskModal'); if(tm&&tm.classList.contains('open')) tmClose(); const jm=document.getElementById('jcModal'); if(jm&&jm.classList.contains('open')) jcClose(); const ppm=document.getElementById('ppModal'); if(ppm&&ppm.classList.contains('open')) ppClose(); const pam=document.getElementById('paModal'); if(pam&&pam.classList.contains('open')) paClose(); const qvm=document.getElementById('qvModal'); if(qvm&&qvm.classList.contains('open')) qvClose(); const dm=document.getElementById('docModal'); if(dm&&dm.classList.contains('open')) docClose(); } });
 
 /* ---- Material-style ripple on button taps (respects reduced-motion) ---- */
 document.addEventListener('click', function(e){

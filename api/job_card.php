@@ -182,7 +182,7 @@ try {
   @media print{.bar{display:none}body{background:#fff}.sheet{border:none;margin:0;max-width:none}}
 </style></head>
 <body>
-  <div class="bar"><span><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
+  <div class="bar"<?php echo !empty($_GET['embed']) ? ' style="display:none"' : ''; ?>><span><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
     <div class="top">
       <div class="co"><?php echo $logoUrl !== '' ? '<img class="logo-img" src="'.jc_esc($logoUrl).'" alt="'.jc_esc($coName).'">' : '<div class="logo">912</div>'; ?>
