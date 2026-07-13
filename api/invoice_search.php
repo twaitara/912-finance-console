@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../errors.php';
 /* api/invoice_search.php — live invoice lookup by number/customer for the cost form. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'invoices'=>[]]); exit; }
 require __DIR__ . '/../zoho.php';

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../errors.php';
 /* api/users.php — admin-only user management (app_users table). */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) {
     http_response_code(403);

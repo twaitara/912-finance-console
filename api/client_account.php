@@ -6,6 +6,7 @@ require_once __DIR__ . '/../errors.php';
      from = invoice date of the OLDER of the client's last two PAID invoices
      to   = invoice date of the client's LATEST UNPAID invoice (else today) */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../errors.php';
      {action:'add',  quote_id, amount, date?, note?} -> {ok, payment, total, balance}
      {action:'delete', id}                           -> {ok, total, balance} */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) {
     http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Admins only.']); exit;

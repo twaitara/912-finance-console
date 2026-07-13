@@ -6,6 +6,7 @@ require_once __DIR__ . '/../errors.php';
    config.php is never modified. */
 
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) {
     http_response_code(401);

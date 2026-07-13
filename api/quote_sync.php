@@ -6,6 +6,7 @@ require_once __DIR__ . '/../errors.php';
    POST JSON: {id?}   id given -> sync that one; omitted -> sync all of the user's pushed quotes.
    Returns: {ok, quotes:[...]} (the rows that were synced, with fresh status). */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../db.php';

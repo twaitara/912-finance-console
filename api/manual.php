@@ -1,6 +1,7 @@
 <?php
 /* api/manual.php — printable technician user manual (save as PDF, share on WhatsApp). */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth'])) { http_response_code(401); echo 'Not signed in.'; exit; }
 $cfg = require __DIR__ . '/../config.php';
 $co = htmlspecialchars($cfg['business_name'] ?? 'Nine One Two Holdings', ENT_QUOTES);

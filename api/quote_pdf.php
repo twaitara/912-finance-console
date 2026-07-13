@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/quote_pdf.php — stream a quote's Zoho estimate as a PDF (so the creator can
    download/share the file). GET ?id=NN. Owner or the quote's creator only. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth'])) { http_response_code(401); header('Content-Type: application/json'); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../db.php';
 require __DIR__ . '/../zoho.php';

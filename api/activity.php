@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/activity.php — admin-only activity/audit log viewer.
    GET ?limit=300 [&q=search] -> recent activity, newest first. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Admins only.']); exit; }
 require __DIR__ . '/../db.php';

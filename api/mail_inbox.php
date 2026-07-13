@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/mail_inbox.php — recent inbox emails (last 14 days) for turning into tasks.
    Skips senders on the block list (task_block_senders). Needs ZohoMail.messages.READ. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

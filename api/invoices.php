@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /** Returns live unpaid invoices (KES + USD) straight from Zoho Books.
  *  USD invoices are converted to KES (live rate, with fallbacks) and tagged. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../zoho.php';

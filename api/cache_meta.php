@@ -4,6 +4,7 @@ require_once __DIR__ . '/../errors.php';
    GET  -> {ok, last: ISO8601|null}
    POST -> stamps now, returns {ok, last}. Stored in data/cache_meta.json. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 $f = __DIR__ . '/../data/cache_meta.json';

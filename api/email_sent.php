@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/email_sent.php — mark/unmark a client as "statement sent" (hides them for 30 days).
    {action:'mark', customer_id} | {action:'unmark', customer_id} | {action:'list'} */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

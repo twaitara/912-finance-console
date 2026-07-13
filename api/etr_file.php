@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/etr_file.php — stream a WorkDrive file's bytes inline (for previewing a scanned ETR file).
    Same-origin proxy so images/PDFs preview in the app without exposing the WorkDrive token. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth'])) { http_response_code(401); header('Content-Type: text/plain'); echo 'Not signed in.'; exit; }
 require __DIR__ . '/../workdrive.php';
 $id = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['id'] ?? ''));

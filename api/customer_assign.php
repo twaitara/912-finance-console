@@ -27,6 +27,7 @@ if (!function_exists('cust_assign_table')) {
 /* Only run the request handler when this file is the entry point (not when required). */
 if (basename($_SERVER['SCRIPT_FILENAME'] ?? '') === 'customer_assign.php') {
     session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
     header('Content-Type: application/json; charset=utf-8');
     if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
     require_once __DIR__ . '/../db.php';

@@ -1,6 +1,7 @@
 <?php
 /* api/payment_record.php — record a customer payment in Zoho Books */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth']))    { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in']); exit; }
 if (empty($_SESSION['is_admin'])){ http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Admin only']); exit; }
 require __DIR__ . '/../zoho.php';

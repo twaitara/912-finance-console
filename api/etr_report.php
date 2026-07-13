@@ -18,6 +18,7 @@ require_once __DIR__ . '/../errors.php';
    ============================================================= */
 
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth'])) {
     http_response_code(401);
     header('Content-Type: application/json');

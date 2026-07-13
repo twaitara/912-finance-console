@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../errors.php';
 /* api/email_clients.php — list active Zoho Books customers (id, name, email). Cached 6h. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

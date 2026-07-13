@@ -4,6 +4,7 @@ require_once __DIR__ . '/../errors.php';
    Calls Zoho's estimate approve action, so it mirrors approving in Zoho Books.
    POST JSON: {id} */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 if (empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Only the owner can approve quotes.']); exit; }

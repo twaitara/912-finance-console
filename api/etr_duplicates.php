@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/etr_duplicates.php — find files in the scanned WorkDrive folder(s) that share the
    same invoice number (i.e. an invoice number appears on more than one file). 24h cache. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../workdrive.php';

@@ -2,6 +2,7 @@
 /* api/ask_convos.php — save / list / open / delete "Ask your books" conversations.
    Admin only. File-backed. Saved chats auto-expire 7 days after their last save. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) {
     http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Admins only.']); exit;

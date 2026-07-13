@@ -5,6 +5,7 @@ require_once __DIR__ . '/../errors.php';
    Add:             POST { customer_id, add:"a@b.com" } -> { ok, emails:[...] }
    Remove:          POST { customer_id, remove:"a@b" }  -> { ok, emails:[...] } */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

@@ -6,6 +6,7 @@
      • not yet due / draft / void → ignored (lateness not determinable)
    A customer must have ≥2 determinable invoices and ≥2 late ones to count as a "consistent" late payer. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in']); exit; }
 require __DIR__ . '/../zoho.php';
 require __DIR__ . '/../fx.php';

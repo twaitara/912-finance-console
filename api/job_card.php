@@ -4,6 +4,7 @@ require_once __DIR__ . '/../errors.php';
    GET ?id=NN  -> renders an A4 print page. Owner or the quote's creator.
    The quote should already be invoiced (use Generate Job Card, which converts first). */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth'])) { http_response_code(401); echo 'Not signed in.'; exit; }
 require __DIR__ . '/../db.php';
 require __DIR__ . '/../zoho.php';

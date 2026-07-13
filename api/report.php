@@ -4,6 +4,7 @@ require_once __DIR__ . '/../errors.php';
  *  expenses by reference number (which equals the invoice number). KES only.
  *  Query: ?month=06&year=2026  (month optional; empty = whole year; year empty = all). */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 if (empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'The profit report is admin-only.']); exit; }

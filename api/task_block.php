@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/task_block.php — senders whose emails must never appear as task candidates.
    {action:'list'} | {action:'add', email} | {action:'remove', email} */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

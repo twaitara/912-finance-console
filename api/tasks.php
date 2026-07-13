@@ -12,6 +12,7 @@ require_once __DIR__ . '/../errors.php';
      {action:'toggle_assignee', id, email, ticked}            tick/untick one assignee
      {action:'send', id}                            emails only TICKED assignees */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 $ME_USER  = $_SESSION['user']  ?? '';

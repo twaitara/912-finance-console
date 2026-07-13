@@ -7,6 +7,7 @@ require_once __DIR__ . '/../errors.php';
      to   = invoice date of the client's LATEST UNPAID invoice (else today)
    Invoices in range are matched to a WorkDrive PDF where possible. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

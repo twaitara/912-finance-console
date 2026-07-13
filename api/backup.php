@@ -8,6 +8,7 @@ require_once __DIR__ . '/../errors.php';
      { action:'run' }                           -> build dump, upload to WorkDrive
    GET ?download=1                               -> stream the .sql to the browser (always works) */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 if (empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Owner only.']); exit; }

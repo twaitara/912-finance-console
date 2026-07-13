@@ -6,6 +6,7 @@ require_once __DIR__ . '/../errors.php';
  *  The PRIMARY fund mirrors the working-capital fund value from Settings.
  *  Stored in MySQL, not Zoho. Principal only (no interest). */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json');
 if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Owner only.']); exit; }
 require __DIR__ . '/../db.php';

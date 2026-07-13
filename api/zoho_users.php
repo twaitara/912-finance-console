@@ -3,6 +3,7 @@ require_once __DIR__ . '/../errors.php';
 /* api/zoho_users.php — lists Zoho Books users (for task assignment).
    Returns { ok, users:[{id,name,email,role,status}] }. Cached 6h in data/. */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 

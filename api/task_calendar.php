@@ -5,6 +5,7 @@ require_once __DIR__ . '/../errors.php';
    (Google) link + a signed .ics link that opens in Zoho/Outlook/Apple calendars.
    Body JSON: { id, date:'YYYY-MM-DD', time:'HH:MM', durationMins, recipients:[{name,email}] } */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 require __DIR__ . '/../db.php';

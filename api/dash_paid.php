@@ -1,6 +1,7 @@
 <?php
 /* api/dash_paid.php — payments received + expenses in last 30 days for dashboard widget */
 session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard();
 if (empty($_SESSION['auth'])) { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Not signed in']); exit; }
 require __DIR__ . '/../zoho.php';
 require __DIR__ . '/../fx.php';

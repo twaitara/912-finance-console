@@ -270,6 +270,7 @@ if (!function_exists('bp_build')) {
 if (isset($_GET['portal']) && $_GET['portal'] === 'ben') {
     session_name('BENPORTAL');
     session_start();
+    require_once __DIR__ . '/csrf.php'; csrf_guard();
     require_once __DIR__ . '/zoho.php';        // zoho_config(), zoho_api()
     @set_time_limit(120);
     $bpCfg    = zoho_config();
@@ -660,6 +661,7 @@ if (session_status() === PHP_SESSION_NONE) {
     ]);
 }
 session_start();
+require_once __DIR__ . '/csrf.php'; csrf_guard();
 $cfg = require __DIR__ . '/config.php';
 require_once __DIR__ . '/settings_store.php';
 require_once __DIR__ . '/users_store.php';

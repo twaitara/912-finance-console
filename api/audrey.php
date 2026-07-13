@@ -14,7 +14,8 @@ require_once __DIR__ . '/../zoho.php';
    If your session flag differs (e.g. $_SESSION['logged_in']),
    change the line below to match. Left tolerant so a logged-in
    browser session is accepted and anonymous hits are blocked. */
-if (session_status() === PHP_SESSION_NONE) { @session_start(); }
+if (session_status() === PHP_SESSION_NONE) { @session_start();
+require_once __DIR__ . '/../csrf.php'; csrf_guard(); }
 $__authed = ($_SESSION['auth'] ?? $_SESSION['logged_in'] ?? $_SESSION['ok'] ?? false);
 if (!$__authed) {
   http_response_code(401);
