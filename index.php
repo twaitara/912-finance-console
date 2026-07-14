@@ -1001,6 +1001,7 @@ if (empty($_SESSION['auth'])):
         <button data-tab="etr">🔍 ETR Check</button>
         <button data-tab="invrep">🧾 Invoices</button>
         <button data-tab="quotes">📋 Quotes</button>
+        <button data-tab="recv">💰 Receivables</button>
         <button data-tab="payments">💳 Record Payment</button>
         <button data-tab="bulkpay">⚡ Bulk Mark Paid</button>
         <button data-tab="stmtbuild">📑 Statement Builder</button>
@@ -1098,6 +1099,7 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-tab="etr">🔍 ETR Check</button>
     <button class="mob-item mob-sub" data-tab="invrep">🧾 Invoices</button>
     <button class="mob-item mob-sub" data-tab="quotes">📋 Quotes</button>
+    <button class="mob-item mob-sub" data-tab="recv">💰 Receivables</button>
     <button class="mob-item mob-sub" data-tab="payments">💳 Record Payment</button>
     <button class="mob-item mob-sub" data-tab="bulkpay">⚡ Bulk Mark Paid</button>
     <button class="mob-item mob-sub" data-tab="stmtbuild">📑 Statement Builder</button>

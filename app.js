@@ -162,7 +162,7 @@ async function loadInvoices(){
 }
 
 /* ---------- views ---------- */
-function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals'||t==='report') return !!ME.admin; if(t==='projects') return !!ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('projects') || (ME.tabs||[]).includes('costcap'); if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
+function tabAllowed(t){ if(t==='users'||t==='clientaccess'||t==='activity'||t==='ask'||t==='portals'||t==='report'||t==='recv') return !!ME.admin; if(t==='projects') return !!ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('projects') || (ME.tabs||[]).includes('costcap'); if(ME.admin || ME.tabs==='*') return true; return (ME.tabs||[]).includes(t); }
 function firstAllowedTab(){ if(ME.admin||ME.tabs==='*') return 'dash'; const order=Object.keys(ALLTABS).filter(k=>k!=='audrey'&&k!=='taskboard'); return order.find(t=>tabAllowed(t)) || 'dash'; }
 function applyPerms(){
   const fb=document.querySelector('.fundbar'); if(fb) fb.style.display = ME.admin? '' : 'none';
@@ -192,6 +192,7 @@ function tabRefresh(){
     case 'report':    REPORT.loaded=false;REPORT.loading=false;REPORT.error=null;render();loadReport();break;
     case 'etr':       ETR.loaded=false;ETR.loading=false;ETR.data=null;render();etrLoad();break;
     case 'invrep':    INVR.loaded=false;INVR.loading=false;INVR.data=null;render();invrLoad();break;
+    case 'recv':      render();if(!RECV.loaded&&!RECV.loading)recvLoad();break;
     case 'quotes':    QUOT.loaded=false;QUOT.loading=false;QUOT.data=null;render();quotLoad();break;
     case 'qlist':     QLIST.loaded=false;QLIST.loading=false;QLIST.allItems=[];QLIST.page=1;render();qlistLoad();break;
     case 'ivlist':    IVLIST.loaded=false;IVLIST.loading=false;IVLIST.allItems=[];IVLIST.page=1;render();ivlistLoad();break;
@@ -238,6 +239,7 @@ function render(){
   if(TAB==='report') p.innerHTML = vReport();
   if(TAB==='etr') p.innerHTML = vETR();
   if(TAB==='invrep') p.innerHTML = vInvRep();
+  if(TAB==='recv'){ p.innerHTML = vRecv(); if(!RECV.loaded && !RECV.loading) recvLoad(); }
   if(TAB==='quotes') p.innerHTML = vQuotes();
   if(TAB==='qlist') p.innerHTML = vQList();
   if(TAB==='ivlist') p.innerHTML = vIVList();
@@ -3847,6 +3849,120 @@ async function bulkProcess(){
   BULK.invoices.forEach(iv=>{ BULK.sel[iv.id]=false; BULK.wht[iv.id]={r5:false,r2:false,r7:false}; });
   BULK.processing=false;
   render();
+}
+
+/* ---- Receivables (admin-only): who owes me, per client, from unpaid invoices ---- */
+let RECV = { loaded:false, loading:false, err:false, msg:'', invoices:[], q:'', overdueOnly:false, sort:'owed', open:{} };
+
+function recvDays(due, today){ if(!due) return 0; const d=Math.floor((today - Date.parse(due+'T00:00:00'))/86400000); return d>0?d:0; }
+
+function recvLoad(force){
+  if(RECV.loading) return;
+  RECV.loading=true; RECV.err=false; RECV.msg=''; if(force) RECV.loaded=false; render();
+  fetch('api/unpaid_invoices.php',{credentials:'same-origin'})
+    .then(r=>r.json()).then(j=>{
+      RECV.loading=false; RECV.loaded=true;
+      if(j&&j.ok){ RECV.invoices=j.invoices||[]; } else { RECV.err=true; RECV.msg=(j&&j.error)||'Could not load receivables.'; RECV.invoices=[]; }
+      if(TAB==='recv') render();
+    }).catch(e=>{ RECV.loading=false; RECV.loaded=true; RECV.err=true; RECV.msg='Error: '+e; if(TAB==='recv') render(); });
+}
+function recvRefresh(){ recvLoad(true); }
+function recvSetQ(v){ RECV.q=v; recvPaintList(); }
+function recvSort(v){ RECV.sort=v; recvPaintList(); }
+function recvOverdueToggle(on){ RECV.overdueOnly=!!on; recvPaintList(); }
+function recvToggle(id){ RECV.open[id]=!RECV.open[id]; recvPaintList(); }
+function recvPaintList(){ const el=document.getElementById('recvList'); if(el) el.innerHTML=recvListHtml(); }
+
+/* pure: group unpaid invoices by client, filter (search + overdue-only), sort */
+function recvGroups(invoices, q, overdueOnly, sort, today){
+  q=(q||'').trim().toLowerCase();
+  const by={};
+  (invoices||[]).forEach(iv=>{
+    const g = by[iv.customer_id] || (by[iv.customer_id]={id:iv.customer_id,name:iv.customer_name||'(no name)',total:0,count:0,oldestDays:0,overdue:0,invoices:[]});
+    const days=recvDays(iv.due_date, today), bal=(+iv.balance||0);
+    g.invoices.push(Object.assign({},iv,{days})); g.total+=bal; g.count++;
+    if(days>0){ g.overdue++; if(days>g.oldestDays) g.oldestDays=days; }
+  });
+  let groups=Object.values(by);
+  if(q) groups=groups.filter(g=> g.name.toLowerCase().includes(q) || g.invoices.some(iv=>String(iv.number||'').toLowerCase().includes(q)));
+  if(overdueOnly) groups=groups.filter(g=>g.overdue>0);
+  groups.forEach(g=>g.invoices.sort((a,b)=>b.days-a.days));
+  if(sort==='name') groups.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sort==='oldest') groups.sort((a,b)=>b.oldestDays-a.oldestDays);
+  else groups.sort((a,b)=>b.total-a.total);
+  return groups;
+}
+
+function recvListHtml(){
+  const today=Date.now();
+  const groups=recvGroups(RECV.invoices, RECV.q, RECV.overdueOnly, RECV.sort, today);
+  if(RECV.err) return `<div class="warn" style="font-size:12.5px">⚠ ${qesc(RECV.msg)}</div>`;
+  if(!groups.length) return `<div class="muted" style="padding:16px 4px;font-size:12.5px">${RECV.invoices.length?'No clients match your filters.':'🎉 Nothing outstanding — every invoice is paid.'}</div>`;
+  return groups.map(g=>{
+    const open=!!RECV.open[g.id];
+    const badge = g.overdue>0
+      ? `<span style="background:#FBE9E7;color:#c0392b;border-radius:9px;padding:1px 8px;font-size:10.5px;font-weight:700;white-space:nowrap">${g.oldestDays}d overdue · ${g.overdue}</span>`
+      : `<span style="background:#E9F6EE;color:#1e7e34;border-radius:9px;padding:1px 8px;font-size:10.5px;font-weight:600;white-space:nowrap">not overdue</span>`;
+    const rows=g.invoices.map(iv=>{
+      const dc = iv.days>60?'#c0392b':(iv.days>30?'#e67e22':(iv.days>0?'#d4a017':'var(--mute)'));
+      const link = zbInvUrl(iv.id)?`<a href="${zbInvUrl(iv.id)}" target="_blank" rel="noopener" style="color:var(--orange);font-weight:600;text-decoration:none">${qesc(iv.number||'')} ↗</a>`:`<b style="color:var(--orange)">${qesc(iv.number||'')}</b>`;
+      return `<tr>
+        <td style="padding:4px 8px">${link}</td>
+        <td style="padding:4px 8px;color:var(--mute);white-space:nowrap">${qesc(iv.date||'')}</td>
+        <td style="padding:4px 8px;color:var(--mute);white-space:nowrap">${qesc(iv.due_date||'—')}</td>
+        <td style="padding:4px 8px;text-align:right;color:${dc};font-weight:600;white-space:nowrap">${iv.days>0?(iv.days+'d'):'—'}</td>
+        <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap"><b>${fmt(iv.balance)}</b></td>
+      </tr>`;
+    }).join('');
+    return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
+      <div class="row" style="align-items:center;gap:10px;padding:11px 13px;cursor:pointer;background:${open?'var(--surface-2)':'transparent'}" onclick="recvToggle('${g.id}')">
+        <div style="width:16px;color:var(--mute);font-size:12px">${open?'▾':'▸'}</div>
+        <div style="min-width:0;flex:1"><b style="font-size:13.5px">${qesc(g.name)}</b>
+          <div class="muted" style="font-size:11px;margin-top:2px">${g.count} unpaid invoice${g.count===1?'':'s'} · ${badge}</div></div>
+        <div style="text-align:right;white-space:nowrap"><b style="font-size:15px;color:var(--ink)">${fmt(g.total)}</b><div class="muted" style="font-size:10.5px">owed</div></div>
+      </div>
+      ${open?`<div style="overflow-x:auto;border-top:1px solid var(--line)"><table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:var(--mute);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px">
+          <th style="padding:5px 8px;text-align:left">Invoice</th><th style="padding:5px 8px;text-align:left">Date</th>
+          <th style="padding:5px 8px;text-align:left">Due</th><th style="padding:5px 8px;text-align:right">Overdue</th>
+          <th style="padding:5px 8px;text-align:right">Balance</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function vRecv(){
+  if(RECV.loading && !RECV.loaded) return `<div class="wrap"><div class="hd"><h2>💰 Receivables</h2></div><div class="muted" style="padding:20px 4px">Loading unpaid invoices from Zoho…</div></div>`;
+  const today=Date.now();
+  const grand=RECV.invoices.reduce((s,iv)=>s+(+iv.balance||0),0);
+  const nInv=RECV.invoices.length;
+  const nOver=RECV.invoices.filter(iv=>recvDays(iv.due_date,today)>0).length;
+  const nCli=new Set(RECV.invoices.map(iv=>iv.customer_id)).size;
+  const tile=(lab,val,col)=>`<div style="flex:1;min-width:120px"><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.3px">${lab}</div><div style="font-size:19px;font-weight:800;color:${col||'var(--ink)'}">${val}</div></div>`;
+  return `<div class="wrap">
+    <div class="hd" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <h2 style="margin:0">💰 Receivables</h2>
+      <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="recvRefresh()">↻ Refresh</button>
+    </div>
+    <div class="card" style="padding:13px 15px;margin:10px 0">
+      <div class="row" style="gap:18px;flex-wrap:wrap">
+        ${tile('Total outstanding', fmt(grand), 'var(--orange)')}
+        ${tile('Clients', nCli)}
+        ${tile('Unpaid invoices', nInv)}
+        ${tile('Overdue', nOver, nOver?'#c0392b':'var(--ink)')}
+      </div>
+    </div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <input class="in" style="margin:0;flex:1;min-width:220px;font-size:13px" placeholder="🔍 Search client or invoice number…" value="${qesc(RECV.q)}" oninput="recvSetQ(this.value)">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mute);white-space:nowrap"><input type="checkbox" ${RECV.overdueOnly?'checked':''} onchange="recvOverdueToggle(this.checked)"> Overdue only</label>
+      <select class="in" style="margin:0;width:auto;font-size:12.5px" onchange="recvSort(this.value)">
+        <option value="owed" ${RECV.sort==='owed'?'selected':''}>Most owed</option>
+        <option value="oldest" ${RECV.sort==='oldest'?'selected':''}>Oldest overdue</option>
+        <option value="name" ${RECV.sort==='name'?'selected':''}>Client A–Z</option>
+      </select>
+    </div>
+    <div id="recvList">${recvListHtml()}</div>
+  </div>`;
 }
 
 function vBulkPay(){

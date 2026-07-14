@@ -26,6 +26,7 @@ function users_all_tabs() {
         'growth'   => 'Growth',
         'etr'      => 'ETR Check',
         'invrep'   => 'Invoices',
+        'recv'     => 'Receivables',
         'quotes'   => 'Quotes',
         'newquote' => 'New Quote',
         'myquotes' => 'My Quotes',
