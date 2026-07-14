@@ -132,6 +132,35 @@ try {
         echo json_encode(['ok'=>true, 'admin'=>true, 'quote'=>$assemble($quoteId), 'warnings'=>[]]); exit;
     }
 
+    if ($action === 'set_line_qty') {
+        if (!$admin) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Only an admin can change a line quantity.']); exit; }
+        $row = $load($in['id'] ?? 0);
+        $quoteId = (int)$row['id'];
+        if ($row['status'] === 'invoiced' || trim((string)($row['zoho_invoice_number'] ?? '')) !== '') {
+            throw new Exception('This job is already billed — its line items are locked. Edit the invoice in Zoho.');
+        }
+        $lid = preg_replace('/[^a-z0-9]/i', '', substr((string)($in['lid'] ?? ''), 0, 32));
+        if ($lid === '') throw new Exception('No line specified.');
+        $qty = round((float)($in['qty'] ?? 0), 2);
+        if ($qty <= 0) throw new Exception('Quantity must be greater than zero.');
+
+        $items = quote_ensure_lids($pdo, $quoteId);
+        $found = false;
+        foreach ($items as &$it) { if ((string)($it['lid'] ?? '') === $lid) { $it['qty'] = $qty; $found = true; break; } }
+        unset($it);
+        if (!$found) throw new Exception('Line not found.');
+
+        // recompute the quote's charged amount / profit for the new quantity
+        [$priced, $sub, $discAmt, $tax, $total, $costTotal, $profit] =
+            quote_price($items, $vat, (float)($row['discount_value'] ?? 0), (string)($row['discount_type'] ?? 'percent'));
+        $pdo->prepare("UPDATE quotes SET line_items=?, sub_total=?, tax_amount=?, discount_amount=?, total=?, total_cost=?, profit=? WHERE id=?")
+            ->execute([json_encode($priced), $sub, $tax, $discAmt, $total, $costTotal, $profit, $quoteId]);
+        pc_refresh_quote($pdo, $quoteId, $vat);
+        require_once __DIR__ . '/../activity_store.php';
+        activity_log($pdo, $me, 'changed line qty', '#'.$quoteId.' · '.($row['customer_name'] ?? '').' (qty '.$qty.')');
+        echo json_encode(['ok'=>true, 'admin'=>true, 'quote'=>$assemble($quoteId), 'warnings'=>[]]); exit;
+    }
+
     if ($action === 'get') {
         $row = $load($in['id'] ?? 0);
         quote_ensure_lids($pdo, (int)$row['id']);   // fix #10: stable line ids + backfill

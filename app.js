@@ -5186,6 +5186,16 @@ function jcRemoveLine(lid){
       else alert(j.error||'Could not remove the line.'); })
     .catch(e=>alert('Error: '+e));
 }
+function jcSetLineQty(lid, val){
+  const qty=parseFloat(val);
+  const l=(JC.lines||[]).find(x=>x.lid===lid);
+  if(!(qty>0)){ jcRender(); return; }
+  if(l && parseFloat(l.qty)===qty) return;   // unchanged
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'set_line_qty',id:JC.quote.id,lid:lid,qty:qty})})
+    .then(r=>r.json()).then(j=>{ if(j.ok){ JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); JC.warnings=j.warnings||[]; jcRender(); }
+      else { alert(j.error||'Could not update the quantity.'); jcRender(); } })
+    .catch(e=>{ alert('Error: '+e); jcRender(); });
+}
 
 /* update only the computed figures so typing doesn't lose input focus */
 function jcRepaint(){
@@ -5249,7 +5259,7 @@ function jcRender(){
       <div class="row" style="align-items:flex-start;gap:10px;margin-bottom:8px">
         <div style="min-width:0;flex:1">${isOther
           ? `<b style="font-size:13.5px">🧾 ${qesc(l.name)}</b><div class="muted" style="font-size:11px;margin-top:2px">Overheads, transport, extras — costs not billed against a specific quote line</div>`
-          : `<b style="font-size:13.5px">${qesc(l.name||'(item)')}</b>${l.description?`<div class="muted" style="font-size:11.5px;margin-top:2px">${qesc(l.description)}</div>`:''}<div class="muted" style="font-size:11px;margin-top:2px">Qty ${fmtn(l.qty)}</div>`}</div>
+          : `<b style="font-size:13.5px">${qesc(l.name||'(item)')}</b>${l.description?`<div class="muted" style="font-size:11.5px;margin-top:2px">${qesc(l.description)}</div>`:''}<div class="muted" style="font-size:11px;margin-top:4px">${JC.admin?`Qty <input type="number" step="0.01" min="0.01" value="${l.qty}" onchange="jcSetLineQty('${l.lid}', this.value)" title="Units sold/delivered — updates the charged amount" style="width:60px;padding:2px 6px;font-size:11.5px;text-align:right;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--ink)">`:`Qty ${fmtn(l.qty)}`}</div>`}</div>
         <div style="text-align:right">${hdr}</div>
       </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
