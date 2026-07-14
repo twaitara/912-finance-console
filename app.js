@@ -5001,7 +5001,7 @@ const JC_CATS=[['parts','Parts'],['labour','Labour'],['consumables','Consumables
 
 function jcLinesFrom(q){ return (q.line_items||[]).map(it=>{
   const qty=it.qty!=null?it.qty:1, bcost=(it.cost!=null?it.cost:0);
-  return { lid:it.lid||'', name:it.name||'', description:it.description||'', qty:qty,
+  return { lid:it.lid||'', name:it.name||'', description:it.description||'', qty:qty, other:!!it.other,
     amount:(it.amount!=null?it.amount:null),   // absent for non-admins (price-stripped server-side)
     bcost:bcost, budget:Math.round(qty*bcost*100)/100,   // budgeted unit + line cost
     rows:(it.cost_rows||[]).map(r=>({id:r.id||0,category:r.category||'other',description:r.description||'',qty:r.qty!=null?r.qty:1,unit_cost:r.unit_cost!=null?r.unit_cost:0,vat:(r.vat==='plus'||r.vat==='incl')?r.vat:'none'})) };
@@ -5110,17 +5110,22 @@ function jcRender(){
         <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px"><b id="jcamt-${li}-${ri}">${fmtn(jcRowAmt(r))}</b></td>
         <td style="text-align:center"><button class="btn sec" style="width:auto;padding:3px 8px;font-size:12px;color:var(--bad)" onclick="jcDelRow(${li},${ri})" title="Remove this cost">✕</button></td>
       </tr>`).join('');
+    const isOther=!!l.other;
     const ep=(parseFloat(l.amount)||0)-(parseFloat(l.budget)||0);   // expected (budgeted) line profit — static
-    const hdr = JC.admin
+    const hdr = isOther
+      ? `<span style="font-size:11.5px;color:var(--mute)">Total <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b></span>`
+      : JC.admin
       ? `<span style="font-size:11px;color:var(--mute);line-height:1.6;text-align:right;display:inline-block">
            Charged <b style="color:var(--ink)">${fmtn(l.amount||0)}</b><br>
            Budget <b style="color:var(--ink)">${fmtn(l.budget||0)}</b> · Actual <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b><br>
            Exp. profit <b style="color:${ep<0?'var(--bad)':'var(--good)'}">${fmtn(ep)}</b> · Act. profit <b id="jclp-${li}">—</b>
          </span>`
       : `<span style="font-size:11.5px;color:var(--mute)">Cost so far <b id="jclc-${li}" style="color:var(--ink)">${fmtn(jcLineCost(l))}</b></span>`;
-    return `<div class="card" style="padding:12px;margin-bottom:12px">
+    return `<div class="card" style="padding:12px;margin-bottom:12px${isOther?';border:1px dashed var(--line);background:var(--surface-2)':''}">
       <div class="row" style="align-items:flex-start;gap:10px;margin-bottom:8px">
-        <div style="min-width:0;flex:1"><b style="font-size:13.5px">${qesc(l.name||'(item)')}</b>${l.description?`<div class="muted" style="font-size:11.5px;margin-top:2px">${qesc(l.description)}</div>`:''}<div class="muted" style="font-size:11px;margin-top:2px">Qty ${fmtn(l.qty)}</div></div>
+        <div style="min-width:0;flex:1">${isOther
+          ? `<b style="font-size:13.5px">🧾 ${qesc(l.name)}</b><div class="muted" style="font-size:11px;margin-top:2px">Overheads, transport, extras — costs not billed against a specific quote line</div>`
+          : `<b style="font-size:13.5px">${qesc(l.name||'(item)')}</b>${l.description?`<div class="muted" style="font-size:11.5px;margin-top:2px">${qesc(l.description)}</div>`:''}<div class="muted" style="font-size:11px;margin-top:2px">Qty ${fmtn(l.qty)}</div>`}</div>
         <div style="text-align:right">${hdr}</div>
       </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -5129,9 +5134,9 @@ function jcRender(){
           <th style="padding:3px 6px;font-weight:600;text-align:right">Qty</th><th style="padding:3px 6px;font-weight:600;text-align:right">Unit cost</th>
           <th style="padding:3px 6px;font-weight:600;text-align:left">VAT</th>
           <th style="padding:3px 6px;font-weight:600;text-align:right">Amount</th><th></th></tr></thead>
-        <tbody>${rows||`<tr><td colspan="7" class="muted" style="padding:8px 6px;font-size:11.5px">No costs yet — add the parts, labour and materials that went into this line.</td></tr>`}</tbody>
+        <tbody>${rows||`<tr><td colspan="7" class="muted" style="padding:8px 6px;font-size:11.5px">${isOther?'No other costs yet — add overheads, transport, extras that aren\'t on a quote line.':'No costs yet — add the parts, labour and materials that went into this line.'}</td></tr>`}</tbody>
       </table></div>
-      <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="jcAddRow(${li})">+ Add actual cost</button>
+      <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="jcAddRow(${li})">${isOther?'+ Add other cost':'+ Add actual cost'}</button>
       ${JC.admin&&(l.budget>0)?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px;margin-left:6px" onclick="jcAddBudgetRow(${li})" title="Add an actual-cost row seeded from the budgeted figure">+ from budget</button>`:''}
     </div>`;
   }).join('');

@@ -85,6 +85,15 @@ try {
         }
         foreach ($q['line_items'] as &$it) { $it['cost_rows'] = $byUid[(string)($it['lid'] ?? '')] ?? []; }
         unset($it);
+        // "Other costs" bucket — costs not tied to any quote line (reserved lid). Always
+        // present so the user can add overheads/extras (transport, misc), even if empty.
+        $q['line_items'][] = [
+            'lid'   => 'otherbucket',
+            'name'  => 'Other costs (not on the quote)',
+            'other' => true,
+            'qty'   => 1,
+            'cost_rows' => $byUid['otherbucket'] ?? [],
+        ];
         return $admin ? $q : quote_strip_prices($q);   // strip keeps cost_rows, zeroes prices/profit
     };
 

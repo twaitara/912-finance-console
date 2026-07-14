@@ -127,17 +127,24 @@ try {
                 . '<td class="r">' . $money($charged) . '</td><td class="r">' . $money($budget) . '</td>'
                 . '<td class="r">' . $money($actual) . '</td><td class="r" style="color:' . $pc . ';font-weight:700">' . $money($profit) . '</td></tr>';
         }
-        // costs whose line was later removed (orphaned by line_uid) — still counted so the
-        // total stays correct; shown on their own row rather than mis-attributed (fix #10)
+        // Costs not tied to a current line, still counted so the total stays correct and
+        // shown on their own rows (never mis-attributed): the intentional "Other costs"
+        // bucket (fix: user-added overheads) and any genuinely orphaned removed-line costs.
         $lineLids = array_map(function($it){ return (string)($it['lid'] ?? ''); }, $items);
-        $orphan = 0.0;
-        foreach ($actualByLine as $key => $amt) { if (!in_array($key, $lineLids, true)) $orphan += $amt; }
-        if ($orphan > 0.005) {
-            $tActual += $orphan;
-            $pRows .= '<tr><td class="c">–</td><td>Costs from removed lines</td>'
-                . '<td class="r">' . $money(0) . '</td><td class="r">' . $money(0) . '</td>'
-                . '<td class="r">' . $money($orphan) . '</td><td class="r" style="color:#c0392b;font-weight:700">' . $money(-$orphan) . '</td></tr>';
+        $other = 0.0; $orphan = 0.0;
+        foreach ($actualByLine as $key => $amt) {
+            if ($key === 'otherbucket')            $other  += $amt;
+            elseif (!in_array($key, $lineLids, true)) $orphan += $amt;
         }
+        $extraRow = function($label, $amt) use (&$pRows, &$tActual, $money) {
+            if ($amt <= 0.005) return;
+            $tActual += $amt;
+            $pRows .= '<tr><td class="c">–</td><td>' . $label . '</td>'
+                . '<td class="r">' . $money(0) . '</td><td class="r">' . $money(0) . '</td>'
+                . '<td class="r">' . $money($amt) . '</td><td class="r" style="color:#c0392b;font-weight:700">' . $money(-$amt) . '</td></tr>';
+        };
+        $extraRow('Other costs (not on the quote)', $other);
+        $extraRow('Costs from removed lines', $orphan);
     }
     $tProfit  = $tCharged - $tActual;
     $expProfit = (float)($q['profit'] ?? 0);          // budgeted (expected) profit, cached on the quote
