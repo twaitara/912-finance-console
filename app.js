@@ -5178,6 +5178,14 @@ function jcTotalCharged(){ return JC.lines.reduce((s,l)=>s+(parseFloat(l.amount)
 function jcTotalBudget(){ return JC.lines.reduce((s,l)=>s+(parseFloat(l.budget)||0),0); }
 function jcAddRow(li){ JC.lines[li].rows.push({id:0,category:'other',description:'',qty:1,unit_cost:0,vat:'none'}); jcRender(); }
 function jcDelRow(li,ri){ JC.lines[li].rows.splice(ri,1); jcRender(); }
+function jcRemoveLine(lid){
+  const l=(JC.lines||[]).find(x=>x.lid===lid); const name=l?(l.name||'this line'):'this line';
+  if(!confirm('Remove "'+name+'" from this job?\n\nThe line and its captured costs will be deleted. This cannot be undone.')) return;
+  fetch('api/quote_costs.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remove_line',id:JC.quote.id,lid:lid})})
+    .then(r=>r.json()).then(j=>{ if(j.ok){ JC.quote=j.quote; JC.admin=!!j.admin; JC.lines=jcLinesFrom(j.quote); JC.warnings=j.warnings||[]; jcRender(); }
+      else alert(j.error||'Could not remove the line.'); })
+    .catch(e=>alert('Error: '+e));
+}
 
 /* update only the computed figures so typing doesn't lose input focus */
 function jcRepaint(){
@@ -5254,6 +5262,7 @@ function jcRender(){
       </table></div>
       <button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px" onclick="jcAddRow(${li})">${isOther?'+ Add other cost':'+ Add actual cost'}</button>
       ${JC.admin&&(l.budget>0)?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px;margin-left:6px" onclick="jcAddBudgetRow(${li})" title="Add an actual-cost row seeded from the budgeted figure">+ from budget</button>`:''}
+      ${(!isOther&&JC.admin)?`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px;margin-top:8px;margin-left:6px;color:var(--bad)" onclick="jcRemoveLine('${l.lid}')" title="Remove this line and its costs from the job (unbilled projects only)">🗑 Remove line</button>`:''}
     </div>`;
   }).join('');
   const tExpP=jcTotalCharged()-jcTotalBudget();

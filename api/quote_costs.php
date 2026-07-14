@@ -25,6 +25,7 @@ require __DIR__ . '/../db.php';
 require __DIR__ . '/../quote_pricing.php';
 require __DIR__ . '/../project_costs.php';   // table + Zoho expense helpers (+ costcap_config via costcap_sync)
 $cfg = require __DIR__ . '/../config.php';
+$vat = (float)($cfg['vat_rate'] ?? 0.16);   // used by pc_refresh_quote + remove_line recompute
 
 $CATS = ['parts','labour','consumables','subcontract','other'];
 
@@ -96,6 +97,40 @@ try {
         ];
         return $admin ? $q : quote_strip_prices($q);   // strip keeps cost_rows, zeroes prices/profit
     };
+
+    if ($action === 'remove_line') {
+        if (!$admin) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Only an admin can remove a line.']); exit; }
+        $row = $load($in['id'] ?? 0);
+        $quoteId = (int)$row['id'];
+        // unbilled projects only — a billed job's lines are locked to its Zoho invoice
+        if ($row['status'] === 'invoiced' || trim((string)($row['zoho_invoice_number'] ?? '')) !== '') {
+            throw new Exception('This job is already billed — its line items are locked. Edit the invoice in Zoho.');
+        }
+        $lid = preg_replace('/[^a-z0-9]/i', '', substr((string)($in['lid'] ?? ''), 0, 32));
+        if ($lid === '') throw new Exception('No line specified.');
+
+        $items = quote_ensure_lids($pdo, $quoteId);     // every line has a lid
+        $before = count($items);
+        $items = array_values(array_filter($items, function($it) use ($lid){ return (string)($it['lid'] ?? '') !== $lid; }));
+        if (count($items) === $before) throw new Exception('Line not found.');
+
+        // recompute quote totals from the remaining lines (shared normaliser)
+        [$priced, $sub, $discAmt, $tax, $total, $costTotal, $profit] =
+            quote_price($items, $vat, (float)($row['discount_value'] ?? 0), (string)($row['discount_type'] ?? 'percent'));
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("UPDATE quotes SET line_items=?, sub_total=?, tax_amount=?, discount_amount=?, total=?, total_cost=?, profit=? WHERE id=?")
+                ->execute([json_encode($priced), $sub, $tax, $discAmt, $total, $costTotal, $profit, $quoteId]);
+            $pdo->prepare("DELETE FROM project_costs WHERE quote_id=? AND line_uid=?")->execute([$quoteId, $lid]);
+            $pdo->commit();
+        } catch (\Throwable $e) { $pdo->rollBack(); throw $e; }
+
+        pc_refresh_quote($pdo, $quoteId, $vat);
+        require_once __DIR__ . '/../activity_store.php';
+        activity_log($pdo, $me, 'removed job line', '#'.$quoteId.' · '.($row['customer_name'] ?? ''));
+        echo json_encode(['ok'=>true, 'admin'=>true, 'quote'=>$assemble($quoteId), 'warnings'=>[]]); exit;
+    }
 
     if ($action === 'get') {
         $row = $load($in['id'] ?? 0);
