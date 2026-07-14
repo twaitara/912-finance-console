@@ -983,6 +983,7 @@ if (empty($_SESSION['auth'])):
   <div class="tabs">
     <button class="active" data-tab="dash">🏠 Dashboard</button>
     <button data-tab="projects">📋 Projects</button>
+    <button data-tab="recv">💰 Receivables</button>
 
     <div class="navgroup">
       <button class="grp">💰 Working Capital <span class="car">▾</span></button>
@@ -1001,7 +1002,6 @@ if (empty($_SESSION['auth'])):
         <button data-tab="etr">🔍 ETR Check</button>
         <button data-tab="invrep">🧾 Invoices</button>
         <button data-tab="quotes">📋 Quotes</button>
-        <button data-tab="recv">💰 Receivables</button>
         <button data-tab="payments">💳 Record Payment</button>
         <button data-tab="bulkpay">⚡ Bulk Mark Paid</button>
         <button data-tab="stmtbuild">📑 Statement Builder</button>
@@ -1087,6 +1087,7 @@ if (empty($_SESSION['auth'])):
   <div id="mobDrawerBody">
     <button class="mob-item" data-tab="dash">🏠 Dashboard</button>
     <button class="mob-item" data-tab="projects">📋 Projects</button>
+    <button class="mob-item" data-tab="recv">💰 Receivables</button>
 
     <div class="mob-sect">💰 Working Capital</div>
     <button class="mob-item mob-sub" data-tab="deploy">🚀 Deploy</button>
@@ -1099,7 +1100,6 @@ if (empty($_SESSION['auth'])):
     <button class="mob-item mob-sub" data-tab="etr">🔍 ETR Check</button>
     <button class="mob-item mob-sub" data-tab="invrep">🧾 Invoices</button>
     <button class="mob-item mob-sub" data-tab="quotes">📋 Quotes</button>
-    <button class="mob-item mob-sub" data-tab="recv">💰 Receivables</button>
     <button class="mob-item mob-sub" data-tab="payments">💳 Record Payment</button>
     <button class="mob-item mob-sub" data-tab="bulkpay">⚡ Bulk Mark Paid</button>
     <button class="mob-item mob-sub" data-tab="stmtbuild">📑 Statement Builder</button>
