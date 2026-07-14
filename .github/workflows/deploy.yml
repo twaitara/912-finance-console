@@ -1,0 +1,66 @@
+name: Deploy to live
+
+# Auto-deploys to the cPanel site on every push to main (and on manual "Run workflow").
+# Safe: runs the php -l lint gate + pricing tests first; only uploads if they pass.
+# Uploads only (never deletes), so the server's data/ cache + Zoho token are untouched.
+# Requires repo Secrets: FTP_HOST, FTP_USER, FTP_PASS, FTP_PATH  (Settings -> Secrets -> Actions)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-live
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+
+      - name: Lint gate (php -l on every file)
+        run: |
+          find . -name '*.php' -not -path './vendor/*' -not -path './.git/*' -print0 \
+            | xargs -0 -r -n1 php -l 1>/dev/null
+
+      - name: Pricing / VAT tests
+        run: php tests/pricing_test.php
+
+      - name: Upload changed files over FTPS
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          FTP_PATH: ${{ secrets.FTP_PATH }}
+        run: |
+          if [ -z "$FTP_HOST" ] || [ -z "$FTP_USER" ] || [ -z "$FTP_PASS" ]; then
+            echo "::error::FTP secrets not set. Add FTP_HOST, FTP_USER, FTP_PASS, FTP_PATH in Settings -> Secrets -> Actions."
+            exit 1
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y lftp
+          # Upload-only (no deletes). Mirrors what .cpanel.yml copies.
+          lftp -c "
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set ssl:verify-certificate no;
+            set net:max-retries 2;
+            set net:timeout 25;
+            open -u '$FTP_USER','$FTP_PASS' '$FTP_HOST';
+            cd '$FTP_PATH';
+            mput *.php;
+            put app.js;
+            put app.css;
+            put .user.ini;
+            put .htaccess;
+            mirror -R --no-symlinks --exclude-glob .git* --exclude-glob *.md api/ api/;
+            mirror -R --no-symlinks --include-glob .htaccess data/ data/;
+            bye
+          "
+          echo "Deploy upload complete."
