@@ -49,12 +49,20 @@ jobs:
           HOST=$(printf '%s' "$FTP_HOST" | sed -E 's#^ftps?://##I; s#/+$##')
           PATHDIR="${FTP_PATH:-/}"
           echo "Connecting -> host='$HOST'  user='${FTP_USER%%@*}@…'  path='$PATHDIR'  (password hidden)"
-          # the upload commands (upload-only, never deletes)
-          UP="set ftp:passive-mode true; set ssl:verify-certificate no; set net:max-retries 2; set net:timeout 25; set net:reconnect-interval-base 5; set command:fail-exit true; open -u '$FTP_USER','$FTP_PASS' '$HOST'; cd '$PATHDIR'; mput *.php; put app.js; put app.css; put .user.ini; put .htaccess; mirror -R --no-symlinks --exclude-glob .git* --exclude-glob *.md api/ api/; mirror -R --no-symlinks --include-glob .htaccess data/ data/; bye"
-          echo '--> attempting FTPS (explicit TLS)…'
-          if lftp -c "set ftp:ssl-force true; set ftp:ssl-protect-data true; $UP"; then
-            echo 'FTPS upload complete.'; exit 0
-          fi
-          echo '--> FTPS failed; retrying over plain FTP…'
-          lftp -c "set ftp:ssl-allow false; $UP"
+          # This host's FTPS *data channel* is broken (truncates files to 0 bytes), so we use
+          # plain FTP with passive mode and PASV (not EPSV), which transfers reliably. Upload-only.
+          lftp -c "
+            set ftp:ssl-allow no;
+            set ftp:passive-mode true;
+            set ftp:prefer-epsv false;
+            set net:max-retries 2; set net:timeout 25; set net:reconnect-interval-base 5;
+            set command:fail-exit true;
+            open -u '$FTP_USER','$FTP_PASS' '$HOST';
+            cd '$PATHDIR';
+            mput *.php;
+            put app.js; put app.css; put .user.ini; put .htaccess;
+            mirror -R --no-symlinks --exclude-glob .git* --exclude-glob *.md api/ api/;
+            mirror -R --no-symlinks --include-glob .htaccess data/ data/;
+            bye
+          "
           echo 'FTP upload complete.'
