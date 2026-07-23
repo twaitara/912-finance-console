@@ -4919,7 +4919,7 @@ function mqListHtml(){
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
-        <button class="btn sec qb" ${tip('Duplicate this quote as a new local draft')} onclick="mqClone(${q.id})" ${busy?'disabled':''}>⧉ Clone</button>
+        <button class="btn sec qb" ${tip('Duplicate this quote as a new local draft')} onclick="mqClone(${q.id})" ${busy?'disabled':''}>Clone quote</button>
         ${(ME.admin && (q.imported==1||q.imported===true) && !isProject && !isInvoiced && q.zoho_estimate_id)?`<button class="btn sec qb" ${tip('Re-pull the latest line items and totals from Zoho (if you changed them there)')} onclick="mqRefreshZoho(${q.id},'${qesc(q.zoho_estimate_id)}')" ${busy?'disabled':''}>${busy?'Refreshing…':'↻ Refresh from Zoho'}</button>`:''}
         ${!pushed?`<button class="btn qb" ${tip('Send this quote to Zoho for approval')} onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Check the latest approval status from Zoho')} onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
