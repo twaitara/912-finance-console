@@ -167,6 +167,31 @@ try {
         exit;
     }
 
+    if ($action === 'clone') {
+        $row = $own($in['id'] ?? 0);
+        $subj = 'Copy of ' . substr(($row['subject'] ?? ''), 0, 180);
+        $pdo->prepare("INSERT INTO quotes
+            (created_by, created_email, zoho_customer_id, customer_name, reference, subject,
+             quote_date, expiry_date, currency, line_items, notes, terms,
+             sub_total, tax_amount, discount_value, discount_type, discount_amount,
+             total_cost, profit, total, status)
+            VALUES (?,?,?,?,?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,'local_draft')")
+            ->execute([
+                $me, $_SESSION['email'] ?? '',
+                $row['zoho_customer_id'], $row['customer_name'], $row['reference'] ?? '', $subj,
+                $row['currency'], $row['line_items'], $row['notes'] ?? '', $row['terms'] ?? '',
+                $row['sub_total'], $row['tax_amount'], $row['discount_value'] ?? 0,
+                $row['discount_type'] ?? 'percent', $row['discount_amount'] ?? 0,
+                $row['total_cost'] ?? 0, $row['profit'] ?? 0, $row['total'],
+            ]);
+        $id = (int)$pdo->lastInsertId();
+        require_once __DIR__ . '/../activity_store.php';
+        activity_log($pdo, $me, 'cloned quote', ($row['customer_name'] ?? '') . ' → #' . $id);
+        $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([$id]);
+        echo json_encode(['ok'=>true, 'quote'=>quote_out($st->fetch(PDO::FETCH_ASSOC))]);
+        exit;
+    }
+
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
     echo api_fail($e);

@@ -4919,6 +4919,7 @@ function mqListHtml(){
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
         ${mqEditable(q)?`<button class="btn sec qb" ${tip('Edit this quote')} onclick="mqEdit(${q.id})">✎ Edit</button>`:''}
+        <button class="btn sec qb" ${tip('Duplicate this quote as a new local draft')} onclick="mqClone(${q.id})" ${busy?'disabled':''}>⧉ Clone</button>
         ${(ME.admin && (q.imported==1||q.imported===true) && !isProject && !isInvoiced && q.zoho_estimate_id)?`<button class="btn sec qb" ${tip('Re-pull the latest line items and totals from Zoho (if you changed them there)')} onclick="mqRefreshZoho(${q.id},'${qesc(q.zoho_estimate_id)}')" ${busy?'disabled':''}>${busy?'Refreshing…':'↻ Refresh from Zoho'}</button>`:''}
         ${!pushed?`<button class="btn qb" ${tip('Send this quote to Zoho for approval')} onclick="mqPush(${q.id})" ${busy?'disabled':''}>${busy?'Pushing…':'Push to Zoho →'}</button>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Check the latest approval status from Zoho')} onclick="mqSyncOne(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'↻ Status'}</button>`:''}
@@ -5105,6 +5106,22 @@ function mqRefreshZoho(id,eid){ if(!confirm("Re-pull this quote's line items and
 function mqDelete(id){ if(!confirm('Remove this quote from the app? (If it was pushed, it stays in Zoho.)'))return;
   fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})})
   .then(r=>r.json()).then(j=>{ if(j.ok){ MQ.quotes=MQ.quotes.filter(q=>q.id!==id); render(); } else alert(j.error||'Delete failed'); }).catch(e=>alert(''+e)); }
+
+function mqClone(id){ MQ.busyId=id; render();
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'clone',id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(!j.ok){ alert(j.error||'Clone failed'); render(); return; }
+    const q=j.quote;
+    MQ.quotes=[q,...(MQ.quotes||[])];
+    render();
+    // open the clone immediately for editing
+    QB.id=q.id; QB.zohoId=''; QB.status='local_draft';
+    QB.customerId=q.zoho_customer_id; QB.customerName=q.customer_name; QB.currency=q.currency||'KES';
+    QB.reference=q.reference||''; QB.subject=q.subject||''; QB.quoteDate=today(); QB.expiryDate='';
+    QB.items=(q.line_items||[]).map(it=>({lid:it.lid||newLid(),name:it.name,description:it.description||'',qty:it.qty,rate:it.rate,cost:it.cost||0,acost:it.actual_cost||0,tax:it.tax||'vat'}));
+    if(!QB.items.length)QB.items=[{lid:newLid(),name:'',description:'',qty:1,rate:0,cost:0,acost:0,tax:'vat'}];
+    QB.notes=q.notes||''; QB.terms=q.terms||''; QB.discVal=q.discount_value||0; QB.discType=q.discount_type||'percent'; QB.msg=''; QB.err=false; qbOpen();
+  }).catch(e=>{ MQ.busyId=0; alert(''+e); render(); }); }
 
 /* ---------- Job costing: capture the actual cost of each invoice line ----------
    Two modes:
