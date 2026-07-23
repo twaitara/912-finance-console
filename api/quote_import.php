@@ -158,6 +158,45 @@ try {
         echo json_encode(['ok'=>true, 'quote'=>quote_out($st->fetch(PDO::FETCH_ASSOC)), 'warnings'=>$warnings]); exit;
     }
 
+    if ($action === 'list') {
+        $page = max(1, (int)($in['page'] ?? 1));
+        [$d, $c] = zoho_api('GET', 'estimates', null, [
+            'per_page'    => 25,
+            'page'        => $page,
+            'sort_column' => 'date',
+            'sort_order'  => 'D',
+        ]);
+        if ($c >= 400) throw new Exception($d['message'] ?? ('Zoho error ' . $c));
+        $ests = $d['estimates'] ?? [];
+        $ids  = array_values(array_filter(array_map(fn($e) => (string)($e['estimate_id'] ?? ''), $ests)));
+        $importedMap = [];
+        if ($ids) {
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("SELECT id, zoho_estimate_id, status FROM quotes WHERE zoho_estimate_id IN ($ph)");
+            $st->execute($ids);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r)
+                $importedMap[(string)$r['zoho_estimate_id']] = ['id' => (int)$r['id'], 'status' => $r['status']];
+        }
+        $items = array_map(function($e) use ($importedMap) {
+            $zid = (string)($e['estimate_id'] ?? '');
+            $imp = $importedMap[$zid] ?? null;
+            return [
+                'estimate_id'  => $zid,
+                'number'       => (string)($e['estimate_number'] ?? ''),
+                'customer'     => (string)($e['customer_name'] ?? ''),
+                'date'         => substr((string)($e['date'] ?? ''), 0, 10),
+                'status'       => strtolower((string)($e['status'] ?? '')),
+                'total'        => (float)($e['total'] ?? 0),
+                'currency'     => (string)($e['currency_code'] ?? 'KES'),
+                'imported'     => $imp !== null,
+                'local_id'     => $imp['id'] ?? 0,
+                'local_status' => $imp['status'] ?? '',
+            ];
+        }, $ests);
+        echo json_encode(['ok' => true, 'items' => $items, 'has_more' => (bool)($d['page_context']['has_more_page'] ?? false)]);
+        exit;
+    }
+
     throw new Exception('Unknown action.');
 } catch (Exception $e) {
     echo api_fail($e);

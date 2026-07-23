@@ -4954,7 +4954,8 @@ function mqListHtml(){
 function mqSearch(v){ MQ.q=v; MQ.page=1; const b=document.getElementById('mqListBox'); if(b) b.innerHTML=mqListHtml(); }
 
 /* ---- Import a quote that was created directly in Zoho ---- */
-var ZQ={loading:false,results:null,msg:'',err:false,forQ:''};
+var ZQ={loading:false,results:null,msg:'',err:false,forQ:'',
+        browsing:false,browseItems:null,browseLoading:false,browseMode:'myquotes',browsePage:1,browseMore:false};
 function mqRepaintList(){ const b=document.getElementById('mqListBox'); if(b) b.innerHTML=mqListHtml(); }
 function mqZohoResultsHtml(){
   const r=ZQ.results||[];
@@ -4979,6 +4980,93 @@ function mqImport(eid){ ZQ.msg='';
       MQ.loaded=false; mqLoad(); mqRepaintList();
     } else { ZQ.msg=j.error||'Import failed.'; ZQ.err=true; mqRepaintList(); }
   }).catch(e=>{ ZQ.msg='Error: '+e; ZQ.err=true; mqRepaintList(); });
+}
+
+/* ---- Browse / pull Zoho quotes (My Quotes + Projects) ---- */
+function mqToggleBrowse(mode){
+  mode=mode||'myquotes';
+  if(ZQ.browsing&&ZQ.browseMode===mode){ZQ.browsing=false;render();return;}
+  ZQ.browsing=true;ZQ.browseMode=mode;ZQ.browseItems=null;ZQ.browseLoading=true;ZQ.browsePage=1;ZQ.browseMore=false;
+  render(); mqZohoBrowseLoad();
+}
+function mqZohoBrowseLoad(){
+  ZQ.browseLoading=true;
+  fetch('api/quote_import.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'list',page:ZQ.browsePage})})
+  .then(r=>r.json()).then(j=>{
+    ZQ.browseLoading=false;
+    if(j.ok){ZQ.browseItems=(ZQ.browseItems||[]).concat(j.items||[]);ZQ.browseMore=!!j.has_more;}
+    else{ZQ.msg=j.error||'Failed to load Zoho quotes.';ZQ.err=true;}
+    render();
+  }).catch(e=>{ZQ.browseLoading=false;ZQ.msg='Error: '+e;ZQ.err=true;render();});
+}
+function zStatusStyle(s){
+  const bg={'accepted':'#E7F6EC','approved':'#EEF2FE','sent':'#EEF2FE','draft':'#F1F4F8','declined':'#FDECEA','expired':'#FFF4EB'};
+  const fg={'accepted':'#0F7A34','approved':'var(--blue)','sent':'var(--blue)','draft':'var(--mute)','declined':'var(--bad)','expired':'var(--orange)'};
+  return `background:${bg[s]||'#F1F4F8'};color:${fg[s]||'var(--mute)'}`;
+}
+function mqBrowseHtml(){
+  if(!ZQ.browsing)return'';
+  const forProj=ZQ.browseMode==='project';
+  const items=ZQ.browseItems||[];
+  let rows='';
+  if(ZQ.browseLoading&&!items.length){
+    rows=`<div class="muted" style="text-align:center;padding:16px;font-size:12px">Loading from Zoho…</div>`;
+  } else if(!items.length){
+    rows=`<div class="muted" style="text-align:center;padding:16px;font-size:12px">No estimates found in Zoho.</div>`;
+  } else {
+    rows=`<div style="display:flex;flex-direction:column;gap:6px">
+    ${items.map(e=>{
+      const alreadyProject=e.imported&&['project','invoiced'].includes(e.local_status);
+      const alreadyImported=e.imported&&!alreadyProject;
+      const btnImport=forProj
+        ?`<button class="btn" style="width:auto;padding:5px 12px;font-size:12px;background:#7A5AF8;box-shadow:none" onclick="mqImportToProject('${qesc(e.estimate_id)}')">📋 Import → Project</button>`
+        :`<button class="btn sec" style="width:auto;padding:5px 12px;font-size:12px" onclick="mqImport('${qesc(e.estimate_id)}')">Import to My Quotes</button>`;
+      return `<div class="row" style="align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:8px 12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:0">
+          <b style="font-size:12.5px">${qesc(e.number||'—')}</b>
+          <span class="muted" style="font-size:11px"> · ${qesc(e.customer||'')} · ${qesc(e.date||'')}</span>
+          <span style="padding:1px 7px;border-radius:20px;font-size:10px;font-weight:600;margin-left:5px;${zStatusStyle(e.status)}">${e.status}</span>
+          <span class="muted" style="font-size:11px"> · ${qesc(e.currency||'KES')} ${fmtn(e.total||0)}</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+          ${alreadyProject
+            ?`<span style="background:#EEF2FE;color:var(--blue);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">Already a ${e.local_status}</span>
+               <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="ZQ.browsing=false;navTo('projects')">→ Projects</button>`
+            :alreadyImported
+              ?`<span style="background:#E7F6EC;color:#0F7A34;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">✓ In My Quotes</span>
+                ${forProj?`<button class="btn" style="width:auto;padding:4px 10px;font-size:12px;background:#7A5AF8;box-shadow:none" onclick="ZQ.browsing=false;mqToProject(${e.local_id})">→ Make project</button>`:''}`
+              :btnImport}
+        </div>
+      </div>`;
+    }).join('')}
+    ${ZQ.browseMore?`<button class="btn sec" style="width:auto;align-self:center;padding:6px 18px;font-size:12px;margin-top:4px" onclick="ZQ.browsePage++;mqZohoBrowseLoad()" ${ZQ.browseLoading?'disabled':''}>${ZQ.browseLoading?'Loading…':'Load more'}</button>`:''}
+    </div>`;
+  }
+  return `<div class="card" style="margin-bottom:14px;padding:14px 16px">
+    <div class="row" style="align-items:center;gap:8px;margin-bottom:${items.length||ZQ.browseLoading?'10px':'0'}">
+      <b style="font-size:12.5px;flex:1">📥 ${forProj?'Pull from Zoho into Projects':'Browse Zoho quotes'}</b>
+      <button onclick="ZQ.browsing=false;render()" style="background:none;border:none;cursor:pointer;font-size:20px;line-height:1;color:var(--mute);padding:0">×</button>
+    </div>
+    ${rows}
+  </div>`;
+}
+function mqImportToProject(eid){
+  fetch('api/quote_import.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'import',estimate_id:eid})})
+  .then(r=>r.json()).then(j=>{
+    if(!j.ok){alert(j.error||'Import failed');return;}
+    const q=j.quote;
+    if(!(MQ.quotes||[]).find(x=>x.id===q.id)) MQ.quotes=[q,...(MQ.quotes||[])];
+    if(ZQ.browseItems){const it=ZQ.browseItems.find(x=>x.estimate_id===eid);if(it){it.imported=true;it.local_id=q.id;it.local_status=q.status;}}
+    fetch('api/quote_project.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id,action:'start'})})
+    .then(r=>r.json()).then(j2=>{
+      if(j2.ok){
+        const qr=(MQ.quotes||[]).find(x=>x.id===q.id);if(qr){qr.status=j2.status||qr.status;qr.is_project=1;}
+        if(ZQ.browseItems){const it=ZQ.browseItems.find(x=>x.estimate_id===eid);if(it)it.local_status='project';}
+        PROJ.loaded=false;ZQ.browsing=false;navTo('projects');
+      } else {alert(j2.error||'Imported to My Quotes but could not start project — convert it there.');render();}
+    }).catch(e=>{alert(''+e);render();});
+  }).catch(e=>{alert(''+e);render();});
 }
 
 function vMyQuotes(){
@@ -5010,10 +5098,12 @@ function vMyQuotes(){
     <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="mqSearch" type="text" autocomplete="off" ${tip('Find by quote/estimate number, invoice number, reference, client or subject')} placeholder="🔍 Search quote #, invoice #, client or subject…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
       <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}${pgSel(MQ.perPage,'mqPerPage(this.value)')}
-        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button></span>
+        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button>
+        ${ME.admin?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px;border-color:${ZQ.browsing&&ZQ.browseMode==='myquotes'?'var(--blue)':'var(--line)'};color:${ZQ.browsing&&ZQ.browseMode==='myquotes'?'var(--blue)':'var(--mute)'}" onclick="mqToggleBrowse('myquotes')">📥 From Zoho</button>`:''}</span>
     </div>
     ${statusFilter}
     ${userFilter}
+    ${ME.admin&&ZQ.browsing&&ZQ.browseMode==='myquotes'?mqBrowseHtml():''}
     <div id="mqListBox">${mqListHtml()}</div>`;
 }
 function mqTogglePreview(id){ MQ.open[id]=!MQ.open[id]; render(); }
@@ -5436,8 +5526,10 @@ function vProjects(){
   const chip=(k,label,n)=>`<button class="btn${(PROJ.filter||'open')===k?'':' sec'}" style="width:auto;padding:5px 12px;font-size:12px" onclick="PROJ.filter='${k}';PROJ.page=1;render()">${label}${n!=null?(' ('+n+')'):''}</button>`;
   return `<div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <h2 style="margin:0;flex:1;min-width:160px">Projects</h2>
+      <button class="btn sec" style="width:auto;padding:7px 14px;font-size:12px;border-color:${ZQ.browsing&&ZQ.browseMode==='project'?'var(--blue)':'var(--line)'};color:${ZQ.browsing&&ZQ.browseMode==='project'?'var(--blue)':'var(--mute)'}" ${tip('Browse Zoho quotes and pull one into Projects')} onclick="mqToggleBrowse('project')">📥 From Zoho</button>
       <button class="btn" style="width:auto;padding:7px 14px;font-size:12px;background:#7A5AF8;box-shadow:none" ${tip('Open the full profit report')} onclick="navTo('report')">📊 Profit Report</button>
     </div>
+    ${ZQ.browsing&&ZQ.browseMode==='project'?mqBrowseHtml():''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       ${chip('open','🟣 Open',cnt('open'))}${chip('billed','🔵 Billed',cnt('billed'))}${chip('closed','⚪ Closed',cnt('closed'))}${chip('all','All',all.length)}
     </div>
