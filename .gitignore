@@ -11,6 +11,10 @@ data/
 # secrets & local/stray files — never commit (added before XAMPP move)
 config.php
 mail_token.php
+ftp-sync.json
 .htaccess1
 api/error_log
 912-finance-console/
+
+# local FTP deploy secrets
+.deploy.env
