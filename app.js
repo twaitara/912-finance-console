@@ -5073,6 +5073,30 @@ function mqImportToProject(eid){
   }).catch(e=>{alert(''+e);render();});
 }
 
+/* ---- Import a quote from a file (PDF / image / CSV) via AI ---- */
+function qfPick(){ const el=document.getElementById('qfFile'); if(el){ el.value=''; el.click(); } }
+function qfUpload(input){
+  const f=input&&input.files&&input.files[0]; if(!f) return;
+  if(f.size>10*1024*1024){ MQ.msg='File too large (max 10 MB).'; MQ.err=true; render(); return; }
+  MQ.msg='📄 Reading your quote with AI…'; MQ.err=false; render();
+  const fd=new FormData(); fd.append('file',f);
+  fetch('api/quote_extract.php',{method:'POST',credentials:'same-origin',body:fd})
+    .then(r=>r.json()).then(j=>{
+      if(!j.ok){ MQ.msg=j.error||'Could not read the file.'; MQ.err=true; render(); return; }
+      MQ.msg=''; render(); qfFill(j.quote||{});
+    }).catch(e=>{ MQ.msg='Error reading file: '+e; MQ.err=true; render(); });
+}
+function qfFill(q){
+  QB=Object.assign(qbBlank(), {assignOpen:QB.assignOpen,assignLoaded:QB.assignLoaded,assignments:QB.assignments,users:QB.users,aCust:null,aUsers:[]});
+  const items=(q.items||[]).filter(it=>it&&(it.name||it.description)).map(it=>({lid:newLid(),name:String(it.name||it.description||''),description:String(it.name?(it.description||''):''),qty:(+it.quantity||+it.qty||1),rate:(+it.rate||0),cost:0,acost:'',tax:'vat'}));
+  if(items.length) QB.items=items;
+  QB.subject=String(q.subject||''); QB.reference=String(q.reference||'');
+  const cur=String(q.currency||'KES').toUpperCase().slice(0,3); QB.currency=cur||'KES';
+  QB.customerName=String(q.customer_name||''); QB.customerId='';
+  QB.msg='Imported from file — review the items'+(QB.customerName?(', confirm the customer “'+QB.customerName+'”'):'')+', pick the customer, then Save.'; QB.err=false;
+  qbOpen();
+}
+
 function vMyQuotes(){
   const all=MQ.quotes||[];
   const monthKeys=[...new Set(all.map(mqMonthKey).filter(k=>k&&k.length>=7))].sort().reverse();
@@ -5103,7 +5127,9 @@ function vMyQuotes(){
       <input id="mqSearch" type="text" autocomplete="off" ${tip('Find by quote/estimate number, invoice number, reference, client or subject')} placeholder="🔍 Search quote #, invoice #, client or subject…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
       <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}${pgSel(MQ.perPage,'mqPerPage(this.value)')}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button>
-        ${ME.admin?`<button class="btn${ZQ.browsing&&ZQ.browseMode==='myquotes'?' sec':''}" style="width:auto;padding:6px 14px;font-size:12px" ${tip('Import an existing quote from Zoho Books into your quotes')} onclick="mqToggleBrowse('myquotes')">${ZQ.browsing&&ZQ.browseMode==='myquotes'?'✕ Close':'📥 Import quote'}</button>`:''}</span>
+        ${ME.admin?`<button class="btn${ZQ.browsing&&ZQ.browseMode==='myquotes'?' sec':''}" style="width:auto;padding:6px 14px;font-size:12px" ${tip('Import an existing quote from Zoho Books into your quotes')} onclick="mqToggleBrowse('myquotes')">${ZQ.browsing&&ZQ.browseMode==='myquotes'?'✕ Close':'📥 Import quote'}</button>
+        <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" ${tip('Import a quote from a PDF, image or CSV file — AI reads it into the quote builder')} onclick="qfPick()">📄 From file</button>
+        <input type="file" id="qfFile" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.tsv,.txt,application/pdf,image/*" style="display:none" onchange="qfUpload(this)">`:''}</span>
     </div>
     ${statusFilter}
     ${userFilter}
