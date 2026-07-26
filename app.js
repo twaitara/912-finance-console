@@ -4955,7 +4955,7 @@ function mqSearch(v){ MQ.q=v; MQ.page=1; const b=document.getElementById('mqList
 
 /* ---- Import a quote that was created directly in Zoho ---- */
 var ZQ={loading:false,results:null,msg:'',err:false,forQ:'',
-        browsing:false,browseItems:null,browseLoading:false,browseMode:'myquotes',browsePage:1,browseMore:false};
+        browsing:false,browseItems:null,browseLoading:false,browseMode:'myquotes',browsePage:1,browseMore:false,browseFilter:''};
 function mqRepaintList(){ const b=document.getElementById('mqListBox'); if(b) b.innerHTML=mqListHtml(); }
 function mqZohoResultsHtml(){
   const r=ZQ.results||[];
@@ -5008,12 +5008,15 @@ function zStatusStyle(s){
 function mqBrowseHtml(){
   if(!ZQ.browsing)return'';
   const forProj=ZQ.browseMode==='project';
-  const items=ZQ.browseItems||[];
+  const _all=ZQ.browseItems||[];
+  const _fq=(ZQ.browseFilter||'').trim().toLowerCase();
+  const items=_fq?_all.filter(e=>(((e.number||'')+' '+(e.customer||'')).toLowerCase().indexOf(_fq)>=0)):_all;
+  const loadMore=ZQ.browseMore?`<button class="btn sec" style="width:auto;align-self:center;padding:6px 18px;font-size:12px;margin-top:4px" onclick="ZQ.browsePage++;mqZohoBrowseLoad()" ${ZQ.browseLoading?'disabled':''}>${ZQ.browseLoading?'Loading…':'Load more'}</button>`:'';
   let rows='';
-  if(ZQ.browseLoading&&!items.length){
+  if(ZQ.browseLoading&&!_all.length){
     rows=`<div class="muted" style="text-align:center;padding:16px;font-size:12px">Loading from Zoho…</div>`;
   } else if(!items.length){
-    rows=`<div class="muted" style="text-align:center;padding:16px;font-size:12px">No estimates found in Zoho.</div>`;
+    rows=`<div style="display:flex;flex-direction:column;gap:8px"><div class="muted" style="text-align:center;padding:12px;font-size:12px">${_fq?('No loaded quotes match “'+qesc(ZQ.browseFilter)+'”.'):'No estimates found in Zoho.'}</div>${loadMore}</div>`;
   } else {
     rows=`<div style="display:flex;flex-direction:column;gap:6px">
     ${items.map(e=>{
@@ -5040,14 +5043,15 @@ function mqBrowseHtml(){
         </div>
       </div>`;
     }).join('')}
-    ${ZQ.browseMore?`<button class="btn sec" style="width:auto;align-self:center;padding:6px 18px;font-size:12px;margin-top:4px" onclick="ZQ.browsePage++;mqZohoBrowseLoad()" ${ZQ.browseLoading?'disabled':''}>${ZQ.browseLoading?'Loading…':'Load more'}</button>`:''}
+    ${loadMore}
     </div>`;
   }
   return `<div class="card" style="margin-bottom:14px;padding:14px 16px">
-    <div class="row" style="align-items:center;gap:8px;margin-bottom:${items.length||ZQ.browseLoading?'10px':'0'}">
-      <b style="font-size:12.5px;flex:1">📥 ${forProj?'Pull from Zoho into Projects':'Browse Zoho quotes'}</b>
+    <div class="row" style="align-items:center;gap:8px;margin-bottom:10px">
+      <b style="font-size:12.5px;flex:1">📥 ${forProj?'Pull from Zoho into Projects':'Import a quote from Zoho'}</b>
       <button onclick="ZQ.browsing=false;render()" style="background:none;border:none;cursor:pointer;font-size:20px;line-height:1;color:var(--mute);padding:0">×</button>
     </div>
+    <input id="zqFilter" type="text" autocomplete="off" placeholder="🔍 Filter by quote # or client…" value="${qesc(ZQ.browseFilter||'')}" oninput="ZQ.browseFilter=this.value;render()" style="width:100%;margin-bottom:10px">
     ${rows}
   </div>`;
 }
@@ -5099,7 +5103,7 @@ function vMyQuotes(){
       <input id="mqSearch" type="text" autocomplete="off" ${tip('Find by quote/estimate number, invoice number, reference, client or subject')} placeholder="🔍 Search quote #, invoice #, client or subject…" value="${qesc(MQ.q||'')}" oninput="mqSearch(this.value)" style="flex:1;min-width:200px;margin-bottom:0">
       <span style="display:inline-flex;gap:8px;align-items:center">${monthSel}${pgSel(MQ.perPage,'mqPerPage(this.value)')}
         <button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px" onclick="mqSync()" ${MQ.syncing?'disabled':''}>${MQ.syncing?'Syncing…':'↻ Refresh statuses'}</button>
-        ${ME.admin?`<button class="btn sec" style="width:auto;padding:6px 12px;font-size:12px;border-color:${ZQ.browsing&&ZQ.browseMode==='myquotes'?'var(--blue)':'var(--line)'};color:${ZQ.browsing&&ZQ.browseMode==='myquotes'?'var(--blue)':'var(--mute)'}" onclick="mqToggleBrowse('myquotes')">📥 From Zoho</button>`:''}</span>
+        ${ME.admin?`<button class="btn${ZQ.browsing&&ZQ.browseMode==='myquotes'?' sec':''}" style="width:auto;padding:6px 14px;font-size:12px" ${tip('Import an existing quote from Zoho Books into your quotes')} onclick="mqToggleBrowse('myquotes')">${ZQ.browsing&&ZQ.browseMode==='myquotes'?'✕ Close':'📥 Import quote'}</button>`:''}</span>
     </div>
     ${statusFilter}
     ${userFilter}
