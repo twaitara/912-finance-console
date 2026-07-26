@@ -27,6 +27,7 @@ function qimport_status($z){
     $z = strtolower(trim((string)$z));
     if ($z === 'accepted') return 'accepted';
     if ($z === 'sent')     return 'sent';
+    if ($z === 'invoiced') return 'invoiced';
     return 'approved';   // draft / declined / expired -> ready to work with in the app
 }
 
@@ -40,9 +41,9 @@ try {
 
     if ($action === 'search') {
         $q = trim((string)($in['q'] ?? ''));
-        if ($q === '') throw new Exception('Type a quote number, customer or reference to search Zoho.');
+        if ($q === '') { echo json_encode(['ok'=>false,'error'=>'Type a quote number, customer or reference to search Zoho.']); exit; }
         [$d, $c] = zoho_api('GET', 'estimates', null, ['search_text' => $q, 'per_page' => 25]);
-        if ($c >= 400) throw new Exception($d['message'] ?? ('Zoho error ' . $c));
+        if ($c >= 400) { echo json_encode(['ok'=>false,'error'=>'Zoho: ' . ($d['message'] ?? ('error ' . $c))]); exit; }
         $ests = $d['estimates'] ?? [];
         // which of these are already imported locally?
         $ids = array_values(array_filter(array_map(fn($e)=>(string)($e['estimate_id'] ?? ''), $ests)));
@@ -71,15 +72,11 @@ try {
     }
 
     if ($action === 'import') {
-        $eid = trim((string)($in['estimate_id'] ?? '')); if ($eid === '') throw new Exception('No estimate id.');
+        $eid = trim((string)($in['estimate_id'] ?? '')); if ($eid === '') { echo json_encode(['ok'=>false,'error'=>'No estimate id.']); exit; }
 
         [$d, $c] = zoho_api('GET', 'estimates/' . $eid);
-        if ($c >= 400 || empty($d['estimate'])) throw new Exception($d['message'] ?? 'Could not load the estimate from Zoho.');
+        if ($c >= 400 || empty($d['estimate'])) { echo json_encode(['ok'=>false,'error'=>'Zoho: ' . ($d['message'] ?? 'could not load the estimate.')]); exit; }
         $e = $d['estimate'];
-
-        if (strtolower((string)($e['status'] ?? '')) === 'invoiced') {
-            throw new Exception('This estimate is already invoiced in Zoho — import is for un-invoiced quotes.');
-        }
 
         // map Zoho line items -> our line-item shape (budgeted cost 0).
         // NB: Zoho often returns name as an empty string (not null), so `??` won't fall back —
@@ -100,10 +97,10 @@ try {
                 'tax'         => $taxed ? 'vat' : 'none',
             ];
         }
-        if (!$rawItems) throw new Exception('That estimate has no line items.');
+        if (!$rawItems) { echo json_encode(['ok'=>false,'error'=>'That estimate has no line items to import.']); exit; }
 
         [$items, $sub, $discAmt, $tax, $total, $costTotal, $profit] = quote_price($rawItems, $vat, 0, 'percent');
-        if (!$items) throw new Exception('Could not read any line items from that estimate.');
+        if (!$items) { echo json_encode(['ok'=>false,'error'=>'Could not read any line items from that estimate.']); exit; }
 
         $number = (string)($e['estimate_number'] ?? '');
         $custNm = (string)($e['customer_name'] ?? '');
@@ -166,7 +163,7 @@ try {
             'sort_column' => 'date',
             'sort_order'  => 'D',
         ]);
-        if ($c >= 400) throw new Exception($d['message'] ?? ('Zoho error ' . $c));
+        if ($c >= 400) { echo json_encode(['ok'=>false,'error'=>'Zoho: ' . ($d['message'] ?? ('error ' . $c))]); exit; }
         $ests = $d['estimates'] ?? [];
         $ids  = array_values(array_filter(array_map(fn($e) => (string)($e['estimate_id'] ?? ''), $ests)));
         $importedMap = [];
