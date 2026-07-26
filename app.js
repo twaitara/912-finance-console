@@ -410,7 +410,7 @@ function dexpInvResultsHtml(){
   if(DEXP.invLoading && DEXP.invFor!==q) return `<div style="padding:8px 11px;color:var(--mute);font-size:11.5px">Searching Zoho…</div>`;
   const res=DEXP.invResults||[];
   if(!res.length) return `<div style="padding:8px 11px;color:var(--mute);font-size:11.5px">No match. <span style="color:var(--blue);cursor:pointer;font-weight:600" onmousedown="event.preventDefault();dexpInvUseTyped()">Use “${qesc(q)}” anyway</span></div>`;
-  return res.map(iv=>`<div data-num="${qesc(iv.number)}" onmousedown="event.preventDefault();dexpInvPickEl(this)" style="padding:8px 11px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line);background:#fff" onmouseover="this.style.background='#F1F4F8'" onmouseout="this.style.background='#fff'"><b style="color:var(--orange)">${qesc(iv.number)}</b> · ${qesc(iv.client||'')}</div>`).join('');
+  return res.map(iv=>`<div data-num="${qesc(iv.number)}" onmousedown="event.preventDefault();dexpInvPickEl(this)" style="padding:8px 11px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line);background:var(--surface)" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='var(--surface)'"><b style="color:var(--orange)">${qesc(iv.number)}</b> · ${qesc(iv.client||'')}</div>`).join('');
 }
 function dexpInvPickEl(el){ DEXP.invoice=el.getAttribute('data-num'); DEXP.invQ=DEXP.invoice; const dd=document.getElementById('dexpInvDD'); if(dd) dd.style.display='none'; render(); }
 function dexpInvUseTyped(){ const q=String(DEXP.invQ||'').trim(); if(q){ DEXP.invoice=q; const dd=document.getElementById('dexpInvDD'); if(dd) dd.style.display='none'; render(); } }
@@ -847,7 +847,7 @@ function vDash(){
               <input id="bkFolder" type="text" placeholder="WorkDrive folder ID" value="${(BK.folder||'').replace(/"/g,'&quot;')}" style="flex:1;margin-bottom:0" oninput="BK.folder=this.value">
               <button class="btn sec" style="width:auto;padding:9px 12px;font-size:12px" onclick="bkBrowse()">📁 Browse</button>
             </div>
-            ${BK.pick.open?`<div class="card" style="margin-top:8px;background:#FAFBFD">
+            ${BK.pick.open?`<div class="card" style="margin-top:8px;background:var(--surface-2)">
               <div class="row" style="margin-bottom:8px">
                 <b style="font-size:12px">${BK.pick.current?('📁 '+(BK.pick.current.name||'Folder')):'Pick a folder'}</b>
                 <span>${BK.pick.current?`<button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="bkUp()">⬆ Up</button> `:''}<button class="btn sec" style="width:auto;padding:4px 9px;font-size:11px" onclick="bkCloseBrowse()">✕</button></span>
@@ -2691,7 +2691,7 @@ function vBulkExp(){
       <input type="text" placeholder="Description" value="${(r.desc||'').replace(/"/g,'&quot;')}" oninput="bexpField(${i},'desc',this.value)" ${ro} style="${inp}">
       <div style="position:relative">
         <input id="bexpAcc${i}" type="text" autocomplete="off" placeholder="🔍 account" value="${(r.accQ||'').replace(/"/g,'&quot;')}" oninput="bexpAccSearch(${i},this.value)" onfocus="bexpAccFocus(${i})" onblur="bexpAccBlur(${i})" ${ro} style="${inp};border-color:${r.acc?'var(--line)':'#F7C99A'}">
-        <div id="bexpDD${i}" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:190px;overflow-y:auto;z-index:${50-i}"></div>
+        <div id="bexpDD${i}" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 26px rgba(0,0,0,.3);max-height:190px;overflow-y:auto;z-index:${50-i}"></div>
       </div>
       ${r.done?`<span style="text-align:center;color:var(--good);font-weight:700">✓</span>`:`<button onclick="bexpDelRow(${i})" title="Remove row" style="background:none;border:none;color:var(--mute);font-size:16px;cursor:pointer;line-height:1;padding:0">×</button>`}
       ${stat?`<div style="grid-column:1/-1;padding:1px 0 2px">${stat}</div>`:''}
@@ -4591,7 +4591,7 @@ function vNewQuote(){
       <div class="qbc-item">
         <div style="position:relative;margin-bottom:4px">
           <input id="qbIN${i}" type="text" autocomplete="off" placeholder="Item name" value="${qesc(it.name)}" oninput="qbItemName(${i},this.value)" onfocus="qbItemNameFocus(${i})" onblur="qbItemNameBlur(${i})" style="margin-bottom:0;font-weight:600;width:100%">
-          <div id="qbIND${i}" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 26px rgba(21,32,43,.16);max-height:190px;overflow-y:auto;z-index:60"></div>
+          <div id="qbIND${i}" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 26px rgba(0,0,0,.3);max-height:190px;overflow-y:auto;z-index:60"></div>
         </div>
         <input type="text" placeholder="Add a description to your item" value="${qesc(it.description)}" oninput="qbItem(${i},'description',this.value)" style="margin-bottom:0;font-size:11px;color:var(--mute)">
       </div>
@@ -4605,7 +4605,7 @@ function vNewQuote(){
 
   const custBlock = QB.customerId
     ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-         <div class="wchip" style="background:#EEF2FE;border-color:#C7D5F5"><b>${qesc(QB.customerName)}</b>
+         <div class="wchip" style="background:rgba(91,141,239,.16);border-color:rgba(91,141,239,.35);color:var(--ink)"><b>${qesc(QB.customerName)}</b>
            <span style="cursor:pointer;color:var(--bad);font-weight:700;margin-left:6px" onclick="qbClearCust()">✕</span></div>
          <span class="pill" style="background:#E7F6EC;color:#0F7A34">⦿ ${qesc(cur)}</span></div>`
     : `<input type="text" id="qbCustSearch" ${tip('Type the client name, then pick them from the list')} placeholder="Search customer name (from Zoho)…" oninput="qbSearch(this.value)" autocomplete="off" style="margin-bottom:0">
@@ -4614,7 +4614,7 @@ function vNewQuote(){
   return `
   <h2>${QB.id?'Edit quote':'New quote'}</h2>
 
-  <div class="card" style="background:#FAFBFD">
+  <div class="card" style="background:var(--surface-2)">
     <label><span style="color:var(--bad)">*</span> Customer name</label>
     ${custBlock}
     <div class="grid2" style="margin-top:14px">
@@ -4643,7 +4643,7 @@ function vNewQuote(){
       <label style="margin-top:12px">Terms &amp; conditions</label>
       <textarea placeholder="Enter the terms and conditions of your business to be displayed in your transaction" oninput="QB.terms=this.value" style="min-height:60px;font-size:12px;margin-bottom:0">${qesc(QB.terms)}</textarea>
     </div>
-    <div class="card" id="qbTotals" style="background:#FAFBFD">${qbTotalsHtml()}</div>
+    <div class="card" id="qbTotals" style="background:var(--surface-2)">${qbTotalsHtml()}</div>
   </div>
 
   ${QB.msg?`<div class="${QB.err?'warn':'ok'}" style="margin-bottom:10px">${qesc(QB.msg)}</div>`:''}
@@ -4691,7 +4691,7 @@ function itemNamesAdd(names){
   fetch('api/item_names.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',names:clean})}).catch(()=>{});
 }
 function qbItemMatches(i){ const q=String((QB.items[i]||{}).name||'').trim().toLowerCase(); let l=ITEMNAMES; if(q) l=ITEMNAMES.filter(n=>n.toLowerCase().includes(q)); return l.slice(0,40); }
-function qbItemNameDD(i){ const list=qbItemMatches(i); if(!list.length) return ''; return list.map(n=>`<div data-name="${qesc(n)}" onmousedown="event.preventDefault();qbItemPickEl(${i},this)" style="padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line);background:#fff" onmouseover="this.style.background='#F1F4F8'" onmouseout="this.style.background='#fff'">${qesc(n)}</div>`).join(''); }
+function qbItemNameDD(i){ const list=qbItemMatches(i); if(!list.length) return ''; return list.map(n=>`<div data-name="${qesc(n)}" onmousedown="event.preventDefault();qbItemPickEl(${i},this)" style="padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line);background:var(--surface)" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='var(--surface)'">${qesc(n)}</div>`).join(''); }
 function qbItemName(i,v){ if(QB.items[i]) QB.items[i].name=v; const dd=document.getElementById('qbIND'+i); if(dd){ dd.innerHTML=qbItemNameDD(i); dd.style.display=dd.innerHTML?'block':'none'; } }
 function qbItemNameFocus(i){ const dd=document.getElementById('qbIND'+i); if(dd){ dd.innerHTML=qbItemNameDD(i); dd.style.display=dd.innerHTML?'block':'none'; } }
 function qbItemNameBlur(i){ setTimeout(()=>{ const dd=document.getElementById('qbIND'+i); if(dd) dd.style.display='none'; },150); }
@@ -4788,7 +4788,7 @@ function vClientAccess(){
         <div class="muted">${(a.users||[]).length? (a.users||[]).map(u=>`<span class="pill" style="background:#EEF2FE;color:var(--blue);margin-right:4px">${qesc(u)}</span>`).join('') : 'no users assigned'}</div></div>
         <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="qbAEdit('${qesc(a.id)}','${qesc(a.name||'').replace(/'/g,'&#39;')}')">Edit</button></div>`).join('')
     : `<div class="muted" style="font-size:12px;padding:14px;text-align:center">No clients assigned yet. Search a client above to begin.</div>`;
-  const editor = QB.aCust ? `<div class="card" style="background:#FAFBFD;margin-top:10px">
+  const editor = QB.aCust ? `<div class="card" style="background:var(--surface-2);margin-top:10px">
       <div class="row" style="margin-bottom:8px"><b style="font-size:13px">${qesc(QB.aCust.name)}</b>
         <span style="cursor:pointer;color:var(--bad);font-weight:700" onclick="QB.aCust=null;render()" title="Close">✕</span></div>
       <div class="muted" style="font-size:11.5px;margin-bottom:8px">Tick the users this client belongs to (a client can go to as many users as you like):</div>
