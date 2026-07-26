@@ -5,11 +5,13 @@
    The user then picks the real Zoho customer, reviews, and saves as usual. */
 session_start();
 require_once __DIR__ . '/../csrf.php'; csrf_guard();
+require_once __DIR__ . '/../errors.php';
 header('Content-Type: application/json; charset=utf-8');
 if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
 require __DIR__ . '/../zoho.php';
 @set_time_limit(120);
 
+try {
 $cfg = zoho_config();
 $KEY = trim((string)($cfg['anthropic_api_key'] ?? ''));
 if ($KEY === '') { echo json_encode(['ok'=>false, 'error'=>'AI isn’t set up yet — add anthropic_api_key to config.php on the server.']); exit; }
@@ -74,3 +76,6 @@ echo json_encode(['ok'=>true, 'quote'=>[
     'reference'=>mb_substr(trim((string)($q['reference'] ?? '')), 0, 100),
     'items'=>$items,
 ]]);
+} catch (\Throwable $e) {
+    echo api_fail($e, [], 'Could not read that file. Please try a clearer PDF, image or CSV.');
+}

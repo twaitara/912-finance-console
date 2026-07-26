@@ -280,6 +280,30 @@ if (isset($_GET['invpdf'])) {
     echo $body; exit;
 }
 
+/* Admin-only: read recent server errors (data/error.log) to diagnose a "ref"
+   code shown to a user. Visit index.php?errlog=1 (optionally &ref=XXXXXX). */
+if (isset($_GET['errlog'])) {
+    header('Content-Type: text/plain; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo 'Admins only.'; exit; }
+    $lf = __DIR__ . '/data/error.log';
+    if (!is_file($lf)) { echo "No errors have been logged.\n"; exit; }
+    $lines = @file($lf, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+    $filter = strtoupper(trim((string)($_GET['ref'] ?? '')));
+    $shown = 0;
+    foreach (array_reverse(array_slice($lines, -200)) as $ln) {
+        $j = json_decode($ln, true);
+        if (!is_array($j)) { if ($filter === '') echo $ln . "\n"; continue; }
+        if ($filter !== '' && stripos((string)($j['ref'] ?? ''), $filter) === false) continue;
+        echo ($j['ts'] ?? '') . '  [ref ' . ($j['ref'] ?? '') . ']  ' . ($j['type'] ?? '') . (isset($j['sqlstate']) ? (' SQLSTATE ' . $j['sqlstate']) : '') . "\n"
+           . '   MSG : ' . ($j['msg'] ?? '') . "\n"
+           . '   AT  : ' . ($j['file'] ?? '') . ':' . ($j['line'] ?? '') . "\n"
+           . '   REQ : ' . ($j['req'] ?? '') . '   user=' . ($j['user'] ?? '') . "\n\n";
+        if (++$shown >= 40) break;
+    }
+    if ($shown === 0 && $filter !== '') echo "No error found with ref $filter (only the last 200 are kept in view).\n";
+    exit;
+}
+
 // --- login gate (master password = admin; or a per-user account) ---
 $justLoggedIn = false;
 if (isset($_POST['app_password'])) {
