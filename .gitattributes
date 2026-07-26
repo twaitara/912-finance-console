@@ -1,0 +1,3 @@
+# keep shell scripts LF so Git Bash runs them on Windows
+*.sh text eol=lf
+deploy.sh text eol=lf
