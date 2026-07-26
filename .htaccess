@@ -16,3 +16,11 @@ RewriteRule . /index.php [L]
 <Files "config.php">
   Require all denied
 </Files>
+# Dotfiles (.htaccess/.htaccess1/.htpasswd/…), env files, backups, PHP error
+# logs (extensionless), and setup templates — deny everywhere below this dir.
+<FilesMatch "^\.ht">
+  Require all denied
+</FilesMatch>
+<FilesMatch "(^error_log$|^\.deploy\.env$|\.env$|\.(old|bak|orig|swp|save)$)">
+  Require all denied
+</FilesMatch>

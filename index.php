@@ -310,6 +310,7 @@ if (isset($_POST['app_password'])) {
     $pw = $_POST['app_password'];
     $un = trim($_POST['app_user'] ?? '');
     if (hash_equals($cfg['app_password'], $pw)) {
+        session_regenerate_id(true);                                // prevent session fixation
         $_SESSION['auth'] = true; $_SESSION['user'] = 'admin'; $_SESSION['is_admin'] = 1; $_SESSION['tabs'] = '*';
         $_SESSION['email'] = $un;                                   // remember who typed in the master login
         $justLoggedIn = true;
@@ -319,6 +320,7 @@ if (isset($_POST['app_password'])) {
         $row = false;
         try { require_once __DIR__ . '/db.php'; $row = user_authenticate(db(), $un, $pw); } catch (Exception $e) { $row = false; }
         if ($row) {
+            session_regenerate_id(true);                            // prevent session fixation
             $_SESSION['auth'] = true;
             $_SESSION['user'] = $row['username'];
             $_SESSION['email'] = $row['email'] ?? '';

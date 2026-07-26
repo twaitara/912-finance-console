@@ -20,7 +20,14 @@ set -a; . ./.deploy.env; set +a
 
 REMOTE="${FTP_REMOTE_DIR:-.}"; REMOTE="${REMOTE%/}"; [ "$REMOTE" = "." ] && REMOTE=""
 BASE="ftp://${FTP_HOST}/${REMOTE:+$REMOTE/}"
-TLS=$([ "${FTP_TLS:-1}" = "1" ] && echo "--ssl-reqd" || echo "")
+# FTP over TLS. The LOGIN (control channel) is encrypted so your password is
+# never sent in clear. The file transfer itself uses the data channel in the
+# clear — required because Pure-FTPd + Windows curl can't do TLS session reuse
+# on the data channel (causes FTP 451). -k relaxes the hostname check since the
+# cPanel FTP cert is for the server's own hostname. Set FTP_TLS=0 for plain FTP.
+TLS="--ftp-pasv"
+[ "${FTP_TLS:-1}" = "1" ] && TLS="$TLS --ftp-ssl-control"
+[ "${FTP_INSECURE:-1}" = "1" ] && TLS="$TLS -k"
 
 # 1) push to GitHub (optional)
 if [ "${GIT_PUSH:-1}" = "1" ]; then
@@ -28,12 +35,20 @@ if [ "${GIT_PUSH:-1}" = "1" ]; then
   git push origin main || echo "(git push skipped/failed — continuing with the upload)"
 fi
 
-# 2) upload to cPanel over FTP(S)
-up(){ echo "  -> $2"; curl -fsS $TLS --ftp-create-dirs -T "$1" "${BASE}$2" --user "${FTP_USER}:${FTP_PASS}"; }
+# 2) upload to cPanel over FTP(S). --ftp-method nocwd sends the full path in one
+# STOR (no CWD), which avoids "denied you to change to the given directory" on
+# restricted accounts. Per-file timeout so a stalled transfer can't hang.
+FILES=()
+for f in index.php app.js app.css .htaccess .user.ini; do [ -f "$f" ] && FILES+=("$f"); done
+while IFS= read -r -d '' f; do FILES+=("$f"); done < <(find api -type f -not -name 'error_log' -not -name '*.log' -not -name '*.old' -not -name '*.bak' -print0)
+[ -f data/.htaccess ] && FILES+=("data/.htaccess")
 
-echo "== Uploading to ${FTP_HOST}/${REMOTE:-<home>} =="
-for f in index.php app.js app.css .htaccess .user.ini; do [ -f "$f" ] && up "$f" "$f"; done
-while IFS= read -r -d '' f; do up "$f" "$f"; done < <(find api -type f -print0)
-[ -f data/.htaccess ] && up data/.htaccess "data/.htaccess"
+echo "== Uploading ${#FILES[@]} files to ${FTP_HOST}/${REMOTE:-<home>} =="
+UP_FAIL=0
+for f in "${FILES[@]}"; do
+  printf "  -> %s " "$f"
+  if curl -sS $TLS --ftp-method nocwd --connect-timeout 20 -m 90 -T "$f" "${BASE}${f}" --user "${FTP_USER}:${FTP_PASS}"; then echo "ok"; else echo "FAILED"; UP_FAIL=$((UP_FAIL+1)); fi
+done
+[ "$UP_FAIL" -eq 0 ] && echo "== all files uploaded ==" || echo "== WARNING: $UP_FAIL file(s) failed to upload =="
 
 echo "== DEPLOYED $(git rev-parse --short HEAD 2>/dev/null || echo '?') to ${FTP_HOST}/${REMOTE:-<home>} =="
