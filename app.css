@@ -101,21 +101,25 @@
   table.rpt td.cl{font-weight:700;text-transform:uppercase}
   table.rpt tr.tot td{font-weight:700;border-top:2px solid var(--ink);background:#F7F8FB;font-size:10.5px}
   table.rpt td.pos{color:var(--good)} table.rpt td.neg{color:var(--bad)}
-  /* ---- Responsive: phone stays as-is; tablet/PC widens into a framed app ---- */
+  /* ---- Responsive: phone stays as-is; tablet/PC fills the full screen width ---- */
   @media (min-width:820px){
-    body{padding:28px 0}
-    .wrap{max-width:1100px;min-height:auto;border-radius:18px;overflow:hidden;
-          box-shadow:0 12px 44px rgba(20,32,43,.14);border:1px solid var(--line)}
-    .pane{padding:22px 26px}
+    body{padding:0}
+    .wrap{max-width:none;min-height:100vh;border-radius:0;overflow:visible;
+          box-shadow:none;border:none}
+    .pane{padding:22px 34px}
     .cardgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
     .cardgrid > .card{margin-bottom:0}
     .tabs button{font-size:11px;padding:6px 11px}
   }
+  /* Comfortable side gutters that grow on larger monitors (still full width) */
   @media (min-width:1180px){
-    .wrap{max-width:1320px}
+    .pane{padding:24px 46px}
   }
   @media (min-width:1500px){
-    .wrap{max-width:1480px}
+    .pane{padding:26px 64px}
+  }
+  @media (min-width:1900px){
+    .pane{padding:28px 90px}
   }
 
   /* ===================== Motion & micro-interactions ===================== */
