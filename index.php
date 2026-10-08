@@ -258,19 +258,26 @@ if (isset($_GET['gracecreds'])) {
     if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
     $gf  = __DIR__ . '/data/grace_auth.json';
     $curG = is_file($gf) ? (json_decode(@file_get_contents($gf), true) ?: []) : [];
+    // migrate legacy {user,hash} -> staff slot
+    if (!isset($curG['staff']) && !empty($curG['user']) && !empty($curG['hash'])) { $curG['staff'] = ['user'=>$curG['user'], 'hash'=>$curG['hash']]; unset($curG['user'], $curG['hash']); }
     $inG = json_decode(file_get_contents('php://input'), true) ?: [];
     if (($inG['action'] ?? '') === 'save') {
+        $slot = (($inG['slot'] ?? 'staff') === 'owner') ? 'owner' : 'staff';
         $u = trim((string)($inG['user'] ?? ''));
         $p = (string)($inG['pass'] ?? '');
         if ($u === '') { echo json_encode(['ok'=>false, 'error'=>'Username is required.']); exit; }
-        $hash = (string)($curG['hash'] ?? '');
+        $hash = (string)($curG[$slot]['hash'] ?? '');
         if ($p !== '') { if (strlen($p) < 4) { echo json_encode(['ok'=>false, 'error'=>'Password must be at least 4 characters.']); exit; } $hash = password_hash($p, PASSWORD_DEFAULT); }
         if ($hash === '') { echo json_encode(['ok'=>false, 'error'=>'Set a password for the first time.']); exit; }
+        $curG[$slot] = ['user'=>$u, 'hash'=>$hash, 'updated'=>date('c')];
         $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true);
-        @file_put_contents($gf, json_encode(['user'=>$u, 'hash'=>$hash, 'updated'=>date('c')]));
-        echo json_encode(['ok'=>true, 'configured'=>true, 'user'=>$u]); exit;
+        @file_put_contents($gf, json_encode($curG));
+        echo json_encode(['ok'=>true, 'slot'=>$slot, 'configured'=>true, 'user'=>$u]); exit;
     }
-    echo json_encode(['ok'=>true, 'configured'=>(!empty($curG['user']) && !empty($curG['hash'])), 'user'=>(string)($curG['user'] ?? '')]);
+    echo json_encode(['ok'=>true,
+        'staff'=>['configured'=>(!empty($curG['staff']['user']) && !empty($curG['staff']['hash'])), 'user'=>(string)($curG['staff']['user'] ?? '')],
+        'owner'=>['configured'=>(!empty($curG['owner']['user']) && !empty($curG['owner']['hash'])), 'user'=>(string)($curG['owner']['user'] ?? '')],
+    ]);
     exit;
 }
 

@@ -24,7 +24,7 @@ if (!function_exists('gp_build')) {
     /* All unpaid invoices grouped by customer, with cached phone + overlaid notes. */
     function gp_build($force) {
         $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        $cache = $dir . '/grace_unpaid_v1.json';
+        $cache = $dir . '/grace_unpaid_v2.json';
         if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
         $cfg = zoho_config();
 
@@ -37,6 +37,7 @@ if (!function_exists('gp_build')) {
                 $bal = (float)($inv['balance'] ?? 0); if ($bal <= 0) continue;
                 if (($inv['status'] ?? '') === 'void') continue;
                 $rows[] = [
+                    'id'       => (string)($inv['invoice_id'] ?? ''),
                     'cid'      => (string)($inv['customer_id'] ?? ''),
                     'customer' => (string)($inv['customer_name'] ?? ''),
                     'number'   => (string)($inv['invoice_number'] ?? ''),
@@ -128,8 +129,15 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     $gDir = __DIR__ . '/data';
 
     $gAuthFile = $gDir . '/grace_auth.json';
-    $gCreds = null;
-    if (is_file($gAuthFile)) { $j = json_decode(@file_get_contents($gAuthFile), true); if (is_array($j) && !empty($j['user']) && !empty($j['hash'])) $gCreds = ['user'=>$j['user'], 'hash'=>$j['hash']]; }
+    /* Accounts: new format {staff:{user,hash}, owner:{user,hash}}; legacy {user,hash} => staff. */
+    $gAccounts = [];
+    if (is_file($gAuthFile)) {
+        $j = json_decode(@file_get_contents($gAuthFile), true);
+        if (is_array($j)) {
+            foreach (['staff', 'owner'] as $slot) { if (!empty($j[$slot]['user']) && !empty($j[$slot]['hash'])) $gAccounts[] = ['user'=>$j[$slot]['user'], 'hash'=>$j[$slot]['hash'], 'role'=>$slot]; }
+            if (!$gAccounts && !empty($j['user']) && !empty($j['hash'])) $gAccounts[] = ['user'=>$j['user'], 'hash'=>$j['hash'], 'role'=>'staff'];
+        }
+    }
     $gDisabled = !empty(gp_prefs($gDir)['disabled']);
 
     if (isset($_GET['logout'])) { $_SESSION = []; session_destroy(); header('Location: index.php?portal=grace'); exit; }
@@ -137,9 +145,9 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     $gErr = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['grace_login'])) {
         $u = trim((string)($_POST['u'] ?? '')); $p = (string)($_POST['p'] ?? '');
-        $ok = false;
-        if ($gCreds && !$gDisabled) $ok = hash_equals(strtolower($gCreds['user']), strtolower($u)) && password_verify($p, $gCreds['hash']);
-        if ($ok) { session_regenerate_id(true); $_SESSION['grace_auth'] = true; $_SESSION['grace_user'] = $u; header('Location: index.php?portal=grace'); exit; }
+        $ok = false; $role = '';
+        if (!$gDisabled) { foreach ($gAccounts as $a) { if (hash_equals(strtolower($a['user']), strtolower($u)) && password_verify($p, $a['hash'])) { $ok = true; $role = $a['role']; break; } } }
+        if ($ok) { session_regenerate_id(true); $_SESSION['grace_auth'] = true; $_SESSION['grace_user'] = $u; $_SESSION['grace_role'] = $role; header('Location: index.php?portal=grace'); exit; }
         $gErr = $gDisabled ? 'This portal is currently disabled.' : 'Wrong username or password.';
     }
     $gAuthed = !$gDisabled && !empty($_SESSION['grace_auth']);
@@ -167,10 +175,27 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
             $pdo->prepare("INSERT INTO grace_notes (zoho_customer_id,customer_name,status,note,promised_date,phone) VALUES (?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),status=VALUES(status),note=VALUES(note),promised_date=VALUES(promised_date),phone=VALUES(phone)")
                 ->execute([$cid, $name, $status, $note, $pd, $phone]);
-            // if the cached dataset exists, patch this customer so the change shows on next load without a full rebuild
             echo json_encode(['ok'=>true]);
         } catch (\Throwable $e) { echo api_fail($e); }
         exit;
+    }
+
+    /* Stream an invoice PDF so Grace / the owner can see the full invoice detail. */
+    if (isset($_GET['pdf'])) {
+        if (!$gAuthed) { http_response_code(403); echo 'Not signed in.'; exit; }
+        $pid = preg_replace('/[^0-9]/', '', (string)$_GET['pdf']);
+        if ($pid === '') { http_response_code(404); echo 'Not found.'; exit; }
+        $cfg = zoho_config();
+        try { $token = zoho_access_token(); } catch (\Throwable $e) { http_response_code(502); echo 'Auth error.'; exit; }
+        $url = $cfg['api_domain'] . '/books/v3/invoices/' . rawurlencode($pid) . '?' . http_build_query(['organization_id'=>$cfg['organization_id'], 'accept'=>'pdf']);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . $token, 'Accept: application/pdf']]);
+        $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Invoice preview unavailable — please check your browser plugins.'; exit; }
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="invoice-' . $pid . '.pdf"');
+        header('X-Content-Type-Options: nosniff');
+        echo $body; exit;
     }
 
     $gEsc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -270,6 +295,8 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .inv .num{font-family:var(--mono);font-weight:500;flex:0 0 auto}
   .inv .dd{color:var(--mute);font-size:11.5px}
   .inv .ia{margin-left:auto;font-family:var(--mono);font-weight:500;white-space:nowrap}
+  .ivv{flex:0 0 auto;margin-left:10px;color:var(--mail);font-weight:600;font-size:11.5px;text-decoration:none;border:1px solid var(--line);border-radius:3px;padding:3px 9px}
+  .ivv:hover{background:var(--blue-bg)}
   .saveddot{font-size:11px;color:var(--green);font-weight:600;margin-left:6px;opacity:0;transition:opacity .2s}
   .saveddot.show{opacity:1}
   .bar{position:fixed;top:0;left:0;height:2px;background:var(--brand);width:0;transition:width .2s,opacity .3s;opacity:0;z-index:999}
@@ -306,7 +333,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     <div class="muted" style="font-size:13.5px">Sign in to chase today's unpaid invoices.</div>
     <?php if ($gDisabled): ?>
       <div class="err">This portal is currently disabled. Please contact the administrator.</div>
-    <?php elseif (!$gCreds): ?>
+    <?php elseif (empty($gAccounts)): ?>
       <div class="err">This portal isn't set up yet. The administrator needs to set a username and password (Settings → Portals).</div>
     <?php else: ?>
     <form method="post" action="index.php?portal=grace" autocomplete="off">
@@ -447,7 +474,7 @@ function renderCard(c){
   const schips=STAT.map(s=>`<button class="sc ${c.status===s?'on':''}" data-s="${s}" onclick="tapStatus('${jsq(cid)}','${s}')">${s}</button>`).join('');
   const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
   const invBtn=`<button class="invlink" onclick="toggleInv('${jsq(cid)}')">${c.count} invoice${c.count===1?'':'s'} ${EXP[cid]?'▴':'▾'}</button>`;
-  const invBox=EXP[cid]?`<div class="invbox">${c.invoices.map(iv=>`<div class="inv"><span class="num">${esc(iv.number)}</span><span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span></div>`).join('')}</div>`:'';
+  const invBox=EXP[cid]?`<div class="invbox">${c.invoices.map(iv=>`<div class="inv"><span class="num">${esc(iv.number)}</span><span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<a class="ivv" href="index.php?portal=grace&pdf=${att(iv.id)}" target="_blank" rel="noopener">View</a>`:''}</div>`).join('')}</div>`:'';
   return `<div class="cx ${c.status==='Paid'?'paid':''}">
     <div class="r1"><div class="nm">${esc(c.customer||'(unnamed)')}</div>${spill}</div>
     <div class="r2"><div class="amt">${esc(fmtMap(c.totalByCur))}</div>${daysPill}${invBtn}</div>
