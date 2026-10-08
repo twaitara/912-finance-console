@@ -54,7 +54,7 @@ let FUNDFORM = { name:'', balance:'', msg:'', err:false };
 const AUDREY_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'audrey.php';
 const TASKBOARD_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'tasks_board.php';
 const BEN_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'index.php?portal=ben';
-const GRACE_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'grace';
+const GRACE_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'grace.php';
 function copyBoard(btn){ try{ navigator.clipboard.writeText(TASKBOARD_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1500);}catch(e){} }
 let BK = { folder:'', running:false, msg:'', msgErr:false, loaded:false,
            pick:{ open:false, loading:false, current:null, folders:[], roots:[], err:'' } };
@@ -3042,7 +3042,7 @@ function vPortals(){
     </div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn" style="width:auto;padding:9px 16px" onclick="graceSave()">Save access</button>
-      <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="grace" target="_blank" rel="noopener">Open portal ↗</a>
+      <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="grace.php" target="_blank" rel="noopener">Open portal ↗</a>
       <button class="btn sec" style="width:auto;padding:9px 14px" onclick="graceCopy(this)">Copy link</button>
     </div>
   </div>
