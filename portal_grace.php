@@ -21,10 +21,39 @@ if (!function_exists('gp_build')) {
         /* migrate older tables that predate the phone column */
         try { $pdo->exec("ALTER TABLE grace_notes ADD COLUMN phone VARCHAR(40) DEFAULT ''"); } catch (\Throwable $e) { /* already exists */ }
     }
+    /* Fetch one invoice's line items from Zoho and distil a short "what it's for"
+       summary. Returned struct feeds both the inline summary and the detail popup. */
+    function gp_inv_fetch_raw($id) {
+        try {
+            [$d, $c] = zoho_api('GET', 'invoices/' . rawurlencode($id));
+            if ($c >= 400 || empty($d['invoice'])) return null;
+            $iv = $d['invoice'];
+            $items = [];
+            foreach (($iv['line_items'] ?? []) as $li) {
+                $items[] = [
+                    'name' => (string)($li['name'] ?? ''), 'desc' => (string)($li['description'] ?? ''),
+                    'qty' => (float)($li['quantity'] ?? 0), 'rate' => (float)($li['rate'] ?? 0), 'amt' => (float)($li['item_total'] ?? 0),
+                ];
+            }
+            $names = [];
+            foreach ($items as $it) { $t = trim($it['name'] !== '' ? $it['name'] : $it['desc']); if ($t !== '') $names[] = $t; }
+            $summary = '';
+            if ($names) { $summary = $names[0]; if (count($names) > 1) $summary .= '  +' . (count($names) - 1) . ' more'; }
+            elseif (trim((string)($iv['notes'] ?? '')) !== '') { $summary = trim((string)$iv['notes']); }
+            $summary = mb_substr($summary, 0, 90);
+            return [
+                'id' => (string)$id, 'number' => (string)($iv['invoice_number'] ?? ''), 'customer' => (string)($iv['customer_name'] ?? ''),
+                'date' => substr((string)($iv['date'] ?? ''), 0, 10), 'due' => substr((string)($iv['due_date'] ?? ''), 0, 10),
+                'status' => (string)($iv['status'] ?? ''), 'currency' => strtoupper((string)($iv['currency_code'] ?? '')),
+                'total' => (float)($iv['total'] ?? 0), 'balance' => (float)($iv['balance'] ?? 0),
+                'notes' => (string)($iv['notes'] ?? ''), 'items' => $items, 'summary' => $summary,
+            ];
+        } catch (\Throwable $e) { return null; }
+    }
     /* All unpaid invoices grouped by customer, with cached phone + overlaid notes. */
     function gp_build($force) {
         $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        $cache = $dir . '/grace_unpaid_v2.json';
+        $cache = $dir . '/grace_unpaid_v3.json';
         if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
         $cfg = zoho_config();
 
@@ -89,6 +118,23 @@ if (!function_exists('gp_build')) {
         }
         unset($g);
         if ($dirty) @file_put_contents($dir . '/grace_phones.json', json_encode($phones));
+
+        // 3.5) invoice "what it's for" summaries (cached persistently; fetch uncached, capped per load)
+        $invMap = is_file($dir . '/grace_inv.json') ? (json_decode(@file_get_contents($dir . '/grace_inv.json'), true) ?: []) : [];
+        $invDirty = false; $ifetched = 0; $ICAP = 40;
+        foreach ($byCust as &$g) {
+            foreach ($g['invoices'] as &$iv) {
+                $iid = $iv['id'];
+                if ($iid === '') { $iv['about'] = ''; continue; }
+                if (isset($invMap[$iid])) { $iv['about'] = (string)($invMap[$iid]['summary'] ?? ''); continue; }
+                if ($ifetched >= $ICAP) { $iv['about'] = ''; continue; }
+                $det = gp_inv_fetch_raw($iid); $ifetched++;
+                if ($det) { $invMap[$iid] = $det; $invDirty = true; $iv['about'] = (string)($det['summary'] ?? ''); }
+                else { $iv['about'] = ''; }
+            }
+        }
+        unset($g, $iv);
+        if ($invDirty) @file_put_contents($dir . '/grace_inv.json', json_encode($invMap));
 
         // 4) notes overlay (incl. Grace's own saved phone, which wins over Zoho)
         $notes = [];
@@ -180,22 +226,22 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
         exit;
     }
 
-    /* Stream an invoice PDF so Grace / the owner can see the full invoice detail. */
-    if (isset($_GET['pdf'])) {
-        if (!$gAuthed) { http_response_code(403); echo 'Not signed in.'; exit; }
-        $pid = preg_replace('/[^0-9]/', '', (string)$_GET['pdf']);
-        if ($pid === '') { http_response_code(404); echo 'Not found.'; exit; }
-        $cfg = zoho_config();
-        try { $token = zoho_access_token(); } catch (\Throwable $e) { http_response_code(502); echo 'Auth error.'; exit; }
-        $url = $cfg['api_domain'] . '/books/v3/invoices/' . rawurlencode($pid) . '?' . http_build_query(['organization_id'=>$cfg['organization_id'], 'accept'=>'pdf']);
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . $token, 'Accept: application/pdf']]);
-        $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-        if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Invoice preview unavailable — please check your browser plugins.'; exit; }
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="invoice-' . $pid . '.pdf"');
-        header('X-Content-Type-Options: nosniff');
-        echo $body; exit;
+    /* Invoice detail as JSON for the "what it's for" popup (line items, not a PDF). */
+    if (isset($_GET['inv'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$gAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
+        $iid = preg_replace('/[^0-9]/', '', (string)$_GET['inv']);
+        if ($iid === '') { echo json_encode(['ok'=>false, 'error'=>'Invoice not found.']); exit; }
+        try {
+            $f = $gDir . '/grace_inv.json';
+            $map = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : [];
+            if (isset($map[$iid])) { echo json_encode(['ok'=>true, 'invoice'=>$map[$iid]]); exit; }
+            $det = gp_inv_fetch_raw($iid);
+            if (!$det) { http_response_code(502); echo json_encode(['ok'=>false, 'error'=>'Could not load this invoice.']); exit; }
+            $map[$iid] = $det; @file_put_contents($f, json_encode($map));
+            echo json_encode(['ok'=>true, 'invoice'=>$det]);
+        } catch (\Throwable $e) { echo api_fail($e); }
+        exit;
     }
 
     $gEsc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -290,13 +336,30 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .dt input{padding:9px 11px;border:1px solid var(--line);border-radius:3px;font-family:inherit;font-size:13.5px;background:var(--soft)}
   .dt input:focus{outline:none;border-color:var(--brand)}
   .invbox{margin-top:11px;border-top:1px solid var(--hair);padding-top:9px}
-  .inv{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--hair);font-size:12.5px}
+  .inv{padding:7px 0;border-bottom:1px solid var(--hair);font-size:12.5px}
   .inv:last-child{border-bottom:0}
+  .invtop{display:flex;align-items:center;gap:8px}
   .inv .num{font-family:var(--mono);font-weight:500;flex:0 0 auto}
   .inv .dd{color:var(--mute);font-size:11.5px}
   .inv .ia{margin-left:auto;font-family:var(--mono);font-weight:500;white-space:nowrap}
-  .ivv{flex:0 0 auto;margin-left:10px;color:var(--mail);font-weight:600;font-size:11.5px;text-decoration:none;border:1px solid var(--line);border-radius:3px;padding:3px 9px}
+  .iabout{color:var(--mute);font-size:11.5px;margin-top:4px;line-height:1.35}
+  .ivv{flex:0 0 auto;margin-left:10px;color:var(--mail);font-weight:600;font-size:11.5px;background:var(--card);cursor:pointer;border:1px solid var(--line);border-radius:3px;padding:4px 10px;font-family:inherit}
   .ivv:hover{background:var(--blue-bg)}
+  /* invoice detail popup */
+  .modal{position:fixed;inset:0;background:rgba(20,16,12,.55);display:none;z-index:200;overflow:auto;padding:16px}
+  .modal.open{display:block}
+  .mcard{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--brand);max-width:640px;margin:36px auto}
+  .mhead{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
+  .mhead .mt{font-family:var(--mono);font-weight:600;font-size:15px}
+  .mx{margin-left:auto;background:var(--card);border:1px solid var(--line);border-radius:3px;width:30px;height:30px;cursor:pointer;font-size:16px;font-family:inherit;color:var(--mute);line-height:1}
+  .mbody{padding:16px 18px}
+  .mmeta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-bottom:14px}
+  .mtbl{width:100%;border-collapse:collapse;font-size:12.5px}
+  .mtbl th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);padding:6px 8px;border-bottom:1px solid var(--line)}
+  .mtbl td{padding:8px 8px;border-bottom:1px solid var(--hair);vertical-align:top}
+  .mtbl td.r{text-align:right;font-family:var(--mono);white-space:nowrap}
+  .mtot{display:flex;justify-content:space-between;margin-top:12px;font-weight:600;font-size:14px}
+  .mtot .mono{font-family:var(--mono)}
   .saveddot{font-size:11px;color:var(--green);font-weight:600;margin-left:6px;opacity:0;transition:opacity .2s}
   .saveddot.show{opacity:1}
   .bar{position:fixed;top:0;left:0;height:2px;background:var(--brand);width:0;transition:width .2s,opacity .3s;opacity:0;z-index:999}
@@ -350,6 +413,12 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
 <?php else: ?>
 <div class="wrap" id="app"><div class="empty">Loading today's unpaid invoices…</div></div>
 <div class="pgfoot"><div class="cn">Waitara Holdings Group of Companies · Collections</div><div class="sc2">CONFIDENTIAL</div></div>
+<div id="invModal" class="modal" onclick="if(event.target===this)closeInv()">
+  <div class="mcard">
+    <div class="mhead"><span class="mt" id="invTitle">Invoice</span><button class="mx" onclick="closeInv()">×</button></div>
+    <div class="mbody" id="invBody"></div>
+  </div>
+</div>
 <script>
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const att=s=>esc(s).replace(/'/g,'&#39;');
@@ -382,6 +451,28 @@ function openPhone(cid){EDITPH[cid]=true;renderList();const i=document.getElemen
 function savePhone(cid){const i=document.getElementById('ph_'+cid);if(!i)return;const c=cust(cid);if(!c)return;c.phone=i.value.trim();EDITPH[cid]=false;persist(cid);renderList();}
 function setSort(s){SORT=s;renderList();}
 function setFilter(f){FILTER=f;renderList();}
+function closeInv(){const m=document.getElementById('invModal');if(m)m.classList.remove('open');}
+async function openInv(id){
+  const m=document.getElementById('invModal'),b=document.getElementById('invBody'),t=document.getElementById('invTitle');
+  if(!m)return; m.classList.add('open'); t.textContent='Invoice'; b.innerHTML='<div class="muted" style="padding:8px">Loading invoice…</div>';
+  try{
+    const r=await fetch('index.php?portal=grace&inv='+encodeURIComponent(id),{credentials:'same-origin'});
+    const j=await r.json();
+    if(!j||!j.ok){ b.innerHTML='<div style="padding:8px;color:var(--red)">'+esc((j&&j.error)||'Could not load this invoice.')+'</div>'; return; }
+    const iv=j.invoice; t.textContent=iv.number||'Invoice';
+    const rows=(iv.items||[]).map(it=>`<tr>
+        <td><div style="color:var(--ink);font-weight:600">${esc(it.name||it.desc||'—')}</div>${(it.name&&it.desc)?`<div class="muted" style="font-size:11px;margin-top:2px">${esc(it.desc)}</div>`:''}</td>
+        <td class="r">${it.qty?(+it.qty).toLocaleString('en-US'):''}</td>
+        <td class="r">${it.rate?fmtC(iv.currency,it.rate):''}</td>
+        <td class="r">${fmtC(iv.currency,it.amt)}</td></tr>`).join('');
+    b.innerHTML=`
+      <div class="mmeta"><span><b style="color:var(--ink)">${esc(iv.customer||'')}</b></span><span>Date: ${esc(iv.date||'—')}</span><span>Due: ${esc(iv.due||'—')}</span>${iv.status?`<span>Status: ${esc(iv.status)}</span>`:''}</div>
+      ${rows?`<table class="mtbl"><thead><tr><th>Item / description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="muted">No line items recorded on this invoice.</div>'}
+      <div class="mtot"><span>Invoice total</span><span class="mono">${fmtC(iv.currency,iv.total)}</span></div>
+      <div class="mtot" style="color:var(--red)"><span>Balance due</span><span class="mono">${fmtC(iv.currency,iv.balance)}</span></div>
+      ${iv.notes?`<div class="muted" style="margin-top:14px;font-size:12px"><b style="color:var(--ink)">Notes:</b> ${esc(iv.notes)}</div>`:''}`;
+  }catch(e){ b.innerHTML='<div style="padding:8px;color:var(--red)">Error: '+esc(String(e))+'</div>'; }
+}
 function matchFilter(c){
   if(FILTER==='urgent')return (c.maxOverdue||0)>=30;
   if(FILTER==='todo')return !c.status && c.status!=='Paid';
@@ -474,7 +565,10 @@ function renderCard(c){
   const schips=STAT.map(s=>`<button class="sc ${c.status===s?'on':''}" data-s="${s}" onclick="tapStatus('${jsq(cid)}','${s}')">${s}</button>`).join('');
   const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
   const invBtn=`<button class="invlink" onclick="toggleInv('${jsq(cid)}')">${c.count} invoice${c.count===1?'':'s'} ${EXP[cid]?'▴':'▾'}</button>`;
-  const invBox=EXP[cid]?`<div class="invbox">${c.invoices.map(iv=>`<div class="inv"><span class="num">${esc(iv.number)}</span><span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<a class="ivv" href="index.php?portal=grace&pdf=${att(iv.id)}" target="_blank" rel="noopener">View</a>`:''}</div>`).join('')}</div>`:'';
+  const invBox=EXP[cid]?`<div class="invbox">${c.invoices.map(iv=>`<div class="inv">
+      <div class="invtop"><span class="num">${esc(iv.number)}</span><span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</div>
+      ${iv.about?`<div class="iabout">${esc(iv.about)}</div>`:''}
+    </div>`).join('')}</div>`:'';
   return `<div class="cx ${c.status==='Paid'?'paid':''}">
     <div class="r1"><div class="nm">${esc(c.customer||'(unnamed)')}</div>${spill}</div>
     <div class="r2"><div class="amt">${esc(fmtMap(c.totalByCur))}</div>${daysPill}${invBtn}</div>
