@@ -200,7 +200,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .top .sp{margin-left:auto;display:flex;gap:8px}
   .tbtn{border:1px solid rgba(255,255,255,.18);color:#fff;background:rgba(255,255,255,.08);border-radius:10px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;white-space:nowrap}
   .tbtn:hover{background:rgba(255,255,255,.18)}
-  .wrap{max-width:860px;margin:0 auto;padding:16px 14px 40px}
+  .wrap{width:100%;max-width:none;margin:0;padding:16px clamp(14px,3.5vw,56px) 48px}
   /* hero */
   .hero{background:linear-gradient(130deg,var(--brand),var(--brand2));color:#fff;border-radius:20px;padding:18px 20px;box-shadow:0 10px 30px rgba(245,111,0,.28);position:relative;overflow:hidden}
   .hero:before{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.12)}
@@ -283,6 +283,8 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .login .in:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 4px rgba(245,111,0,.12)}
   .login .go{width:100%;margin-top:16px;border:0;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;padding:14px;border-radius:12px;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit;box-shadow:0 6px 16px rgba(245,111,0,.3)}
   .login .err{background:var(--red-bg);color:#B42318;border-radius:11px;padding:11px 13px;font-size:13px;margin-top:12px;font-weight:600}
+  /* full-width on computer: flow cards into columns so they fill the screen */
+  @media(min-width:900px){ #gList{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:14px;align-items:start} .cx{margin-bottom:0} }
   @media(max-width:520px){ .hero .ht{font-size:26px} .cx .amt{font-size:21px} }
 </style></head>
 <body>
