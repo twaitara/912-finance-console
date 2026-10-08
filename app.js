@@ -54,6 +54,7 @@ let FUNDFORM = { name:'', balance:'', msg:'', err:false };
 const AUDREY_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'audrey.php';
 const TASKBOARD_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'tasks_board.php';
 const BEN_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'index.php?portal=ben';
+const GRACE_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'grace';
 function copyBoard(btn){ try{ navigator.clipboard.writeText(TASKBOARD_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1500);}catch(e){} }
 let BK = { folder:'', running:false, msg:'', msgErr:false, loaded:false,
            pick:{ open:false, loading:false, current:null, folders:[], roots:[], err:'' } };
@@ -250,7 +251,7 @@ function render(){
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
   if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); } }
-  if(TAB==='portals'){ p.innerHTML = vPortals(); if(ME.admin){ benStatusLoad(); benPrevLoad(); } }
+  if(TAB==='portals'){ p.innerHTML = vPortals(); if(ME.admin){ benStatusLoad(); benPrevLoad(); graceStatusLoad(); graceAccessLoad(); } }
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
@@ -2907,6 +2908,35 @@ function benPrevLoad(){
 }
 function benPrevSave(on){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',preview:on?1:0})}).then(r=>r.json()).catch(()=>{}); }
 function benSetDisabled(v){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>benPrevLoad()).catch(()=>{}); }
+/* ---- Grace collections portal (admin management) ---- */
+function graceStatusLoad(){
+  const el=document.getElementById('graceStatus'); if(!el) return;
+  fetch('?gracecreds=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    const e=document.getElementById('graceStatus'); if(!e) return;
+    if(j&&j.ok&&j.configured){ e.innerHTML='<span style="color:var(--good)">● Active</span> — username <b>'+askEsc(j.user)+'</b>. Enter a new password to change it.'; const u=document.getElementById('graceUser'); if(u&&!u.value) u.value=j.user; }
+    else e.innerHTML='<span style="color:var(--bad)">● Not set up yet</span> — choose a username &amp; password to enable the portal.';
+  }).catch(()=>{});
+}
+function graceSave(){
+  const u=(document.getElementById('graceUser')||{}).value||'';
+  const p=(document.getElementById('gracePass')||{}).value||'';
+  if(!u.trim()){ alert('Enter a username.'); return; }
+  fetch('?gracecreds=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',user:u,pass:p})}).then(r=>r.json()).then(j=>{
+    if(j&&j.ok){ const pw=document.getElementById('gracePass'); if(pw) pw.value=''; graceStatusLoad(); alert('Grace portal access saved.'); }
+    else alert((j&&j.error)||'Could not save.');
+  }).catch(e=>alert('Error: '+e));
+}
+function graceCopy(btn){ try{ navigator.clipboard.writeText(GRACE_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
+function graceAccessLoad(){
+  fetch('?gracepref=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    if(!j||!j.ok) return;
+    const box=document.getElementById('graceAccessBox');
+    if(box){ box.innerHTML = j.disabled
+      ? `<span style="color:var(--bad);font-weight:700;font-size:12.5px">⛔ Grace's access is DISABLED.</span> <button class="btn" style="width:auto;padding:6px 13px;margin-left:6px" onclick="graceSetDisabled(false)">Enable access</button>`
+      : `<button class="btn sec" style="width:auto;padding:8px 14px;border-color:var(--bad);color:var(--bad)" onclick="graceSetDisabled(true)">⛔ Disable Grace's access</button>`; }
+  }).catch(()=>{});
+}
+function graceSetDisabled(v){ fetch('?gracepref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>graceAccessLoad()).catch(()=>{}); }
 function benAiWhen(iso){ try{ return new Date(iso).toLocaleString('en-GB'); }catch(e){ return iso||''; } }
 function benAiOpen(){ const m=document.getElementById('benAiModal'); if(m) m.classList.add('open'); benAiFetch(); }
 function benAiClose(){ const m=document.getElementById('benAiModal'); if(m) m.classList.remove('open'); }
@@ -2998,6 +3028,22 @@ function vPortals(){
     <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
       <button class="btn sec" style="width:auto;padding:8px 14px" onclick="benDescToggle()">✏️ ${BENDESC.open?'Hide':'Edit'} invoice descriptions</button>
       ${BENDESC.open?benDescPanel():''}
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid #0F7A34">
+    ${sec('📞 Grace — Collections')}
+    <div class="muted" style="font-size:12px;margin-bottom:10px">A private, login-protected tracker for <b>Grace</b> to chase <b>unpaid invoices</b>: every customer with their phone number (tap-to-call + WhatsApp), amount owed, days overdue, and a place to record follow-up status &amp; notes. Set the username &amp; password here — leave the password blank to keep the current one.</div>
+    <div id="graceStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
+    <div id="graceAccessBox" style="margin:0 0 10px"></div>
+    <div class="grid2" style="gap:10px">
+      <div><label>Username</label><input id="graceUser" type="text" autocomplete="off" placeholder="e.g. grace" style="margin-bottom:0"></div>
+      <div><label>Password</label><input id="gracePass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn" style="width:auto;padding:9px 16px" onclick="graceSave()">Save access</button>
+      <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="grace" target="_blank" rel="noopener">Open portal ↗</a>
+      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="graceCopy(this)">Copy link</button>
     </div>
   </div>
 

@@ -39,7 +39,12 @@ fi
 # STOR (no CWD), which avoids "denied you to change to the given directory" on
 # restricted accounts. Per-file timeout so a stalled transfer can't hang.
 FILES=()
-for f in index.php app.js app.css .htaccess .user.ini; do [ -f "$f" ] && FILES+=("$f"); done
+# all root PHP except files that hold or handle live secrets (never uploaded)
+for f in *.php; do
+  case "$f" in config.php|mail_token.php|calendar_oauth.php) continue;; esac
+  [ -f "$f" ] && FILES+=("$f")
+done
+for f in app.js app.css .htaccess .user.ini; do [ -f "$f" ] && FILES+=("$f"); done
 while IFS= read -r -d '' f; do FILES+=("$f"); done < <(find api -type f -not -name 'error_log' -not -name '*.log' -not -name '*.old' -not -name '*.bak' -print0)
 [ -f data/.htaccess ] && FILES+=("data/.htaccess")
 

@@ -103,6 +103,7 @@ if (isset($_GET['hook']) && $_GET['hook'] === 'zoho') {
    Settings → Ben Portal access, stored hashed in data/ben_auth.json.
    ============================================================================ */
 require_once __DIR__ . '/portal_ben.php';
+require_once __DIR__ . '/portal_grace.php';
 session_start();
 require_once __DIR__ . '/csrf.php'; csrf_guard();
 $cfg = require __DIR__ . '/config.php';
@@ -247,6 +248,47 @@ if (isset($_GET['benpref'])) {
     }
     $p = bp_prefs($pfDir);
     echo json_encode(['ok'=>true, 'preview'=>$p['preview'], 'disabled'=>$p['disabled']]);
+    exit;
+}
+
+/* Admin-only: read/set the GRACE PORTAL credentials (stored hashed in
+   data/grace_auth.json). Clone of ?bencreds. */
+if (isset($_GET['gracecreds'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $gf  = __DIR__ . '/data/grace_auth.json';
+    $curG = is_file($gf) ? (json_decode(@file_get_contents($gf), true) ?: []) : [];
+    $inG = json_decode(file_get_contents('php://input'), true) ?: [];
+    if (($inG['action'] ?? '') === 'save') {
+        $u = trim((string)($inG['user'] ?? ''));
+        $p = (string)($inG['pass'] ?? '');
+        if ($u === '') { echo json_encode(['ok'=>false, 'error'=>'Username is required.']); exit; }
+        $hash = (string)($curG['hash'] ?? '');
+        if ($p !== '') { if (strlen($p) < 4) { echo json_encode(['ok'=>false, 'error'=>'Password must be at least 4 characters.']); exit; } $hash = password_hash($p, PASSWORD_DEFAULT); }
+        if ($hash === '') { echo json_encode(['ok'=>false, 'error'=>'Set a password for the first time.']); exit; }
+        $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true);
+        @file_put_contents($gf, json_encode(['user'=>$u, 'hash'=>$hash, 'updated'=>date('c')]));
+        echo json_encode(['ok'=>true, 'configured'=>true, 'user'=>$u]); exit;
+    }
+    echo json_encode(['ok'=>true, 'configured'=>(!empty($curG['user']) && !empty($curG['hash'])), 'user'=>(string)($curG['user'] ?? '')]);
+    exit;
+}
+
+/* Admin-only: enable/disable the GRACE portal (kill-switch). Stored in
+   data/grace_prefs.json. Clone of ?benpref (disabled flag only). */
+if (isset($_GET['gracepref'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $pfDir = __DIR__ . '/data'; $pfFile = $pfDir . '/grace_prefs.json';
+    $inP = json_decode(file_get_contents('php://input'), true) ?: [];
+    if (($inP['action'] ?? '') === 'save') {
+        $cur = is_file($pfFile) ? (json_decode(@file_get_contents($pfFile), true) ?: []) : [];
+        if (array_key_exists('disabled', $inP)) $cur['disabled'] = !empty($inP['disabled']);
+        if (!is_dir($pfDir)) @mkdir($pfDir, 0775, true);
+        @file_put_contents($pfFile, json_encode($cur));
+    }
+    $p = gp_prefs($pfDir);
+    echo json_encode(['ok'=>true, 'disabled'=>$p['disabled']]);
     exit;
 }
 
