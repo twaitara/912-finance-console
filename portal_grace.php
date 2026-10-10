@@ -162,6 +162,27 @@ if (!function_exists('gp_build')) {
         @file_put_contents($cache, json_encode($res));
         return $res;
     }
+    /* Overlay the shared "ready to collect" flags (set from the reconciliation app via
+       collect.php) onto a built dataset. Applied per-request (outside the 15-min cache)
+       so Grace sees a new flag as soon as she refreshes. */
+    function gp_apply_collect($res) {
+        $ready = [];
+        try {
+            $pdo = db();
+            $pdo->exec("CREATE TABLE IF NOT EXISTS collect_flags (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', ready TINYINT(1) DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            foreach ($pdo->query("SELECT invoice_id FROM collect_flags WHERE ready=1")->fetchAll(PDO::FETCH_COLUMN) as $v) $ready[(string)$v] = true;
+        } catch (\Throwable $e) { return $res; }
+        $totalReady = 0;
+        foreach ($res['customers'] as &$c) {
+            $rc = 0;
+            foreach ($c['invoices'] as &$iv) { $r = isset($ready[(string)($iv['id'] ?? '')]); $iv['ready'] = $r; if ($r) $rc++; }
+            unset($iv);
+            $c['readyCount'] = $rc; $totalReady += $rc;
+        }
+        unset($c);
+        $res['readyTotal'] = $totalReady;
+        return $res;
+    }
 }
 
 if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
@@ -201,7 +222,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     if (isset($_GET['data'])) {
         header('Content-Type: application/json; charset=utf-8');
         if (!$gAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
-        try { echo json_encode(gp_build(isset($_GET['refresh']))); }
+        try { echo json_encode(gp_apply_collect(gp_build(isset($_GET['refresh'])))); }
         catch (\Throwable $e) { http_response_code(500); echo api_fail($e); }
         exit;
     }
@@ -311,6 +332,9 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .cx .amt{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.2px}
   .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:2px}
   .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
+  .pill.ready{background:#0F7A34;color:#fff}
+  .cx.isready{border-left:3px solid #0F7A34}
+  .rtag{flex:0 0 auto;font-size:9.5px;font-weight:800;color:#0F7A34;background:var(--green-bg);border:1px solid #BFE0CB;border-radius:3px;padding:1px 6px;text-transform:uppercase;letter-spacing:.04em}
   .invlink{margin-left:auto;background:none;border:0;color:var(--mail);font-weight:600;font-size:12px;cursor:pointer;font-family:inherit;padding:3px 2px;white-space:nowrap}
   .acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
   .act{flex:1;min-width:120px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:3px;padding:11px 14px;font-size:13.5px;font-weight:600;text-decoration:none;border:0;cursor:pointer;font-family:inherit;letter-spacing:.3px}
@@ -479,6 +503,7 @@ function matchFilter(c){
   if(FILTER==='promised')return c.status==='Promised';
   if(FILTER==='paid')return c.status==='Paid';
   if(FILTER==='nophone')return !(c.phone);
+  if(FILTER==='ready')return (c.readyCount||0)>0;
   return true;
 }
 function render(){
@@ -521,6 +546,7 @@ function renderChips(){
   const cs=DATA.customers||[];
   const defs=[
     {k:'all',label:'All',cls:'',n:cs.length},
+    {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(c=>(c.readyCount||0)>0).length},
     {k:'urgent',label:'30+ days late',cls:'red',n:cs.filter(c=>(c.maxOverdue||0)>=30).length},
     {k:'todo',label:'To contact',cls:'',n:cs.filter(c=>!c.status).length},
     {k:'promised',label:'Promised',cls:'amber',n:cs.filter(c=>c.status==='Promised').length},
@@ -566,11 +592,12 @@ function renderCard(c){
   const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
   const invBtn=`<button class="invlink" onclick="toggleInv('${jsq(cid)}')">${c.count} invoice${c.count===1?'':'s'} ${EXP[cid]?'▴':'▾'}</button>`;
   const invBox=EXP[cid]?`<div class="invbox">${c.invoices.map(iv=>`<div class="inv">
-      <div class="invtop"><span class="num">${esc(iv.number)}</span><span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</div>
+      <div class="invtop"><span class="num">${esc(iv.number)}</span>${iv.ready?`<span class="rtag">● Ready</span>`:''}<span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</div>
       ${iv.about?`<div class="iabout">${esc(iv.about)}</div>`:''}
     </div>`).join('')}</div>`:'';
-  return `<div class="cx ${c.status==='Paid'?'paid':''}">
-    <div class="r1"><div class="nm">${esc(c.customer||'(unnamed)')}</div>${spill}</div>
+  const readyPill=(c.readyCount||0)>0?`<span class="pill ready">● ${c.readyCount} ready to collect</span>`:'';
+  return `<div class="cx ${c.status==='Paid'?'paid':''} ${(c.readyCount||0)>0?'isready':''}">
+    <div class="r1"><div class="nm">${esc(c.customer||'(unnamed)')}</div>${readyPill}${spill}</div>
     <div class="r2"><div class="amt">${esc(fmtMap(c.totalByCur))}</div>${daysPill}${invBtn}</div>
     ${invBox}
     ${contact}
