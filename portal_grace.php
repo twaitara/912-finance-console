@@ -410,7 +410,10 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:2px}
   .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
   .pill.ready{background:#0F7A34;color:#fff}
+  .pill.arr{background:var(--blue-bg);color:var(--mail);border:1px solid #BccCF0}
+  .rtag2{font-size:9.5px;font-weight:800;color:#0F7A34;background:var(--green-bg);border:1px solid #BFE0CB;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
   .readybar{margin-top:10px;background:var(--green-bg);border:1px solid #BFE0CB;border-left:3px solid #0F7A34;color:#0F5A28;padding:11px 14px;font-size:13.5px;font-weight:600}
+  .arrbar{margin-top:8px;background:var(--blue-bg);border:1px solid #BccCF0;border-left:3px solid var(--mail);color:#163B9E;padding:11px 14px;font-size:13.5px;font-weight:600}
   .cx.isready{border-left:3px solid #0F7A34}
   .rtag{flex:0 0 auto;font-size:9.5px;font-weight:800;color:#0F7A34;background:var(--green-bg);border:1px solid #BFE0CB;border-radius:3px;padding:1px 6px;text-transform:uppercase;letter-spacing:.04em}
   .ctag{flex:0 0 auto;font-size:9.5px;font-weight:800;color:#1F4FD0;background:var(--blue-bg);border:1px solid #BcCcF0;border-radius:3px;padding:1px 6px;text-transform:uppercase;letter-spacing:.04em}
@@ -671,8 +674,13 @@ const jsq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 const fmtC=(cur,n)=>(cur||'')+' '+Math.round(n||0).toLocaleString('en-US');
 const fmtMap=m=>{const k=Object.keys(m||{});if(!k.length)return '—';return k.sort().map(c=>fmtC(c,m[c])).join('  ·  ');};
 let DATA=null, Q='', SORT='priority', FILTER='all', EXP={}, EDITPH={}, VIEWMODE='focus', WORKED={};
-function isReady(iv){ return !!(iv&&(iv.ready||iv.confirmed)); }           // ready-to-collect = owner flag OR Grace tick
-function clientReady(c){ return (c.invoices||[]).some(isReady); }
+// Two stages:
+//  ownerReady (iv.ready, set by owner on the local app) = invoice cleared the process → Grace may contact & chase.
+//  arranged  (iv.confirmed, set by Grace here)          = customer confirmed → office must send someone to collect.
+function ownerReady(iv){ return !!(iv&&iv.ready); }
+function arranged(iv){ return !!(iv&&iv.confirmed); }
+function cOwnerReady(c){ return (c.invoices||[]).some(ownerReady); }
+function cArranged(c){ return (c.invoices||[]).some(arranged); }
 function bar(s){const b=document.getElementById('bar');if(!b)return;if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);}}
 async function load(refresh){bar(true);try{const r=await fetch('index.php?portal=grace&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'});DATA=await r.json();}catch(e){DATA={ok:false,error:String(e)};}bar(false);render();}
 /* KE number → full international digits for wa.me */
@@ -773,11 +781,13 @@ function matchFilter(c){
   if(FILTER==='promised')return c.status==='Promised';
   if(FILTER==='paid')return c.status==='Paid';
   if(FILTER==='nophone')return !(c.phone);
-  if(FILTER==='ready')return clientReady(c);
+  if(FILTER==='ready')return cOwnerReady(c);
+  if(FILTER==='arranged')return cArranged(c);
   if(FILTER==='callback')return callbackDue(c);
   return true;
 }
-function readyTotals(){ const by={}; let n=0; (DATA.customers||[]).forEach(c=>(c.invoices||[]).forEach(iv=>{ if(isReady(iv)){ const cu=(iv.currency||'KES'); by[cu]=(by[cu]||0)+(+iv.balance||0); n++; } })); return {by,n}; }
+function readyTotals(){ const by={}; let n=0; (DATA.customers||[]).forEach(c=>(c.invoices||[]).forEach(iv=>{ if(ownerReady(iv)){ const cu=(iv.currency||'KES'); by[cu]=(by[cu]||0)+(+iv.balance||0); n++; } })); return {by,n}; }
+function arrangedTotals(){ const by={}; let n=0; (DATA.customers||[]).forEach(c=>(c.invoices||[]).forEach(iv=>{ if(arranged(iv)){ const cu=(iv.currency||'KES'); by[cu]=(by[cu]||0)+(+iv.balance||0); n++; } })); return {by,n}; }
 function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 /* Priority score — where her next call has the biggest expected payoff.
    amount owed × how-overdue, boosted when never contacted or the client already said
@@ -788,11 +798,13 @@ function cScore(c){
   if(!c.status) w*=1.25;                               // never contacted → act
   if(c.status==='No answer') w*=1.15;
   if(c.status==='Promised'){ const p=c.promised||''; w*=(p && p<todayISO())?1.4:0.5; }  // lapsed promise up, future down
-  if((c.invoices||[]).some(iv=>iv.confirmed)) w*=1.7;  // client said it's ready → hottest
+  if(cArranged(c)) w*=0.3;              // collection already arranged — her part is done
+  else if(cOwnerReady(c)) w*=1.7;       // cleared by office → call now to arrange
   return (+c.sortTotal||0)*w;
 }
 function nextAction(c){
-  if(clientReady(c)) return {t:'💰 Ready — arrange collection',cls:'hot'};
+  if(cArranged(c)) return {t:'📦 Collection arranged',cls:'cool'};
+  if(cOwnerReady(c)) return {t:'💰 Ready — contact & arrange collection',cls:'hot'};
   if(c.status==='Paid') return null;
   if(c.status==='Promised'){ const p=c.promised||''; if(p && p<todayISO()) return {t:'⚠ Promise overdue — call',cls:'hot'}; if(p) return {t:'Promised '+p,cls:'cool'}; return {t:'Promised — set a date',cls:'warn'}; }
   if(c.status==='No answer') return {t:'Try again',cls:'warn'};
@@ -817,7 +829,7 @@ function toast(msg){ let e=document.getElementById('toast'); if(!e){ e=document.
 function renderProgress(cs){
   const n=cs.length||1;
   const paid=cs.filter(c=>c.status==='Paid').length;
-  const ready=cs.filter(clientReady).length;
+  const ready=cs.filter(cOwnerReady).length;
   const promised=cs.filter(c=>c.status==='Promised').length;
   const todo=cs.filter(c=>!c.status).length;
   const pct=Math.round((n-todo)/n*100);
@@ -853,7 +865,8 @@ function render(){
       </div>
     </div>
     ${(()=>{const cb=cs.filter(callbackDue).length;return cb>0?`<div class="loopbar" onclick="focusCallbacks()">⏰ <b>${cb}</b> promise${cb===1?'':'s'} due or overdue — tap to start here →</div>`:'';})()}
-    ${(()=>{const rt=readyTotals();return rt.n>0?`<div class="readybar">✅ Ready to collect — <b>${esc(fmtMap(rt.by))}</b> across ${rt.n} invoice${rt.n===1?'':'s'}</div>`:'';})()}
+    ${(()=>{const rt=readyTotals();return rt.n>0?`<div class="readybar">✅ Ready to collect (cleared by office) — <b>${esc(fmtMap(rt.by))}</b> across ${rt.n} invoice${rt.n===1?'':'s'} to contact</div>`:'';})()}
+    ${(()=>{const at=arrangedTotals();return at.n>0?`<div class="arrbar">📦 Collection arranged — office to send someone for <b>${esc(fmtMap(at.by))}</b> across ${at.n} invoice${at.n===1?'':'s'}</div>`:'';})()}
     ${renderProgress(cs)}
     <div class="tool">
       <input class="srch" type="text" placeholder="Search a customer…" value="${att(Q)}" oninput="Q=this.value.toLowerCase();renderList()">
@@ -876,7 +889,8 @@ function renderChips(){
   const defs=[
     {k:'all',label:'All',cls:'',n:cs.length},
     {k:'callback',label:'📞 Call back today',cls:'red',n:cs.filter(callbackDue).length},
-    {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(clientReady).length},
+    {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(cOwnerReady).length},
+    {k:'arranged',label:'📦 Collection arranged',cls:'green',n:cs.filter(cArranged).length},
     {k:'urgent',label:'30+ days late',cls:'red',n:cs.filter(c=>(c.maxOverdue||0)>=30).length},
     {k:'todo',label:'To contact',cls:'',n:cs.filter(c=>!c.status).length},
     {k:'promised',label:'Promised',cls:'amber',n:cs.filter(c=>c.status==='Promised').length},
@@ -905,7 +919,7 @@ function renderList(){
   if(VIEWMODE==='focus'){ box.innerHTML=toggle+renderFocus(list); return; }
   if(!list.length){box.innerHTML=toggle+'<div class="empty">Nothing here 🎉 — try a different filter.</div>';return;}
   box.innerHTML=toggle+`<table class="gtbl">
-    <thead><tr><th>Invoice</th><th>What it's for</th><th>Due</th><th class="r">Amount</th><th class="r">Ready to collect</th><th class="r">Details</th></tr></thead>
+    <thead><tr><th>Invoice</th><th>What it's for</th><th>Due</th><th class="r">Amount</th><th class="r">Collection</th><th class="r">Details</th></tr></thead>
     <tbody>${list.map(renderGroup).join('')}</tbody>
   </table>`;
 }
@@ -932,7 +946,7 @@ function renderFocus(list){
       <div class="frow2">
         <button class="fout promised" onclick="focusOutcome('${jsq(c.cid)}','Promised')">Promised to pay</button>
         <button class="fout noans" onclick="focusOutcome('${jsq(c.cid)}','No answer')">No answer</button>
-        <button class="fout ready" onclick="focusReady('${jsq(c.cid)}')">💰 Ready to collect</button>
+        <button class="fout ready" onclick="focusReady('${jsq(c.cid)}')">📦 Arrange collection</button>
         <button class="fout paid" onclick="focusOutcome('${jsq(c.cid)}','Paid')">Paid</button>
       </div>
       <div class="frow3">
@@ -960,7 +974,7 @@ async function focusReady(cid){
     try{ const r=await fetch('index.php?portal=grace&confirm=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({invoice_id:iv.id,invoice_number:iv.number,customer_name:c.customer,confirmed:true})}); const j=await r.json(); if(j&&j.ok) iv.confirmed=true; }catch(e){}
   }
   if(!c.status) { c.status='Called'; persist(cid); }
-  WORKED[cid]=true; renderList(); toast('Marked ready to collect');
+  WORKED[cid]=true; renderList(); toast('Collection arranged — office will send someone');
 }
 function focusCallbacks(){ FILTER='callback'; VIEWMODE='focus'; WORKED={}; renderList(); }
 function renderGroup(c){
@@ -972,7 +986,8 @@ function renderGroup(c){
   const callbtns=c.phone
     ? `<a class="gbtn call" href="tel:${att(tel)}">Call</a>${wa?`<a class="gbtn wa" href="${att(waLink(c,'reminder'))}" target="_blank" rel="noopener" title="Opens WhatsApp with a ready reminder message">WhatsApp</a>`:''}<button class="gbtn" onclick="openContact('${jsq(cid)}')">Edit contact</button>`
     : `<button class="gbtn addc" onclick="openContact('${jsq(cid)}')">+ Add contact</button>`;
-  const nConf=(c.invoices||[]).filter(isReady).length;
+  const nReady=(c.invoices||[]).filter(ownerReady).length;
+  const nArr=(c.invoices||[]).filter(arranged).length;
   const na=nextAction(c);
   const open=!!EXP[cid];
   const head=`<tr class="grow ${open?'open':''}" onclick="toggleInv('${jsq(cid)}')">
@@ -983,7 +998,7 @@ function renderGroup(c){
         <span class="gcount">${c.count} inv</span>
         ${na?`<span class="na ${na.cls}">${esc(na.t)}</span>`:''}
         ${spill}${daysPill}
-        ${nConf>0?`<span class="pill ready">● ${nConf} ready to collect</span>`:''}
+        ${nReady>0?`<span class="pill ready">● ${nReady} ready to collect</span>`:''}${nArr>0?`<span class="pill arr">📦 ${nArr} collection arranged</span>`:''}
         <span class="gtot">${esc(fmtMap(c.totalByCur))}</span>
         <span class="gacts" onclick="event.stopPropagation()">${callbtns}</span>
       </div>
@@ -994,7 +1009,7 @@ function renderGroup(c){
     <td data-l="What it's for" class="about">${iv.about?esc(iv.about):'<span class="muted">—</span>'}</td>
     <td data-l="Due" class="mono dd">${esc(iv.due||'—')}${iv.overdue>0?` <span class="od">${iv.overdue}d late</span>`:''}</td>
     <td data-l="Amount" class="r mono amt">${esc(fmtC(iv.currency,iv.balance))}</td>
-    <td data-l="Ready to collect" class="r">${iv.id?`<button class="rc ${isReady(iv)?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)">${isReady(iv)?'✓ Ready to collect':'Mark ready'}</button>`:''}</td>
+    <td data-l="Collection" class="r">${ownerReady(iv)?'<span class="rtag2" title="Cleared by the office — ready to collect">● ready</span> ':''}${iv.id?`<button class="rc ${arranged(iv)?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)" title="Mark when the customer confirms — the office will send someone to collect">${arranged(iv)?'✓ Collection arranged':'Arrange collection'}</button>`:''}</td>
     <td data-l="Details" class="r">${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</td>
   </tr>`).join(''):'';
   let panel='';
