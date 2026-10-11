@@ -53,7 +53,7 @@ if (!function_exists('gp_build')) {
     /* All unpaid invoices grouped by customer, with cached phone + overlaid notes. */
     function gp_build($force) {
         $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        $cache = $dir . '/grace_unpaid_v3.json';
+        $cache = $dir . '/grace_unpaid_v4.json';   // v4: KES-only
         if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
         $cfg = zoho_config();
 
@@ -65,6 +65,7 @@ if (!function_exists('gp_build')) {
             foreach (($d['invoices'] ?? []) as $inv) {
                 $bal = (float)($inv['balance'] ?? 0); if ($bal <= 0) continue;
                 if (($inv['status'] ?? '') === 'void') continue;
+                if (strtoupper((string)($inv['currency_code'] ?? 'KES')) !== 'KES') continue;   // Grace is KES-only
                 $rows[] = [
                     'id'       => (string)($inv['invoice_id'] ?? ''),
                     'cid'      => (string)($inv['customer_id'] ?? ''),
