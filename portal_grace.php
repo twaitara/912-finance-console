@@ -53,7 +53,7 @@ if (!function_exists('gp_build')) {
     /* All unpaid invoices grouped by customer, with cached phone + overlaid notes. */
     function gp_build($force) {
         $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        $cache = $dir . '/grace_unpaid_v4.json';   // v4: KES-only
+        $cache = $dir . '/grace_unpaid_v5.json';   // v5: all currencies (USD gated per-request by share)
         if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
         $cfg = zoho_config();
 
@@ -65,7 +65,6 @@ if (!function_exists('gp_build')) {
             foreach (($d['invoices'] ?? []) as $inv) {
                 $bal = (float)($inv['balance'] ?? 0); if ($bal <= 0) continue;
                 if (($inv['status'] ?? '') === 'void') continue;
-                if (strtoupper((string)($inv['currency_code'] ?? 'KES')) !== 'KES') continue;   // Grace is KES-only
                 $rows[] = [
                     'id'       => (string)($inv['invoice_id'] ?? ''),
                     'cid'      => (string)($inv['customer_id'] ?? ''),
@@ -167,23 +166,39 @@ if (!function_exists('gp_build')) {
        collect.php) onto a built dataset. Applied per-request (outside the 15-min cache)
        so Grace sees a new flag as soon as she refreshes. */
     function gp_apply_collect($res) {
-        $ready = [];
+        $ready = []; $share = [];
         try {
             $pdo = db();
             $pdo->exec("CREATE TABLE IF NOT EXISTS collect_flags (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', ready TINYINT(1) DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS grace_share (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             foreach ($pdo->query("SELECT invoice_id FROM collect_flags WHERE ready=1")->fetchAll(PDO::FETCH_COLUMN) as $v) $ready[(string)$v] = true;
-        } catch (\Throwable $e) { return $res; }
-        $totalReady = 0; $amtByCur = [];
-        foreach ($res['customers'] as &$c) {
-            $rc = 0; $cbc = [];
-            foreach ($c['invoices'] as &$iv) {
-                $r = isset($ready[(string)($iv['id'] ?? '')]); $iv['ready'] = $r;
-                if ($r) { $rc++; $cur = (string)($iv['currency'] ?? 'KES'); $bal = (float)($iv['balance'] ?? 0); $cbc[$cur] = ($cbc[$cur] ?? 0) + $bal; $amtByCur[$cur] = ($amtByCur[$cur] ?? 0) + $bal; }
+            foreach ($pdo->query("SELECT invoice_id FROM grace_share")->fetchAll(PDO::FETCH_COLUMN) as $v) $share[(string)$v] = true;
+        } catch (\Throwable $e) { /* leave sets empty -> KES-only, no ready */ }
+
+        /* Rebuild per-request so USD visibility (share) and ready flags are always current:
+           KES invoices always shown; USD shown only when the invoice is shared to Grace. */
+        $out = []; $gTotalByCur = []; $invCount = 0; $totalReady = 0; $amtByCur = [];
+        foreach ($res['customers'] as $c) {
+            $inv = []; $tbc = []; $sortTotal = 0; $maxOv = 0; $rc = 0; $rbc = [];
+            foreach ($c['invoices'] as $iv) {
+                $cur = strtoupper((string)($iv['currency'] ?? 'KES'));
+                if ($cur !== 'KES' && !isset($share[(string)($iv['id'] ?? '')])) continue;   // USD hidden unless shared
+                $bal = (float)($iv['balance'] ?? 0);
+                $iv['ready'] = isset($ready[(string)($iv['id'] ?? '')]);
+                if ($iv['ready']) { $rc++; $rbc[$cur] = ($rbc[$cur] ?? 0) + $bal; $amtByCur[$cur] = ($amtByCur[$cur] ?? 0) + $bal; }
+                $tbc[$cur] = ($tbc[$cur] ?? 0) + $bal; $sortTotal += $bal;
+                $ov = (int)($iv['overdue'] ?? 0); if ($ov > $maxOv) $maxOv = $ov;
+                $inv[] = $iv;
             }
-            unset($iv);
-            $c['readyCount'] = $rc; $c['readyByCur'] = $cbc; $totalReady += $rc;
+            if (!$inv) continue;   // customer has no visible invoices
+            $c['invoices'] = $inv; $c['totalByCur'] = $tbc; $c['sortTotal'] = $sortTotal;
+            $c['count'] = count($inv); $c['maxOverdue'] = $maxOv; $c['readyCount'] = $rc; $c['readyByCur'] = $rbc;
+            foreach ($tbc as $k => $v) $gTotalByCur[$k] = ($gTotalByCur[$k] ?? 0) + $v;
+            $invCount += count($inv); $totalReady += $rc;
+            $out[] = $c;
         }
-        unset($c);
+        usort($out, fn($a, $b) => $b['sortTotal'] <=> $a['sortTotal']);
+        $res['customers'] = $out; $res['totalByCur'] = $gTotalByCur; $res['custCount'] = count($out); $res['invCount'] = $invCount;
         $res['readyTotal'] = $totalReady; $res['readyAmountByCur'] = $amtByCur;
         return $res;
     }
