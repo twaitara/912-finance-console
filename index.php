@@ -205,20 +205,30 @@ if (isset($_GET['gracecreds'])) {
     $inG = json_decode(file_get_contents('php://input'), true) ?: [];
     if (($inG['action'] ?? '') === 'save') {
         $slot = (($inG['slot'] ?? 'staff') === 'owner') ? 'owner' : 'staff';
+        $cur = is_array($curG[$slot] ?? null) ? $curG[$slot] : [];
+        // PIN (preferred). Enforce unique across the two slots.
+        $pin = preg_replace('/\D/', '', (string)($inG['pin'] ?? ''));
+        if ($pin !== '') {
+            if (!preg_match('/^\d{4,6}$/', $pin)) { echo json_encode(['ok'=>false, 'error'=>'PIN must be 4 to 6 digits.']); exit; }
+            $other = $slot === 'staff' ? 'owner' : 'staff';
+            if (!empty($curG[$other]['pin_hash']) && password_verify($pin, $curG[$other]['pin_hash'])) { echo json_encode(['ok'=>false, 'error'=>'That PIN is already used by the other login — pick a different one.']); exit; }
+            $cur['pin_hash'] = password_hash($pin, PASSWORD_DEFAULT);
+        }
+        // Optional username + password (fallback login).
         $u = trim((string)($inG['user'] ?? ''));
         $p = (string)($inG['pass'] ?? '');
-        if ($u === '') { echo json_encode(['ok'=>false, 'error'=>'Username is required.']); exit; }
-        $hash = (string)($curG[$slot]['hash'] ?? '');
-        if ($p !== '') { if (strlen($p) < 4) { echo json_encode(['ok'=>false, 'error'=>'Password must be at least 4 characters.']); exit; } $hash = password_hash($p, PASSWORD_DEFAULT); }
-        if ($hash === '') { echo json_encode(['ok'=>false, 'error'=>'Set a password for the first time.']); exit; }
-        $curG[$slot] = ['user'=>$u, 'hash'=>$hash, 'updated'=>date('c')];
+        if ($u !== '') $cur['user'] = $u;
+        if ($p !== '') { if (strlen($p) < 4) { echo json_encode(['ok'=>false, 'error'=>'Password must be at least 4 characters.']); exit; } $cur['hash'] = password_hash($p, PASSWORD_DEFAULT); }
+        if (empty($cur['pin_hash']) && empty($cur['hash'])) { echo json_encode(['ok'=>false, 'error'=>'Set a PIN (or a username and password) for the first time.']); exit; }
+        $cur['updated'] = date('c');
+        $curG[$slot] = $cur;
         $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true);
         @file_put_contents($gf, json_encode($curG));
-        echo json_encode(['ok'=>true, 'slot'=>$slot, 'configured'=>true, 'user'=>$u]); exit;
+        echo json_encode(['ok'=>true, 'slot'=>$slot, 'configured'=>true]); exit;
     }
     echo json_encode(['ok'=>true,
-        'staff'=>['configured'=>(!empty($curG['staff']['user']) && !empty($curG['staff']['hash'])), 'user'=>(string)($curG['staff']['user'] ?? '')],
-        'owner'=>['configured'=>(!empty($curG['owner']['user']) && !empty($curG['owner']['hash'])), 'user'=>(string)($curG['owner']['user'] ?? '')],
+        'staff'=>['configured'=>(!empty($curG['staff']['pin_hash']) || (!empty($curG['staff']['user']) && !empty($curG['staff']['hash']))), 'user'=>(string)($curG['staff']['user'] ?? ''), 'hasPin'=>!empty($curG['staff']['pin_hash'])],
+        'owner'=>['configured'=>(!empty($curG['owner']['pin_hash']) || (!empty($curG['owner']['user']) && !empty($curG['owner']['hash']))), 'user'=>(string)($curG['owner']['user'] ?? ''), 'hasPin'=>!empty($curG['owner']['pin_hash'])],
     ]);
     exit;
 }

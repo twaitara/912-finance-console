@@ -2886,19 +2886,21 @@ function graceStatusLoad(){
     [['staff','graceStaffStatus','graceStaffUser'],['owner','graceOwnerStatus','graceOwnerUser']].forEach(([slot,sid,uid])=>{
       const e=document.getElementById(sid), info=j[slot]||{};
       if(e){ e.innerHTML=info.configured
-        ? '<span style="color:var(--good)">● Active</span> — username <b>'+askEsc(info.user)+'</b>. Enter a new password to change it.'
-        : '<span style="color:var(--bad)">● Not set up</span> — choose a username &amp; password.'; }
+        ? '<span style="color:var(--good)">● Active</span>'+(info.hasPin?' — PIN is set.':'')+(info.user?' Username <b>'+askEsc(info.user)+'</b>.':'')+' Enter a new PIN (or password) to change it.'
+        : '<span style="color:var(--bad)">● Not set up</span> — choose a PIN (4–6 digits).'; }
       const u=document.getElementById(uid); if(u&&!u.value&&info.user) u.value=info.user;
     });
   }).catch(()=>{});
 }
 function graceSave(slot){
-  const uid=slot==='owner'?'graceOwnerUser':'graceStaffUser', pid=slot==='owner'?'graceOwnerPass':'graceStaffPass';
+  const uid=slot==='owner'?'graceOwnerUser':'graceStaffUser', pid=slot==='owner'?'graceOwnerPass':'graceStaffPass', nid=slot==='owner'?'graceOwnerPin':'graceStaffPin';
   const u=(document.getElementById(uid)||{}).value||'';
   const p=(document.getElementById(pid)||{}).value||'';
-  if(!u.trim()){ alert('Enter a username.'); return; }
-  fetch('?gracecreds=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',slot:slot,user:u,pass:p})}).then(r=>r.json()).then(j=>{
-    if(j&&j.ok){ const pw=document.getElementById(pid); if(pw) pw.value=''; graceStatusLoad(); alert((slot==='owner'?'Owner':'Staff')+' login saved.'); }
+  const pin=(document.getElementById(nid)||{}).value||'';
+  if(pin.trim() && !/^\d{4,6}$/.test(pin.trim())){ alert('PIN must be 4 to 6 digits.'); return; }
+  if(!pin.trim() && !u.trim()){ alert('Enter a PIN (or a username + password).'); return; }
+  fetch('?gracecreds=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',slot:slot,user:u,pass:p,pin:pin.trim()})}).then(r=>r.json()).then(j=>{
+    if(j&&j.ok){ const pw=document.getElementById(pid); if(pw) pw.value=''; const pn=document.getElementById(nid); if(pn) pn.value=''; graceStatusLoad(); alert((slot==='owner'?'Owner':'Staff')+' login saved.'); }
     else alert((j&&j.error)||'Could not save.');
   }).catch(e=>alert('Error: '+e));
 }
@@ -2958,18 +2960,28 @@ function vPortals(){
     <div style="font-weight:700;font-size:12px;margin:2px 0 6px">👩‍💼 Staff login (Grace)</div>
     <div id="graceStaffStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
     <div class="grid2" style="gap:10px">
-      <div><label>Username</label><input id="graceStaffUser" type="text" autocomplete="off" placeholder="e.g. grace" style="margin-bottom:0"></div>
-      <div><label>Password</label><input id="graceStaffPass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
+      <div><label>PIN (4–6 digits)</label><input id="graceStaffPin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" placeholder="e.g. 7391" style="margin-bottom:0"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" style="width:auto;padding:9px 16px" onclick="graceSave('staff')">Save staff login</button></div>
     </div>
-    <div style="margin-top:10px"><button class="btn" style="width:auto;padding:9px 16px" onclick="graceSave('staff')">Save staff login</button></div>
+    <details style="margin-top:8px"><summary class="muted" style="font-size:11px;cursor:pointer">Optional: also set a username + password (fallback)</summary>
+      <div class="grid2" style="gap:10px;margin-top:8px">
+        <div><label>Username</label><input id="graceStaffUser" type="text" autocomplete="off" placeholder="e.g. grace" style="margin-bottom:0"></div>
+        <div><label>Password</label><input id="graceStaffPass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
+      </div>
+    </details>
 
     <div style="font-weight:700;font-size:12px;margin:16px 0 6px;border-top:1px dashed var(--line);padding-top:14px">👔 Owner login</div>
     <div id="graceOwnerStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
     <div class="grid2" style="gap:10px">
-      <div><label>Username</label><input id="graceOwnerUser" type="text" autocomplete="off" placeholder="e.g. owner" style="margin-bottom:0"></div>
-      <div><label>Password</label><input id="graceOwnerPass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
+      <div><label>PIN (4–6 digits)</label><input id="graceOwnerPin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" placeholder="e.g. 4120" style="margin-bottom:0"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" style="width:auto;padding:9px 16px" onclick="graceSave('owner')">Save owner login</button></div>
     </div>
-    <div style="margin-top:10px"><button class="btn" style="width:auto;padding:9px 16px" onclick="graceSave('owner')">Save owner login</button></div>
+    <details style="margin-top:8px"><summary class="muted" style="font-size:11px;cursor:pointer">Optional: also set a username + password (fallback)</summary>
+      <div class="grid2" style="gap:10px;margin-top:8px">
+        <div><label>Username</label><input id="graceOwnerUser" type="text" autocomplete="off" placeholder="e.g. owner" style="margin-bottom:0"></div>
+        <div><label>Password</label><input id="graceOwnerPass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
+      </div>
+    </details>
 
     <div style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="grace.php" target="_blank" rel="noopener">Open portal ↗</a>

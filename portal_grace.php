@@ -225,24 +225,37 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     $gDir = __DIR__ . '/data';
 
     $gAuthFile = $gDir . '/grace_auth.json';
-    /* Accounts: new format {staff:{user,hash}, owner:{user,hash}}; legacy {user,hash} => staff. */
+    /* Accounts: {staff:{user,hash,pin_hash}, owner:{...}}; legacy {user,hash} => staff.
+       PIN login is the default (like the other portals); username+password still works as a fallback. */
     $gAccounts = [];
     if (is_file($gAuthFile)) {
         $j = json_decode(@file_get_contents($gAuthFile), true);
         if (is_array($j)) {
-            foreach (['staff', 'owner'] as $slot) { if (!empty($j[$slot]['user']) && !empty($j[$slot]['hash'])) $gAccounts[] = ['user'=>$j[$slot]['user'], 'hash'=>$j[$slot]['hash'], 'role'=>$slot]; }
-            if (!$gAccounts && !empty($j['user']) && !empty($j['hash'])) $gAccounts[] = ['user'=>$j['user'], 'hash'=>$j['hash'], 'role'=>'staff'];
+            foreach (['staff', 'owner'] as $slot) {
+                $hasPwd = !empty($j[$slot]['user']) && !empty($j[$slot]['hash']);
+                $hasPin = !empty($j[$slot]['pin_hash']);
+                if ($hasPwd || $hasPin) $gAccounts[] = ['user'=>(string)($j[$slot]['user'] ?? ''), 'hash'=>(string)($j[$slot]['hash'] ?? ''), 'pin_hash'=>(string)($j[$slot]['pin_hash'] ?? ''), 'role'=>$slot];
+            }
+            if (!$gAccounts && !empty($j['user']) && !empty($j['hash'])) $gAccounts[] = ['user'=>$j['user'], 'hash'=>$j['hash'], 'pin_hash'=>(string)($j['pin_hash'] ?? ''), 'role'=>'staff'];
         }
     }
+    $gHasPin = false; $gHasPwd = false;
+    foreach ($gAccounts as $a) { if ($a['pin_hash'] !== '') $gHasPin = true; if ($a['user'] !== '' && $a['hash'] !== '') $gHasPwd = true; }
     $gDisabled = !empty(gp_prefs($gDir)['disabled']);
 
     if (isset($_GET['logout'])) { $_SESSION = []; session_destroy(); header('Location: index.php?portal=grace'); exit; }
 
     $gErr = '';
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['grace_login'])) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['grace_pin'])) {
+        $pin = preg_replace('/\D/', '', (string)($_POST['pin'] ?? ''));
+        $ok = false; $role = ''; $who = '';
+        if (!$gDisabled && preg_match('/^\d{4,6}$/', $pin)) { foreach ($gAccounts as $a) { if ($a['pin_hash'] !== '' && password_verify($pin, $a['pin_hash'])) { $ok = true; $role = $a['role']; $who = $a['user'] ?: $a['role']; break; } } }
+        if ($ok) { session_regenerate_id(true); $_SESSION['grace_auth'] = true; $_SESSION['grace_user'] = $who; $_SESSION['grace_role'] = $role; header('Location: index.php?portal=grace'); exit; }
+        $gErr = $gDisabled ? 'This portal is currently disabled.' : 'Wrong PIN.';
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['grace_login'])) {
         $u = trim((string)($_POST['u'] ?? '')); $p = (string)($_POST['p'] ?? '');
         $ok = false; $role = '';
-        if (!$gDisabled) { foreach ($gAccounts as $a) { if (hash_equals(strtolower($a['user']), strtolower($u)) && password_verify($p, $a['hash'])) { $ok = true; $role = $a['role']; break; } } }
+        if (!$gDisabled) { foreach ($gAccounts as $a) { if ($a['user'] !== '' && $a['hash'] !== '' && hash_equals(strtolower($a['user']), strtolower($u)) && password_verify($p, $a['hash'])) { $ok = true; $role = $a['role']; break; } } }
         if ($ok) { session_regenerate_id(true); $_SESSION['grace_auth'] = true; $_SESSION['grace_user'] = $u; $_SESSION['grace_role'] = $role; header('Location: index.php?portal=grace'); exit; }
         $gErr = $gDisabled ? 'This portal is currently disabled.' : 'Wrong username or password.';
     }
@@ -459,9 +472,44 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .login .in:focus{outline:none;border-color:var(--brand)}
   .login .go{width:100%;margin-top:16px;border:0;background:var(--brand);color:#fff;padding:13px;border-radius:3px;font-weight:600;font-size:14.5px;cursor:pointer;font-family:inherit;letter-spacing:.4px}
   .login .err{background:var(--red-bg);color:#9B2016;border-radius:3px;padding:10px 12px;font-size:12.5px;margin-top:12px}
-  /* list frame + full-width columns on computer */
-  #gList{border:1px solid var(--line);border-bottom:0;background:var(--card)}
-  @media(min-width:900px){ #gList{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));border:0;background:transparent} .cx{border:1px solid var(--line);margin:0 -1px -1px 0} }
+  /* collections table (grouped by client) */
+  .gtbl{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);font-size:13px}
+  .gtbl thead th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);font-weight:700;padding:10px 14px;background:var(--soft);border-bottom:1px solid var(--line);white-space:nowrap}
+  .gtbl th.r,.gtbl td.r{text-align:right}
+  .gtbl td{padding:10px 14px;border-bottom:1px solid var(--hair);vertical-align:middle}
+  .gtbl tr.grow{cursor:pointer}
+  .gtbl tr.grow td{background:var(--ink);color:#fff;border-bottom:2px solid var(--brand);padding:10px 14px}
+  .ghwrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ghwrap .gname{font-size:14px;font-weight:700;letter-spacing:.2px}
+  .ghwrap .gtot{font-family:var(--mono);font-weight:700;font-size:14px;margin-left:4px}
+  .ghwrap .gacts{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .gbtn{border:1px solid #3A3833;background:transparent;color:#E7E3DC;border-radius:3px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;white-space:nowrap}
+  .gbtn.call{background:var(--green);border-color:var(--green);color:#fff} .gbtn.wa{background:#0F7A34;border-color:#0F7A34;color:#fff}
+  .girow:hover{background:var(--soft)}
+  .girow .num{font-family:var(--mono);font-weight:600}
+  .girow .about{color:var(--mute);max-width:320px}
+  .girow .dd{color:var(--mute);white-space:nowrap} .girow .od{color:var(--red);font-weight:600}
+  .girow .amt{font-weight:600;white-space:nowrap}
+  .otag{font-size:9.5px;font-weight:800;color:var(--amber);background:var(--amber-bg);border:1px solid #E6D9A8;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+  .rc{border:1px solid var(--line);background:var(--card);color:var(--mail);border-radius:3px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .rc.on{background:#0F7A34;border-color:#0F7A34;color:#fff}
+  .rc:disabled{opacity:.6;cursor:default}
+  .ivv{color:var(--mail);font-weight:600;font-size:11.5px;background:var(--card);cursor:pointer;border:1px solid var(--line);border-radius:3px;padding:5px 11px;font-family:inherit}
+  .ivv:hover{background:var(--blue-bg)}
+  .gpanel td{background:var(--soft);padding:14px}
+  @media(max-width:640px){
+    .gtbl,.gtbl tbody{display:block}
+    .gtbl thead{display:none}
+    .gtbl tr.grow,.gtbl tr.gpanel{display:block}
+    .gtbl tr.grow td,.gtbl tr.gpanel td{display:block;width:100%}
+    .gtbl tr.girow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 14px}
+    .gtbl tr.girow td{display:block;border:0;padding:0}
+    .gtbl td.about{grid-column:1 / -1;max-width:none}
+    .gtbl td[data-l="Due"]{grid-column:1 / -1}
+    .gtbl td[data-l="Ready to collect"]{grid-column:1}
+    .gtbl td[data-l="Details"]{grid-column:2;text-align:right}
+    .gtbl td.amt{text-align:left}
+  }
   @media(max-width:520px){ .hero{gap:16px} .hero .hr{margin-left:0;width:100%} .stat{padding:2px 16px} .hero .ht{font-size:24px} }
 </style></head>
 <body>
@@ -482,15 +530,26 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     <?php if ($gDisabled): ?>
       <div class="err">This portal is currently disabled. Please contact the administrator.</div>
     <?php elseif (empty($gAccounts)): ?>
-      <div class="err">This portal isn't set up yet. The administrator needs to set a username and password (Settings → Portals).</div>
+      <div class="err">This portal isn't set up yet. The administrator needs to set a PIN (Settings → Portals).</div>
     <?php else: ?>
-    <form method="post" action="index.php?portal=grace" autocomplete="off">
-      <input type="hidden" name="grace_login" value="1">
-      <input class="in" type="text" name="u" placeholder="Username" autocapitalize="none" autocorrect="off" required>
-      <input class="in" type="password" name="p" placeholder="Password" required>
+    <?php if ($gHasPin): ?>
+    <form id="gpinForm" method="post" action="index.php?portal=grace" autocomplete="off">
+      <input type="hidden" name="grace_pin" value="1">
+      <input class="in" type="password" name="pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="PIN" autocomplete="off" style="text-align:center;letter-spacing:.5em;font-family:var(--mono)" required autofocus>
       <?php if ($gErr): ?><div class="err"><?= $gEsc($gErr) ?></div><?php endif; ?>
       <button class="go" type="submit">Sign in →</button>
     </form>
+    <?php if ($gHasPwd): ?><div style="text-align:center;margin-top:12px"><a href="#" onclick="document.getElementById('gpinForm').style.display='none';document.getElementById('gpwForm').style.display='block';this.parentNode.style.display='none';return false" style="color:var(--mute);font-size:12px">Use username &amp; password instead</a></div><?php endif; ?>
+    <?php endif; ?>
+    <?php if ($gHasPwd): ?>
+    <form id="gpwForm" method="post" action="index.php?portal=grace" autocomplete="off" style="<?= $gHasPin ? 'display:none' : '' ?>">
+      <input type="hidden" name="grace_login" value="1">
+      <input class="in" type="text" name="u" placeholder="Username" autocapitalize="none" autocorrect="off" required>
+      <input class="in" type="password" name="p" placeholder="Password" required>
+      <?php if ($gErr && !$gHasPin): ?><div class="err"><?= $gEsc($gErr) ?></div><?php endif; ?>
+      <button class="go" type="submit">Sign in →</button>
+    </form>
+    <?php endif; ?>
     <?php endif; ?>
   </div>
   <div class="pgfoot"><div class="cn">Waitara Holdings Group of Companies</div><div class="sc2">SECURE PORTAL</div></div>
@@ -592,9 +651,10 @@ function matchFilter(c){
   if(FILTER==='promised')return c.status==='Promised';
   if(FILTER==='paid')return c.status==='Paid';
   if(FILTER==='nophone')return !(c.phone);
-  if(FILTER==='ready')return (c.readyCount||0)>0;
+  if(FILTER==='ready')return (c.invoices||[]).some(iv=>iv.confirmed);
   return true;
 }
+function readyTotals(){ const by={}; let n=0; (DATA.customers||[]).forEach(c=>(c.invoices||[]).forEach(iv=>{ if(iv.confirmed){ const cu=(iv.currency||'KES'); by[cu]=(by[cu]||0)+(+iv.balance||0); n++; } })); return {by,n}; }
 function render(){
   const app=document.getElementById('app');if(!DATA)return;
   if(DATA.ok===false){app.innerHTML='<div class="empty" style="color:var(--red)">Couldn\'t load: '+esc(DATA.error||'failed')+'</div>';return;}
@@ -616,7 +676,7 @@ function render(){
         <div class="stat"><div class="n">${nDone}</div><div class="l">Paid</div></div>
       </div>
     </div>
-    ${(DATA.readyTotal||0)>0?`<div class="readybar">✅ Ready to collect — <b>${esc(fmtMap(DATA.readyAmountByCur))}</b> across ${DATA.readyTotal} invoice${DATA.readyTotal===1?'':'s'}</div>`:''}
+    ${(()=>{const rt=readyTotals();return rt.n>0?`<div class="readybar">✅ Ready to collect — <b>${esc(fmtMap(rt.by))}</b> across ${rt.n} invoice${rt.n===1?'':'s'} you've marked</div>`:'';})()}
     <div class="tool">
       <input class="srch" type="text" placeholder="Search a customer…" value="${att(Q)}" oninput="Q=this.value.toLowerCase();renderList()">
       <div class="chips" id="fchips"></div>
@@ -636,7 +696,7 @@ function renderChips(){
   const cs=DATA.customers||[];
   const defs=[
     {k:'all',label:'All',cls:'',n:cs.length},
-    {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(c=>(c.readyCount||0)>0).length},
+    {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(c=>(c.invoices||[]).some(iv=>iv.confirmed)).length},
     {k:'urgent',label:'30+ days late',cls:'red',n:cs.filter(c=>(c.maxOverdue||0)>=30).length},
     {k:'todo',label:'To contact',cls:'',n:cs.filter(c=>!c.status).length},
     {k:'promised',label:'Promised',cls:'amber',n:cs.filter(c=>c.status==='Promised').length},
@@ -654,50 +714,56 @@ function renderList(){
   if(Q)list=list.filter(c=>((c.customer||'')+' '+(c.phone||'')).toLowerCase().indexOf(Q)>=0);
   list=list.filter(matchFilter);
   if(!list.length){box.innerHTML='<div class="empty">Nothing here 🎉 — try a different filter.</div>';return;}
-  box.innerHTML=list.map(renderCard).join('');
+  box.innerHTML=`<table class="gtbl">
+    <thead><tr><th>Invoice</th><th>What it's for</th><th>Due</th><th class="r">Amount</th><th class="r">Ready to collect</th><th class="r">Details</th></tr></thead>
+    <tbody>${list.map(renderGroup).join('')}</tbody>
+  </table>`;
 }
-function renderCard(c){
+function renderGroup(c){
   const cid=c.cid, dot='d_'+cid;
   const ov=c.maxOverdue||0, oc=ovdClass(ov);
   const daysPill=ov>0?`<span class="pill ${oc}">${ov} days late</span>`:`<span class="pill green">On time</span>`;
   const spill=c.status?`<span class="spill ${c.status==='No answer'?'No':c.status}">${esc(c.status)}</span>`:'';
-  const hasPhone=!!(c.phone);
   const tel=telNum(c.phone), wa=waNum(c.phone);
-  let contact;
-  if(EDITPH[cid]||(!hasPhone)){
-    contact=`<div class="phrow">
-      <input id="ph_${att(cid)}" type="tel" inputmode="tel" placeholder="Add phone e.g. 0712 345678" value="${att(c.phone||'')}" onkeydown="if(event.key==='Enter')savePhone('${jsq(cid)}')">
-      <button class="save" onclick="savePhone('${jsq(cid)}')">Save</button>
-    </div>`;
-  } else {
-    contact=`<div class="acts">
-      <a class="act call" href="tel:${att(tel)}">Call</a>
-      ${wa?`<a class="act wa" href="https://wa.me/${att(wa)}" target="_blank" rel="noopener">WhatsApp</a>`:''}
-      <button class="act edit" title="Edit number" onclick="openPhone('${jsq(cid)}')">Edit</button>
-    </div><div class="telno">${esc(c.phone)}</div>`;
+  const callbtns=c.phone
+    ? `<a class="gbtn call" href="tel:${att(tel)}">Call</a>${wa?`<a class="gbtn wa" href="https://wa.me/${att(wa)}" target="_blank" rel="noopener">WhatsApp</a>`:''}`
+    : (c.email?`<a class="gbtn" href="mailto:${att(c.email)}">Email</a>`:`<button class="gbtn" onclick="openPhone('${jsq(cid)}')">Add phone</button>`);
+  const nConf=(c.invoices||[]).filter(iv=>iv.confirmed).length;
+  const head=`<tr class="grow" onclick="toggleInv('${jsq(cid)}')">
+    <td colspan="6">
+      <div class="ghwrap">
+        <span class="gname">${esc(c.customer||'(unnamed)')}</span>
+        ${spill}${daysPill}
+        ${nConf>0?`<span class="pill ready">● ${nConf} ready to collect</span>`:''}
+        <span class="gtot">${esc(fmtMap(c.totalByCur))}</span>
+        <span class="gacts" onclick="event.stopPropagation()">${callbtns}<button class="gbtn notes" onclick="toggleInv('${jsq(cid)}')">Notes ${EXP[cid]?'▴':'▾'}</button></span>
+      </div>
+    </td></tr>`;
+  const rows=(c.invoices||[]).map(iv=>`<tr class="girow">
+    <td data-l="Invoice"><span class="num">${esc(iv.number)}</span>${iv.ready?' <span class="otag" title="Flagged by the office">● office</span>':''}</td>
+    <td data-l="What it's for" class="about">${iv.about?esc(iv.about):'<span class="muted">—</span>'}</td>
+    <td data-l="Due" class="mono dd">${esc(iv.due||'—')}${iv.overdue>0?` <span class="od">${iv.overdue}d late</span>`:''}</td>
+    <td data-l="Amount" class="r mono amt">${esc(fmtC(iv.currency,iv.balance))}</td>
+    <td data-l="Ready to collect" class="r">${iv.id?`<button class="rc ${iv.confirmed?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)">${iv.confirmed?'✓ Ready to collect':'Mark ready'}</button>`:''}</td>
+    <td data-l="Details" class="r">${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</td>
+  </tr>`).join('');
+  let panel='';
+  if(EXP[cid]){
+    const STAT=['Called','Promised','No answer','Paid'];
+    const schips=STAT.map(s=>`<button class="sc ${c.status===s?'on':''}" data-s="${s}" onclick="tapStatus('${jsq(cid)}','${s}')">${s}</button>`).join('');
+    const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
+    let phone='';
+    if(EDITPH[cid]||!c.phone){ phone=`<div class="phrow"><input id="ph_${att(cid)}" type="tel" inputmode="tel" placeholder="Add phone e.g. 0712 345678" value="${att(c.phone||'')}" onkeydown="if(event.key==='Enter')savePhone('${jsq(cid)}')"><button class="save" onclick="savePhone('${jsq(cid)}')">Save</button></div>`; }
+    else { phone=`<div class="telno">${esc(c.phone)} <button class="gbtn" style="padding:4px 9px" onclick="openPhone('${jsq(cid)}')">Edit</button></div>`; }
+    panel=`<tr class="gpanel"><td colspan="6">
+      ${phone}
+      <div class="schips">${schips}</div>
+      ${promised}
+      <textarea class="nt" placeholder="Notes — what they said, when to call back…" oninput="onNote('${jsq(cid)}',this.value,'${dot}')">${esc(c.note||'')}</textarea>
+      <span id="${dot}" class="saveddot">saved ✓</span>
+    </td></tr>`;
   }
-  const mailBtn=(!hasPhone && c.email)?`<a class="act mail" style="margin-top:9px;flex:1" href="mailto:${att(c.email)}">Email ${esc(c.email)}</a>`:'';
-  const STAT=['Called','Promised','No answer','Paid'];
-  const schips=STAT.map(s=>`<button class="sc ${c.status===s?'on':''}" data-s="${s}" onclick="tapStatus('${jsq(cid)}','${s}')">${s}</button>`).join('');
-  const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
-  const invBtn=`<button class="invlink" onclick="toggleInv('${jsq(cid)}')">${c.count} invoice${c.count===1?'':'s'} ${EXP[cid]?'▴':'▾'}</button>`;
-  const invBox=EXP[cid]?`<div class="invbox">${c.invoices.map(iv=>`<div class="inv">
-      <div class="invtop"><span class="num">${esc(iv.number)}</span>${iv.ready?`<span class="rtag">● Ready</span>`:''}${iv.confirmed?`<span class="ctag">✓ Client OK'd</span>`:''}<span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</div>
-      ${iv.about?`<div class="iabout">${esc(iv.about)}</div>`:''}
-      ${iv.id?`<div class="invact"><button class="okc ${iv.confirmed?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)">${iv.confirmed?"✓ Client said we can collect":"Client said we can collect?"}</button></div>`:''}
-    </div>`).join('')}</div>`:'';
-  const readyPill=(c.readyCount||0)>0?`<span class="pill ready">● ${esc(fmtMap(c.readyByCur))} ready · ${c.readyCount} inv</span>`:'';
-  return `<div class="cx ${c.status==='Paid'?'paid':''} ${(c.readyCount||0)>0?'isready':''}">
-    <div class="r1"><div class="nm">${esc(c.customer||'(unnamed)')}</div>${readyPill}${spill}</div>
-    <div class="r2"><div class="amt">${esc(fmtMap(c.totalByCur))}</div>${daysPill}${invBtn}</div>
-    ${invBox}
-    ${contact}
-    ${mailBtn}
-    <div class="schips">${schips}</div>
-    ${promised}
-    <textarea class="nt" placeholder="Notes — what they said, when to call back…" oninput="onNote('${jsq(cid)}',this.value,'${dot}')">${esc(c.note||'')}</textarea>
-    <span id="${dot}" class="saveddot">saved ✓</span>
-  </div>`;
+  return head+rows+panel;
 }
 load(false);
 </script>
