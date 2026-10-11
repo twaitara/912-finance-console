@@ -53,7 +53,6 @@ let LOANFORM = { type:'person', name:'', amount:'', date:'', expected:'', note:'
 let FUNDFORM = { name:'', balance:'', msg:'', err:false };
 const AUDREY_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'audrey.php';
 const TASKBOARD_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'tasks_board.php';
-const BEN_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'index.php?portal=ben';
 const GRACE_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'grace.php';
 function copyBoard(btn){ try{ navigator.clipboard.writeText(TASKBOARD_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1500);}catch(e){} }
 let BK = { folder:'', running:false, msg:'', msgErr:false, loaded:false,
@@ -251,7 +250,7 @@ function render(){
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
   if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); } }
-  if(TAB==='portals'){ p.innerHTML = vPortals(); if(ME.admin){ benStatusLoad(); benPrevLoad(); graceStatusLoad(); graceAccessLoad(); } }
+  if(TAB==='portals'){ p.innerHTML = vPortals(); if(ME.admin){ graceStatusLoad(); graceAccessLoad(); } }
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
@@ -2878,36 +2877,6 @@ function whLoad(){
       ${recent?`<div style="border-top:1px dashed var(--line);padding-top:6px">${recent}</div>`:''}`;
   }).catch(()=>{ const b=document.getElementById('whStatusBox'); if(b) b.innerHTML='<span style="color:var(--bad)">Status check failed.</span>'; });
 }
-function benStatusLoad(){
-  const el=document.getElementById('benStatus'); if(!el) return;
-  fetch('?bencreds=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
-    const e=document.getElementById('benStatus'); if(!e) return;
-    if(j&&j.ok&&j.configured){ e.innerHTML='<span style="color:var(--good)">● Active</span> — username <b>'+askEsc(j.user)+'</b>. Enter a new password to change it.'; const u=document.getElementById('benUser'); if(u&&!u.value) u.value=j.user; }
-    else e.innerHTML='<span style="color:var(--bad)">● Not set up yet</span> — choose a username &amp; password to enable the portal.';
-  }).catch(()=>{});
-}
-function benSave(){
-  const u=(document.getElementById('benUser')||{}).value||'';
-  const p=(document.getElementById('benPass')||{}).value||'';
-  if(!u.trim()){ alert('Enter a username.'); return; }
-  fetch('?bencreds=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',user:u,pass:p})}).then(r=>r.json()).then(j=>{
-    if(j&&j.ok){ const pw=document.getElementById('benPass'); if(pw) pw.value=''; benStatusLoad(); alert('Ben Portal access saved.'); }
-    else alert((j&&j.error)||'Could not save.');
-  }).catch(e=>alert('Error: '+e));
-}
-function benCopy(btn){ try{ navigator.clipboard.writeText(BEN_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
-function benPrevLoad(){
-  fetch('?benpref=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
-    if(!j||!j.ok) return;
-    const el=document.getElementById('benPrevChk'); if(el) el.checked=!!j.preview;
-    const box=document.getElementById('benAccessBox');
-    if(box){ box.innerHTML = j.disabled
-      ? `<span style="color:var(--bad);font-weight:700;font-size:12.5px">⛔ Ben's access is DISABLED.</span> <button class="btn" style="width:auto;padding:6px 13px;margin-left:6px" onclick="benSetDisabled(false)">Enable access</button>`
-      : `<button class="btn sec" style="width:auto;padding:8px 14px;border-color:var(--bad);color:var(--bad)" onclick="benSetDisabled(true)">⛔ Disable Ben's access</button>`; }
-  }).catch(()=>{});
-}
-function benPrevSave(on){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',preview:on?1:0})}).then(r=>r.json()).catch(()=>{}); }
-function benSetDisabled(v){ fetch('?benpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>benPrevLoad()).catch(()=>{}); }
 /* ---- Grace collections portal (admin management: staff + owner logins) ---- */
 function graceStatusLoad(){
   if(!document.getElementById('graceStaffStatus')) return;
@@ -2943,99 +2912,12 @@ function graceAccessLoad(){
   }).catch(()=>{});
 }
 function graceSetDisabled(v){ fetch('?gracepref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>graceAccessLoad()).catch(()=>{}); }
-function benAiWhen(iso){ try{ return new Date(iso).toLocaleString('en-GB'); }catch(e){ return iso||''; } }
-function benAiOpen(){ const m=document.getElementById('benAiModal'); if(m) m.classList.add('open'); benAiFetch(); }
-function benAiClose(){ const m=document.getElementById('benAiModal'); if(m) m.classList.remove('open'); }
-function benAiFetch(){
-  const b=document.getElementById('benAiBody'); if(b) b.innerHTML='<div class="muted" style="padding:8px">Loading…</div>';
-  fetch('?benailog=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
-    const bb=document.getElementById('benAiBody'); if(!bb) return;
-    if(!j||!j.ok){ bb.innerHTML='<div class="muted" style="padding:8px">Could not load the log.</div>'; return; }
-    const list=j.log||[];
-    if(!list.length){ bb.innerHTML='<div class="muted" style="padding:8px">Ben hasn’t asked the assistant anything yet.</div>'; return; }
-    bb.innerHTML=`<div class="muted" style="font-size:10.5px;margin-bottom:8px">${list.length} question${list.length===1?'':'s'}, newest first.</div>`+
-      list.map(e=>`<div style="padding:9px 0;border-bottom:1px solid var(--line)">
-        <div style="font-size:10px;color:var(--mute)">${askEsc(benAiWhen(e.at))}</div>
-        <div style="font-size:13px;font-weight:600;margin-top:2px">${askEsc(e.q)}</div>
-        <div style="font-size:12px;color:var(--mute);margin-top:3px;white-space:pre-wrap">${askEsc(e.a)}</div>
-      </div>`).join('');
-  }).catch(()=>{ const bb=document.getElementById('benAiBody'); if(bb) bb.innerHTML='<div class="muted" style="padding:8px">Could not load the log.</div>'; });
-}
-let BENDESC = { open:false, loaded:false, loading:false, list:[], msg:'' };
-function benAttr(s){ return askEsc(s).replace(/"/g,'&quot;'); }
-function benJs(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
-function benDescToggle(){ BENDESC.open=!BENDESC.open; if(BENDESC.open && !BENDESC.loaded && !BENDESC.loading) benDescLoad(); render(); }
-function benDescLoad(){
-  BENDESC.loading=true; BENDESC.msg=''; if(TAB==='settings') render();
-  fetch('?bendesc=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
-    BENDESC.loading=false;
-    if(j&&j.ok){ BENDESC.list=j.invoices||[]; BENDESC.loaded=true; if(!BENDESC.list.length) BENDESC.msg='No invoices found yet — open the portal once so it loads, or check the company names.'; }
-    else BENDESC.msg=(j&&j.error)||'Failed to load.';
-    if(TAB==='settings') render();
-  }).catch(e=>{ BENDESC.loading=false; BENDESC.msg='Failed to load: '+e; if(TAB==='settings') render(); });
-}
-function benDescRow(iv){
-  return `<div class="bd-row" data-k="${benAttr((iv.number+' '+iv.company+' '+iv.auto+' '+iv.override).toLowerCase())}" style="display:flex;gap:8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--hair)">
-    <div style="flex:0 0 128px;min-width:0">
-      <div style="font-weight:600;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${askEsc(iv.number)}</div>
-      <div class="muted" style="font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${askEsc(iv.company)} · ${askEsc(iv.year)}</div>
-    </div>
-    <input type="text" value="${benAttr(iv.override)}" placeholder="${benAttr(iv.auto||'—')}" onchange="benDescSave('${benJs(iv.number)}',this.value,this)" style="flex:1;margin-bottom:0;font-size:12px;padding:6px 9px">
-    <div style="flex:0 0 auto;min-width:78px;text-align:right;font-weight:600;font-size:12px;font-variant-numeric:tabular-nums" title="Invoice total">${Math.round(iv.total||0).toLocaleString('en-US')}</div>
-    ${iv.id?`<button class="btn sec" style="width:auto;padding:5px 9px;font-size:11px" title="Preview invoice PDF" onclick="benDescPreview('${benJs(iv.id)}','${benJs(iv.number)}')">👁</button>`:''}
-    <button class="btn sec" style="width:auto;padding:5px 9px;font-size:11px" title="Use the automatic label" onclick="benDescReset('${benJs(iv.number)}',this)">↺</button>
-  </div>`;
-}
-function benDescPanel(){
-  if(BENDESC.loading) return `<div class="muted" style="font-size:12px;margin-top:10px">Loading invoices…</div>`;
-  if(!BENDESC.list.length) return `<div class="muted" style="font-size:12px;margin-top:10px">${askEsc(BENDESC.msg||'No invoices.')}</div>`;
-  return `<div style="margin-top:10px">
-    <input type="text" placeholder="🔍 Filter by invoice #, company or text…" oninput="benDescFilterDom(this.value)" style="margin-bottom:8px">
-    <div style="max-height:360px;overflow-y:auto;border:1px solid var(--hair);border-radius:8px;padding:4px 8px">${BENDESC.list.map(benDescRow).join('')}</div>
-    <div class="muted" style="font-size:10.5px;margin-top:6px">Type a description and click away to save. The grey text is the automatic label; leave the box blank (or press ↺) to use it. Changes show on Ben's portal immediately.</div>
-  </div>`;
-}
-function benDescFilterDom(v){ v=(v||'').toLowerCase().trim(); document.querySelectorAll('.bd-row').forEach(el=>{ const k=el.getAttribute('data-k')||''; el.style.display=(!v||k.indexOf(v)>=0)?'flex':'none'; }); }
-function benDescSave(num,label,el){
-  if(el) el.disabled=true;
-  fetch('?bendesc=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',number:num,label:label})}).then(r=>r.json()).then(j=>{
-    if(el) el.disabled=false;
-    if(j&&j.ok){ const row=(BENDESC.list||[]).find(x=>x.number===num); if(row) row.override=label; if(el){ el.style.borderColor='var(--good)'; setTimeout(()=>{el.style.borderColor='';},1000); } }
-    else alert((j&&j.error)||'Could not save.');
-  }).catch(e=>{ if(el) el.disabled=false; alert('Error: '+e); });
-}
-function benDescReset(num,btn){ const el=(btn&&btn.parentNode)?btn.parentNode.querySelector('input'):null; if(el) el.value=''; benDescSave(num,'',el); }
-function benDescPreview(id,number){ if(!id) return; window.open('?invpdf='+encodeURIComponent(id),'_blank','noopener'); }
 function vPortals(){
   if(!ME.admin) return `<div class="card muted" style="text-align:center">Admins only.</div>`;
   const sec = (t)=>`<div style="font-weight:700;font-size:12.5px;letter-spacing:.3px;margin:2px 0 10px">${t}</div>`;
   return `
   <h2>Portals</h2>
   <div class="muted" style="margin:-6px 0 14px;font-size:12px">Manage the external, login-protected report portals you share with clients.</div>
-
-  <div class="card" style="border-left:4px solid #7C3AED">
-    ${sec('🔐 Ben Portal')}
-    <div class="muted" style="font-size:12px;margin-bottom:10px">A private, login-protected report for <b>Ben</b> showing <b>all 2025–2026 invoices</b> for the Fabrimetal / CIMMETAL / SteelRwa group. Set the username &amp; password here — leave the password blank to keep the current one.</div>
-    <div id="benStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
-    <div id="benAccessBox" style="margin:0 0 10px"></div>
-    <div class="grid2" style="gap:10px">
-      <div><label>Username</label><input id="benUser" type="text" autocomplete="off" placeholder="e.g. ben" style="margin-bottom:0"></div>
-      <div><label>Password</label><input id="benPass" type="password" autocomplete="new-password" placeholder="leave blank = unchanged" style="margin-bottom:0"></div>
-    </div>
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button class="btn" style="width:auto;padding:9px 16px" onclick="benSave()">Save access</button>
-      <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="index.php?portal=ben" target="_blank" rel="noopener">Open portal ↗</a>
-      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benCopy(this)">Copy link</button>
-      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="benAiOpen()">💬 Ask AI log</button>
-    </div>
-    <label style="display:flex;align-items:center;gap:9px;margin-top:12px;font-size:12.5px;cursor:pointer">
-      <input type="checkbox" id="benPrevChk" onchange="benPrevSave(this.checked)" style="width:auto;margin:0"> Let Ben preview invoice PDFs (click an invoice to open it)
-    </label>
-    <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
-      <button class="btn sec" style="width:auto;padding:8px 14px" onclick="benDescToggle()">✏️ ${BENDESC.open?'Hide':'Edit'} invoice descriptions</button>
-      ${BENDESC.open?benDescPanel():''}
-    </div>
-  </div>
 
   <div class="card" style="border-left:4px solid #0F7A34">
     ${sec('📞 Grace — Collections')}

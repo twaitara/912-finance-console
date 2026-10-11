@@ -95,14 +95,6 @@ if (isset($_GET['hook']) && $_GET['hook'] === 'zoho') {
     exit;
 }
 
-/* ============================================================================
-   BEN PORTAL — served straight from THIS file via ?portal=ben so it works even
-   when only index.php is deployed (no separate ben.php upload needed). Private,
-   login-protected view of ALL 2025–2026 invoices for the Fabrimetal / CIMMETAL /
-   SteelRwa group. Own session (BENPORTAL). Credentials set by the admin in
-   Settings → Ben Portal access, stored hashed in data/ben_auth.json.
-   ============================================================================ */
-require_once __DIR__ . '/portal_ben.php';
 require_once __DIR__ . '/portal_grace.php';
 session_start();
 require_once __DIR__ . '/csrf.php'; csrf_guard();
@@ -200,83 +192,6 @@ if (isset($_GET['whstatus'])) {
     exit;
 }
 
-/* Admin-only: read/set the BEN PORTAL credentials (stored hashed in
-   data/ben_auth.json). Inline so a partial deploy of only index.php serves it. */
-if (isset($_GET['bencreds'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
-    $bf  = __DIR__ . '/data/ben_auth.json';
-    $curB = is_file($bf) ? (json_decode(@file_get_contents($bf), true) ?: []) : [];
-    $inB = json_decode(file_get_contents('php://input'), true) ?: [];
-    if (($inB['action'] ?? '') === 'save') {
-        $u = trim((string)($inB['user'] ?? ''));
-        $p = (string)($inB['pass'] ?? '');
-        if ($u === '') { echo json_encode(['ok'=>false, 'error'=>'Username is required.']); exit; }
-        $hash = (string)($curB['hash'] ?? '');
-        if ($p !== '') { if (strlen($p) < 4) { echo json_encode(['ok'=>false, 'error'=>'Password must be at least 4 characters.']); exit; } $hash = password_hash($p, PASSWORD_DEFAULT); }
-        if ($hash === '') { echo json_encode(['ok'=>false, 'error'=>'Set a password for the first time.']); exit; }
-        $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true);
-        @file_put_contents($bf, json_encode(['user'=>$u, 'hash'=>$hash, 'updated'=>date('c')]));
-        echo json_encode(['ok'=>true, 'configured'=>true, 'user'=>$u]); exit;
-    }
-    echo json_encode(['ok'=>true, 'configured'=>(!empty($curB['user']) && !empty($curB['hash'])), 'user'=>(string)($curB['user'] ?? '')]);
-    exit;
-}
-
-/* Admin-only: list Ben-portal invoices and edit their descriptions. Overrides
-   are stored in data/ben_desc_overrides.json and applied live at portal render
-   (no cache clear needed). */
-if (isset($_GET['bendesc'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
-    require_once __DIR__ . '/zoho.php';
-    $bdDir = __DIR__ . '/data'; $bdFile = $bdDir . '/ben_desc_overrides.json';
-    $inD = json_decode(file_get_contents('php://input'), true) ?: [];
-    if (($inD['action'] ?? '') === 'save') {
-        $num = trim((string)($inD['number'] ?? ''));
-        if ($num === '') { echo json_encode(['ok'=>false, 'error'=>'Missing invoice number.']); exit; }
-        $label = trim((string)($inD['label'] ?? ''));
-        $ov = bp_load_overrides($bdDir);
-        if ($label === '') unset($ov[$num]); else $ov[$num] = mb_substr($label, 0, 200);
-        if (!is_dir($bdDir)) @mkdir($bdDir, 0775, true);
-        @file_put_contents($bdFile, json_encode($ov));
-        echo json_encode(['ok'=>true, 'number'=>$num, 'label'=>$label]); exit;
-    }
-    try { $data = bp_build(false); } catch (\Throwable $e) { http_response_code(500); echo api_fail($e); exit; }
-    $ov = bp_load_overrides($bdDir);
-    $list = [];
-    foreach (($data['years'] ?? []) as $y => $yd) {
-        foreach (($yd['companies'] ?? []) as $c) {
-            foreach (($c['invoices'] ?? []) as $iv) {
-                $num = (string)($iv['number'] ?? '');
-                $list[] = ['id'=>(string)($iv['id'] ?? ''), 'number'=>$num, 'company'=>(string)$c['name'], 'year'=>(string)$y, 'date'=>(string)($iv['date'] ?? ''), 'total'=>(float)($iv['total'] ?? 0), 'currency'=>(string)($iv['currency'] ?? ''), 'auto'=>(string)($iv['autoDesc'] ?? ''), 'override'=>($num !== '' && isset($ov[$num])) ? (string)$ov[$num] : ''];
-            }
-        }
-    }
-    usort($list, function ($a, $b) { return strcasecmp($a['company'], $b['company']) ?: strcmp($b['date'], $a['date']); });
-    echo json_encode(['ok'=>true, 'invoices'=>$list, 'count'=>count($list)]);
-    exit;
-}
-
-/* Admin-only: toggle whether Ben can preview invoice PDFs. Stored in
-   data/ben_prefs.json. */
-if (isset($_GET['benpref'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
-    $pfDir = __DIR__ . '/data'; $pfFile = $pfDir . '/ben_prefs.json';
-    $inP = json_decode(file_get_contents('php://input'), true) ?: [];
-    if (($inP['action'] ?? '') === 'save') {
-        $cur = is_file($pfFile) ? (json_decode(@file_get_contents($pfFile), true) ?: []) : [];
-        if (array_key_exists('preview', $inP))  $cur['preview']  = !empty($inP['preview']);
-        if (array_key_exists('disabled', $inP)) $cur['disabled'] = !empty($inP['disabled']);
-        if (!is_dir($pfDir)) @mkdir($pfDir, 0775, true);
-        @file_put_contents($pfFile, json_encode($cur));
-    }
-    $p = bp_prefs($pfDir);
-    echo json_encode(['ok'=>true, 'preview'=>$p['preview'], 'disabled'=>$p['disabled']]);
-    exit;
-}
-
 /* Admin-only: read/set the GRACE PORTAL credentials (stored hashed in
    data/grace_auth.json). Clone of ?bencreds. */
 if (isset($_GET['gracecreds'])) {
@@ -323,36 +238,6 @@ if (isset($_GET['gracepref'])) {
     $p = gp_prefs($pfDir);
     echo json_encode(['ok'=>true, 'disabled'=>$p['disabled']]);
     exit;
-}
-
-/* Admin-only: the log of questions Ben has asked the "Ask AI" assistant. */
-if (isset($_GET['benailog'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
-    $logFile = __DIR__ . '/data/ben_ai_log.json';
-    $log = is_file($logFile) ? (json_decode(@file_get_contents($logFile), true) ?: []) : [];
-    echo json_encode(['ok'=>true, 'log'=>array_reverse($log), 'count'=>count($log)]);
-    exit;
-}
-
-/* Admin-only: stream any invoice PDF (for the admin-side preview in the Ben
-   descriptions editor). */
-if (isset($_GET['invpdf'])) {
-    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo 'Admins only.'; exit; }
-    require_once __DIR__ . '/zoho.php';
-    $pid = preg_replace('/[^0-9]/', '', (string)$_GET['invpdf']);
-    if ($pid === '') { http_response_code(404); echo 'Not found.'; exit; }
-    $cfg = zoho_config();
-    try { $token = zoho_access_token(); } catch (\Throwable $e) { http_response_code(502); echo 'Auth error.'; exit; }
-    $url = $cfg['api_domain'] . '/books/v3/invoices/' . rawurlencode($pid) . '?' . http_build_query(['organization_id'=>$cfg['organization_id'], 'accept'=>'pdf']);
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . $token, 'Accept: application/pdf']]);
-    $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-    if ($body === false || $code >= 400 || substr((string)$body, 0, 4) !== '%PDF') { http_response_code(502); echo 'Preview unavailable — please check your browser plugins.'; exit; }
-    header('Content-Type: application/pdf');
-    header('Content-Disposition: inline; filename="invoice-' . $pid . '.pdf"');
-    header('X-Content-Type-Options: nosniff');
-    echo $body; exit;
 }
 
 /* Admin-only: read recent server errors (data/error.log) to diagnose a "ref"
@@ -841,14 +726,6 @@ if ($NEED_PIN || empty($_SESSION['auth'])):
         <button class="qbm-x" onclick="docClose()" aria-label="Close" title="Close">✕</button>
       </span></div>
     <iframe id="docFrame" style="flex:1;width:100%;border:0;background:#fff" title="Document"></iframe>
-  </div>
-</div>
-
-<div id="benAiModal" class="qbmodal" onclick="if(event.target===this)benAiClose()">
-  <div class="qbm-card" style="max-width:680px">
-    <div class="qbm-head"><b>💬 Ask AI — Ben's questions</b>
-      <button class="qbm-x" onclick="benAiClose()" aria-label="Close" title="Close">✕</button></div>
-    <div class="qbm-body" id="benAiBody"></div>
   </div>
 </div>
 
