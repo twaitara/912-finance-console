@@ -481,7 +481,27 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .gtbl tr.grow td{background:var(--ink);color:#fff;border-bottom:2px solid var(--brand);padding:10px 14px}
   .ghwrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .ghwrap .gcar{font-size:11px;color:#C9C4BB;width:12px;flex:0 0 auto}
-  .ghwrap .gname{font-size:14px;font-weight:700;letter-spacing:.2px}
+  .ghwrap .gname{font-size:14px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+  .na{font-size:10px;font-weight:800;border-radius:3px;padding:2px 7px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+  .na.hot{background:#BE2A17;color:#fff} .na.warn{background:#F4EEDC;color:#9A6700;border:1px solid #E6D9A8} .na.cool{background:#2A2824;color:#C9C4BB;border:1px solid #3A3833}
+  /* progress / pipeline strip */
+  .prog{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--brand);padding:11px 14px;margin-top:10px}
+  .progbar{height:8px;background:var(--soft);border-radius:999px;overflow:hidden}
+  .progbar span{display:block;height:100%;background:linear-gradient(90deg,#D95E07,#1D7A3A);transition:width .4s}
+  .proglab{font-size:12px;color:var(--mute);margin-top:8px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .proglab b{color:var(--ink)}
+  .pk{cursor:pointer;font-weight:600;padding:2px 8px;border-radius:3px;border:1px solid var(--line);background:var(--soft)}
+  .pk.todo{color:var(--ink)} .pk.prom{color:var(--amber)} .pk.rdy{color:#0F7A34} .pk.paid{color:var(--green)}
+  .pk:hover{border-color:var(--brand)}
+  /* message templates */
+  .msgrow{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .msglbl{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}
+  .msgb{font-size:12px;font-weight:600;font-family:inherit;text-decoration:none;cursor:pointer;border-radius:3px;padding:7px 12px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+  .msgb.wa{background:#0F7A34;border-color:#0F7A34;color:#fff}
+  .msgb.copy{color:var(--mail)}
+  /* toast */
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:4px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:300;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .ghwrap .gcount{font-family:var(--mono);font-size:10.5px;color:#C9C4BB;background:#2A2824;border:1px solid #3A3833;border-radius:3px;padding:1px 6px;white-space:nowrap}
   .ghwrap .gtot{font-family:var(--mono);font-weight:700;font-size:14px;margin-left:4px}
   .ghwrap .gacts{margin-left:auto;display:flex;gap:6px;align-items:center}
@@ -571,7 +591,7 @@ const att=s=>esc(s).replace(/'/g,'&#39;');
 const jsq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 const fmtC=(cur,n)=>(cur||'')+' '+Math.round(n||0).toLocaleString('en-US');
 const fmtMap=m=>{const k=Object.keys(m||{});if(!k.length)return '—';return k.sort().map(c=>fmtC(c,m[c])).join('  ·  ');};
-let DATA=null, Q='', SORT='overdue', FILTER='all', EXP={}, EDITPH={};
+let DATA=null, Q='', SORT='priority', FILTER='all', EXP={}, EDITPH={};
 function bar(s){const b=document.getElementById('bar');if(!b)return;if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);}}
 async function load(refresh){bar(true);try{const r=await fetch('index.php?portal=grace&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'});DATA=await r.json();}catch(e){DATA={ok:false,error:String(e)};}bar(false);render();}
 /* KE number → full international digits for wa.me */
@@ -629,7 +649,7 @@ function invDetailHTML(iv){
     if(+iv.adjustment) breakdown+=line('Adjustment', fmtC(cur,iv.adjustment));
   }
   return `
-    <div class="mmeta"><span><b style="color:var(--ink)">${esc(iv.customer||'')}</b></span><span>Date: ${esc(iv.date||'—')}</span><span>Due: ${esc(iv.due||'—')}</span>${iv.status?`<span>Status: ${esc(iv.status)}</span>`:''}</div>
+    <div class="mmeta"><span><b style="color:var(--ink);text-transform:uppercase">${esc(iv.customer||'')}</b></span><span>Date: ${esc(iv.date||'—')}</span><span>Due: ${esc(iv.due||'—')}</span>${iv.status?`<span>Status: ${esc(iv.status)}</span>`:''}</div>
     ${rows?`<table class="mtbl"><thead><tr><th>Item / description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Tax</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="muted">No line items recorded on this invoice.</div>'}
     <div style="margin-top:12px;border-top:1px solid var(--hair);padding-top:10px">${breakdown}</div>
     <div class="mtot"><span>Invoice total</span><span class="mono">${fmtC(cur,iv.total)}</span></div>
@@ -654,9 +674,63 @@ function matchFilter(c){
   if(FILTER==='paid')return c.status==='Paid';
   if(FILTER==='nophone')return !(c.phone);
   if(FILTER==='ready')return (c.invoices||[]).some(iv=>iv.confirmed);
+  if(FILTER==='callback')return callbackDue(c);
   return true;
 }
 function readyTotals(){ const by={}; let n=0; (DATA.customers||[]).forEach(c=>(c.invoices||[]).forEach(iv=>{ if(iv.confirmed){ const cu=(iv.currency||'KES'); by[cu]=(by[cu]||0)+(+iv.balance||0); n++; } })); return {by,n}; }
+function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+/* Priority score — where her next call has the biggest expected payoff.
+   amount owed × how-overdue, boosted when never contacted or the client already said
+   the money is ready, and when a promise has lapsed; future promises are pushed down. */
+function cScore(c){
+  if(c.status==='Paid') return -1;
+  let w=1+Math.min(+c.maxOverdue||0,120)/30;         // older debt = more urgent (up to ~5×)
+  if(!c.status) w*=1.25;                               // never contacted → act
+  if(c.status==='No answer') w*=1.15;
+  if(c.status==='Promised'){ const p=c.promised||''; w*=(p && p<todayISO())?1.4:0.5; }  // lapsed promise up, future down
+  if((c.invoices||[]).some(iv=>iv.confirmed)) w*=1.7;  // client said it's ready → hottest
+  return (+c.sortTotal||0)*w;
+}
+function nextAction(c){
+  if((c.invoices||[]).some(iv=>iv.confirmed)) return {t:'💰 Ready — arrange collection',cls:'hot'};
+  if(c.status==='Paid') return null;
+  if(c.status==='Promised'){ const p=c.promised||''; if(p && p<todayISO()) return {t:'⚠ Promise overdue — call',cls:'hot'}; if(p) return {t:'Promised '+p,cls:'cool'}; return {t:'Promised — set a date',cls:'warn'}; }
+  if(c.status==='No answer') return {t:'Try again',cls:'warn'};
+  if(c.status==='Called') return {t:'Follow up',cls:'warn'};
+  return {t:'Not contacted — call',cls:'warn'};
+}
+function callbackDue(c){ return c.status==='Promised' && c.promised && c.promised<=todayISO(); }
+function invNums(c){ const ns=(c.invoices||[]).map(iv=>iv.number).filter(Boolean); let s=ns.slice(0,6).join(', '); if(ns.length>6) s+=' +'+(ns.length-6)+' more'; return s; }
+/* Ready-to-use WhatsApp messages — one tap sends a clear, polite, professional ask
+   (reduces her effort and keeps the wording consistent, which lifts response rates). */
+function waMsg(c, kind){
+  const name=(c.customer||'').replace(/\s+/g,' ').trim();
+  const amt=fmtMap(c.totalByCur), nums=invNums(c);
+  if(kind==='followup') return 'Good day '+name+', following up on the outstanding balance of '+amt+' ('+nums+'). Could you kindly let me know the payment status? Thank you — Grace, Waitara Holdings.';
+  if(kind==='collect')  return 'Good day '+name+', thank you. Kindly confirm the payment / cheque of '+amt+' is ready so we can arrange collection. Thank you — Grace, Waitara Holdings.';
+  return 'Good day '+name+', this is Grace from Waitara Holdings. A kind reminder regarding your outstanding balance of '+amt+' ('+nums+'). Kindly advise when payment will be ready or when we may collect. Thank you.';
+}
+function waLink(c, kind){ return 'https://wa.me/'+encodeURIComponent(waNum(c.phone))+'?text='+encodeURIComponent(waMsg(c,kind)); }
+function copyMsg(cid, kind){ const c=cust(cid); if(!c)return; const t=waMsg(c,kind); if(navigator.clipboard){navigator.clipboard.writeText(t).then(()=>toast('Message copied — paste into SMS/WhatsApp')).catch(()=>toast('Copy failed'));} }
+let _toastT=null;
+function toast(msg){ let e=document.getElementById('toast'); if(!e){ e=document.createElement('div'); e.id='toast'; e.className='toast'; document.body.appendChild(e); } e.textContent=msg; e.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>e.classList.remove('show'),1800); }
+function renderProgress(cs){
+  const n=cs.length||1;
+  const paid=cs.filter(c=>c.status==='Paid').length;
+  const ready=cs.filter(c=>(c.invoices||[]).some(iv=>iv.confirmed)).length;
+  const promised=cs.filter(c=>c.status==='Promised').length;
+  const todo=cs.filter(c=>!c.status).length;
+  const pct=Math.round((n-todo)/n*100);
+  return `<div class="prog">
+    <div class="progbar"><span style="width:${pct}%"></span></div>
+    <div class="proglab"><b>${pct}%</b> worked today-list ·
+      <span class="pk todo" onclick="setFilter('todo')">${todo} to contact</span>
+      <span class="pk prom" onclick="setFilter('promised')">${promised} promised</span>
+      <span class="pk rdy" onclick="setFilter('ready')">${ready} ready to collect</span>
+      ${paid?`<span class="pk paid" onclick="setFilter('paid')">${paid} paid</span>`:''}
+    </div>
+  </div>`;
+}
 function render(){
   const app=document.getElementById('app');if(!DATA)return;
   if(DATA.ok===false){app.innerHTML='<div class="empty" style="color:var(--red)">Couldn\'t load: '+esc(DATA.error||'failed')+'</div>';return;}
@@ -679,11 +753,13 @@ function render(){
       </div>
     </div>
     ${(()=>{const rt=readyTotals();return rt.n>0?`<div class="readybar">✅ Ready to collect — <b>${esc(fmtMap(rt.by))}</b> across ${rt.n} invoice${rt.n===1?'':'s'} you've marked</div>`:'';})()}
+    ${renderProgress(cs)}
     <div class="tool">
       <input class="srch" type="text" placeholder="Search a customer…" value="${att(Q)}" oninput="Q=this.value.toLowerCase();renderList()">
       <div class="chips" id="fchips"></div>
       <div class="sortrow">Sort:
         <div class="seg">
+          <button data-k="priority" class="${SORT==='priority'?'on':''}" onclick="setSort('priority')">🎯 Best to call first</button>
           <button data-k="overdue" class="${SORT==='overdue'?'on':''}" onclick="setSort('overdue')">Most overdue</button>
           <button data-k="owed" class="${SORT==='owed'?'on':''}" onclick="setSort('owed')">Biggest amount</button>
         </div>
@@ -698,6 +774,7 @@ function renderChips(){
   const cs=DATA.customers||[];
   const defs=[
     {k:'all',label:'All',cls:'',n:cs.length},
+    {k:'callback',label:'📞 Call back today',cls:'red',n:cs.filter(callbackDue).length},
     {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(c=>(c.invoices||[]).some(iv=>iv.confirmed)).length},
     {k:'urgent',label:'30+ days late',cls:'red',n:cs.filter(c=>(c.maxOverdue||0)>=30).length},
     {k:'todo',label:'To contact',cls:'',n:cs.filter(c=>!c.status).length},
@@ -712,7 +789,8 @@ function renderList(){
   const box=document.getElementById('gList');if(!box||!DATA)return;
   let list=(DATA.customers||[]).slice();
   if(SORT==='owed')list.sort((a,b)=>(b.sortTotal||0)-(a.sortTotal||0));
-  else list.sort((a,b)=>(b.maxOverdue||0)-(a.maxOverdue||0)||(b.sortTotal||0)-(a.sortTotal||0));
+  else if(SORT==='overdue')list.sort((a,b)=>(b.maxOverdue||0)-(a.maxOverdue||0)||(b.sortTotal||0)-(a.sortTotal||0));
+  else list.sort((a,b)=>cScore(b)-cScore(a));   // priority (default)
   if(Q)list=list.filter(c=>((c.customer||'')+' '+(c.phone||'')).toLowerCase().indexOf(Q)>=0);
   list=list.filter(matchFilter);
   if(!list.length){box.innerHTML='<div class="empty">Nothing here 🎉 — try a different filter.</div>';return;}
@@ -728,9 +806,10 @@ function renderGroup(c){
   const spill=c.status?`<span class="spill ${c.status==='No answer'?'No':c.status}">${esc(c.status)}</span>`:'';
   const tel=telNum(c.phone), wa=waNum(c.phone);
   const callbtns=c.phone
-    ? `<a class="gbtn call" href="tel:${att(tel)}">Call</a>${wa?`<a class="gbtn wa" href="https://wa.me/${att(wa)}" target="_blank" rel="noopener">WhatsApp</a>`:''}`
+    ? `<a class="gbtn call" href="tel:${att(tel)}">Call</a>${wa?`<a class="gbtn wa" href="${att(waLink(c,'reminder'))}" target="_blank" rel="noopener" title="Opens WhatsApp with a ready reminder message">WhatsApp</a>`:''}`
     : (c.email?`<a class="gbtn" href="mailto:${att(c.email)}">Email</a>`:`<button class="gbtn" onclick="openPhone('${jsq(cid)}')">Add phone</button>`);
   const nConf=(c.invoices||[]).filter(iv=>iv.confirmed).length;
+  const na=nextAction(c);
   const open=!!EXP[cid];
   const head=`<tr class="grow ${open?'open':''}" onclick="toggleInv('${jsq(cid)}')">
     <td colspan="6">
@@ -738,6 +817,7 @@ function renderGroup(c){
         <span class="gcar">${open?'▾':'▸'}</span>
         <span class="gname">${esc(c.customer||'(unnamed)')}</span>
         <span class="gcount">${c.count} inv</span>
+        ${na?`<span class="na ${na.cls}">${esc(na.t)}</span>`:''}
         ${spill}${daysPill}
         ${nConf>0?`<span class="pill ready">● ${nConf} ready to collect</span>`:''}
         <span class="gtot">${esc(fmtMap(c.totalByCur))}</span>
@@ -760,8 +840,15 @@ function renderGroup(c){
     let phone='';
     if(EDITPH[cid]||!c.phone){ phone=`<div class="phrow"><input id="ph_${att(cid)}" type="tel" inputmode="tel" placeholder="Add phone e.g. 0712 345678" value="${att(c.phone||'')}" onkeydown="if(event.key==='Enter')savePhone('${jsq(cid)}')"><button class="save" onclick="savePhone('${jsq(cid)}')">Save</button></div>`; }
     else { phone=`<div class="telno">${esc(c.phone)} <button class="gbtn" style="padding:4px 9px" onclick="openPhone('${jsq(cid)}')">Edit</button></div>`; }
+    const waBtn=(kind,label)=> c.phone&&waNum(c.phone)?`<a class="msgb wa" href="${att(waLink(c,kind))}" target="_blank" rel="noopener">${label}</a>`:'';
+    const msgs=`<div class="msgrow">
+      <span class="msglbl">Send:</span>
+      ${waBtn('reminder','Reminder')}${waBtn('followup','Follow-up')}${waBtn('collect','Confirm collection')}
+      <button class="msgb copy" onclick="copyMsg('${jsq(cid)}','reminder')">Copy reminder</button>
+    </div>`;
     panel=`<tr class="gpanel"><td colspan="6">
       ${phone}
+      ${msgs}
       <div class="schips">${schips}</div>
       ${promised}
       <textarea class="nt" placeholder="Notes — what they said, when to call back…" oninput="onNote('${jsq(cid)}',this.value,'${dot}')">${esc(c.note||'')}</textarea>
