@@ -478,10 +478,12 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .gtbl th.r,.gtbl td.r{text-align:right}
   .gtbl td{padding:10px 14px;border-bottom:1px solid var(--hair);vertical-align:middle}
   .gtbl tr.grow{cursor:pointer}
-  .gtbl tr.grow td{background:var(--ink);color:#fff;border-bottom:2px solid var(--brand);padding:10px 14px}
+  .gtbl tr.grow td{background:var(--soft);color:var(--ink);border-top:2px solid var(--line);border-bottom:1px solid var(--line);padding:11px 14px}
+  .gtbl tr.grow:hover td{background:#F0EDE7}
+  .gtbl tr.grow.open td{background:#FBEFE6;border-bottom-color:var(--brand)}
   .ghwrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .ghwrap .gcar{font-size:11px;color:#C9C4BB;width:12px;flex:0 0 auto}
-  .ghwrap .gname{font-size:14px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+  .ghwrap .gcar{font-size:11px;color:var(--brand);width:12px;flex:0 0 auto}
+  .ghwrap .gname{font-size:14px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--ink)}
   .na{font-size:10px;font-weight:800;border-radius:3px;padding:2px 7px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
   .na.hot{background:#BE2A17;color:#fff} .na.warn{background:#F4EEDC;color:#9A6700;border:1px solid #E6D9A8} .na.cool{background:#2A2824;color:#C9C4BB;border:1px solid #3A3833}
   /* progress / pipeline strip */
@@ -502,11 +504,13 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   /* toast */
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:4px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:300;box-shadow:0 6px 24px rgba(0,0,0,.25)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-  .ghwrap .gcount{font-family:var(--mono);font-size:10.5px;color:#C9C4BB;background:#2A2824;border:1px solid #3A3833;border-radius:3px;padding:1px 6px;white-space:nowrap}
-  .ghwrap .gtot{font-family:var(--mono);font-weight:700;font-size:14px;margin-left:4px}
+  .ghwrap .gcount{font-family:var(--mono);font-size:10.5px;color:var(--mute);background:var(--card);border:1px solid var(--line);border-radius:3px;padding:1px 6px;white-space:nowrap}
+  .ghwrap .gtot{font-family:var(--mono);font-weight:700;font-size:14px;margin-left:4px;color:var(--ink)}
   .ghwrap .gacts{margin-left:auto;display:flex;gap:6px;align-items:center}
-  .gbtn{border:1px solid #3A3833;background:transparent;color:#E7E3DC;border-radius:3px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;white-space:nowrap}
+  .gbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:3px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;white-space:nowrap}
+  .gbtn:hover{border-color:var(--brand)}
   .gbtn.call{background:var(--green);border-color:var(--green);color:#fff} .gbtn.wa{background:#0F7A34;border-color:#0F7A34;color:#fff}
+  .na.cool{background:var(--soft);color:var(--mute);border:1px solid var(--line)}
   .girow:hover{background:var(--soft)}
   .girow .num{font-family:var(--mono);font-weight:600}
   .girow .about{color:var(--mute);max-width:320px}
