@@ -848,3 +848,61 @@
   }
   table.rpt tbody tr:not(.tot):hover td *,
   html.dark table.rpt tbody tr:not(.tot):hover td *{color:#000!important}
+
+  /* ============================================================
+     912 — flat "Plex" theme to match the Grace + reconciliation portals
+     (appended; later rules win). Visual only: colours, type, flat edges. */
+  :root{
+    --orange:#D95E07;--blue:#1F4FD0;--ink:#1B1A17;--mute:#6E6A63;--line:#D7D3CB;
+    --bg:#E8E6E1;--good:#1D7A3A;--bad:#BE2A17;--card:#FFFFFF;--soft:#F5F3EF;--hair:#E6E2DB;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  body{font-family:'IBM Plex Sans',system-ui,'Segoe UI',Arial,sans-serif}
+  .wrap{background:var(--bg)}
+  /* header: flat dark bar with an orange rule + mono monogram */
+  header{background:#1B1A17;border-bottom:2px solid var(--orange);padding:12px 18px;box-shadow:none}
+  .b{border-radius:4px;background:var(--orange);font-family:var(--mono);font-weight:600;box-shadow:none}
+  .livepill{border-radius:3px}
+  a.logout{color:#C7B8A8}
+  /* fund bar */
+  .fundbar{background:var(--card);border-bottom:1px solid var(--line)}
+  .meter{border-radius:2px;background:var(--hair)}
+  .meter>div{background:var(--orange)}
+  /* tabs -> flat segmented chips */
+  .tabs{background:var(--card);border-bottom:1px solid var(--line);gap:5px;padding:8px}
+  .tabs button{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:3px;text-transform:none;letter-spacing:.2px;font-weight:600}
+  .tabs button.active,.tabs button.grp.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .submenu{border-radius:3px;box-shadow:0 6px 18px rgba(20,16,12,.14);border-color:var(--line)}
+  .submenu button{border:1px solid var(--line)}
+  h2{letter-spacing:.3px;color:var(--ink)}
+  /* cards / inputs / buttons -> flat, squared, hairline */
+  .card{border-radius:4px;border:1px solid var(--line);box-shadow:none}
+  input,select,textarea{border-radius:3px;border:1px solid var(--line);background:var(--soft)}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--orange);box-shadow:none}
+  .btn{border-radius:3px;box-shadow:none;background:var(--orange)}
+  .btn.sec{background:var(--card);border:1px solid var(--line);color:var(--ink);box-shadow:none}
+  .pill{border-radius:3px}
+  .warn,.ok{border-radius:3px}
+  /* KPIs + big numbers in mono */
+  .kpi{border-radius:4px;box-shadow:none}
+  .kpi::before{width:3px}
+  .kpi .n{font-family:var(--mono);font-weight:600;letter-spacing:0}
+  .val{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  /* dashboard hero -> flat dark panel, orange top rule, mono figure */
+  .dsh-hero{background:#1B1A17;border:1px solid #2A241E;border-top:3px solid var(--orange);border-radius:4px;box-shadow:none}
+  .dsh-hero::after{display:none}
+  .dsh-hero .big{font-family:var(--mono);font-weight:600;letter-spacing:0}
+  /* team box -> flat dark */
+  .teambox{background:#1B1A17;border:1px solid #2A241E;border-radius:4px;box-shadow:none}
+  .teambox-head .title::before{box-shadow:none}
+  /* tiles / tools / chips -> flat */
+  .linktile{border-radius:4px;box-shadow:none;transition:background .12s}
+  .linktile:hover{transform:none;box-shadow:none;background:var(--soft)}
+  .linktile .ic{border-radius:4px}
+  .tool details{border-radius:4px}
+  .wchip{border-radius:3px;background:var(--soft)}
+  .dashtkgrid .dtk{border-radius:4px;box-shadow:none;border:1px solid var(--line);border-left:3px solid var(--orange)}
+  .dashtkgrid .dtk .dtk-title{color:var(--ink)}
+  .invrow:hover{background:var(--soft)}
+  /* modals / popups squared */
+  .qbmodal .qbm-card,.qbm-head,.modal .sheet{border-radius:4px}
