@@ -173,13 +173,15 @@ if (!function_exists('gp_build')) {
        collect.php) onto a built dataset. Applied per-request (outside the 15-min cache)
        so Grace sees a new flag as soon as she refreshes. */
     function gp_apply_collect($res) {
-        $ready = []; $share = [];
+        $ready = []; $share = []; $confirm = [];
         try {
             $pdo = db();
             $pdo->exec("CREATE TABLE IF NOT EXISTS collect_flags (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', ready TINYINT(1) DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             $pdo->exec("CREATE TABLE IF NOT EXISTS grace_share (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS collect_confirm (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', confirmed_by VARCHAR(80) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             foreach ($pdo->query("SELECT invoice_id FROM collect_flags WHERE ready=1")->fetchAll(PDO::FETCH_COLUMN) as $v) $ready[(string)$v] = true;
             foreach ($pdo->query("SELECT invoice_id FROM grace_share")->fetchAll(PDO::FETCH_COLUMN) as $v) $share[(string)$v] = true;
+            foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[(string)$v] = true;
         } catch (\Throwable $e) { /* leave sets empty -> KES-only, no ready */ }
 
         /* Rebuild per-request so USD visibility (share) and ready flags are always current:
@@ -192,6 +194,7 @@ if (!function_exists('gp_build')) {
                 if ($cur !== 'KES' && !isset($share[(string)($iv['id'] ?? '')])) continue;   // USD hidden unless shared
                 $bal = (float)($iv['balance'] ?? 0);
                 $iv['ready'] = isset($ready[(string)($iv['id'] ?? '')]);
+                $iv['confirmed'] = isset($confirm[(string)($iv['id'] ?? '')]);
                 if ($iv['ready']) { $rc++; $rbc[$cur] = ($rbc[$cur] ?? 0) + $bal; $amtByCur[$cur] = ($amtByCur[$cur] ?? 0) + $bal; }
                 $tbc[$cur] = ($tbc[$cur] ?? 0) + $bal; $sortTotal += $bal;
                 $ov = (int)($iv['overdue'] ?? 0); if ($ov > $maxOv) $maxOv = $ov;
@@ -269,6 +272,32 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
                 ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),status=VALUES(status),note=VALUES(note),promised_date=VALUES(promised_date),phone=VALUES(phone)")
                 ->execute([$cid, $name, $status, $note, $pd, $phone]);
             echo json_encode(['ok'=>true]);
+        } catch (\Throwable $e) { echo api_fail($e); }
+        exit;
+    }
+
+    /* Grace confirms the client has agreed we may collect this invoice (or clears it).
+       Writes to collect_confirm, which the owner's local app reads via collect.php. */
+    if (isset($_GET['confirm'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$gAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
+        try {
+            $in = json_decode(file_get_contents('php://input'), true) ?: [];
+            $iid = trim((string)($in['invoice_id'] ?? '')); if ($iid === '') { echo json_encode(['ok'=>false, 'error'=>'No invoice id.']); exit; }
+            $num = mb_substr((string)($in['invoice_number'] ?? ''), 0, 64);
+            $name = mb_substr((string)($in['customer_name'] ?? ''), 0, 190);
+            $on = !empty($in['confirmed']);
+            $by = mb_substr((string)($_SESSION['grace_user'] ?? ''), 0, 80);
+            $pdo = db();
+            $pdo->exec("CREATE TABLE IF NOT EXISTS collect_confirm (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', confirmed_by VARCHAR(80) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            if ($on) {
+                $pdo->prepare("INSERT INTO collect_confirm (invoice_id,invoice_number,customer_name,confirmed_by) VALUES (?,?,?,?)
+                    ON DUPLICATE KEY UPDATE invoice_number=VALUES(invoice_number),customer_name=VALUES(customer_name),confirmed_by=VALUES(confirmed_by)")
+                    ->execute([$iid, $num, $name, $by]);
+            } else {
+                $pdo->prepare("DELETE FROM collect_confirm WHERE invoice_id=?")->execute([$iid]);
+            }
+            echo json_encode(['ok'=>true, 'invoice_id'=>$iid, 'confirmed'=>$on]);
         } catch (\Throwable $e) { echo api_fail($e); }
         exit;
     }
@@ -362,6 +391,11 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .readybar{margin-top:10px;background:var(--green-bg);border:1px solid #BFE0CB;border-left:3px solid #0F7A34;color:#0F5A28;padding:11px 14px;font-size:13.5px;font-weight:600}
   .cx.isready{border-left:3px solid #0F7A34}
   .rtag{flex:0 0 auto;font-size:9.5px;font-weight:800;color:#0F7A34;background:var(--green-bg);border:1px solid #BFE0CB;border-radius:3px;padding:1px 6px;text-transform:uppercase;letter-spacing:.04em}
+  .ctag{flex:0 0 auto;font-size:9.5px;font-weight:800;color:#1F4FD0;background:var(--blue-bg);border:1px solid #BcCcF0;border-radius:3px;padding:1px 6px;text-transform:uppercase;letter-spacing:.04em}
+  .invact{margin-top:7px}
+  .okc{font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--mail);border-radius:3px;padding:7px 12px}
+  .okc.on{background:#0F7A34;border-color:#0F7A34;color:#fff}
+  .okc:disabled{opacity:.6;cursor:default}
   .invlink{margin-left:auto;background:none;border:0;color:var(--mail);font-weight:600;font-size:12px;cursor:pointer;font-family:inherit;padding:3px 2px;white-space:nowrap}
   .acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
   .act{flex:1;min-width:120px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:3px;padding:11px 14px;font-size:13.5px;font-weight:600;text-decoration:none;border:0;cursor:pointer;font-family:inherit;letter-spacing:.3px}
@@ -502,6 +536,18 @@ function openPhone(cid){EDITPH[cid]=true;renderList();const i=document.getElemen
 function savePhone(cid){const i=document.getElementById('ph_'+cid);if(!i)return;const c=cust(cid);if(!c)return;c.phone=i.value.trim();EDITPH[cid]=false;persist(cid);renderList();}
 function setSort(s){SORT=s;renderList();}
 function setFilter(f){FILTER=f;renderList();}
+async function confirmToggle(id, number, customer, btn){
+  let iv=null; (DATA.customers||[]).some(c=>{ const f=(c.invoices||[]).find(x=>String(x.id)===String(id)); if(f){iv=f;return true;} return false; });
+  const now=!(iv&&iv.confirmed);
+  btn.disabled=true; const old=btn.textContent; btn.textContent='…';
+  try{
+    const r=await fetch('index.php?portal=grace&confirm=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({invoice_id:id,invoice_number:number,customer_name:customer,confirmed:now})});
+    const j=await r.json();
+    if(j&&j.ok){ if(iv) iv.confirmed=now; renderList(); }
+    else { btn.disabled=false; btn.textContent=old; alert('Could not save: '+((j&&j.error)||'failed')); }
+  }catch(e){ btn.disabled=false; btn.textContent=old; alert('Error: '+e); }
+}
 function closeInv(){const m=document.getElementById('invModal');if(m)m.classList.remove('open');}
 function invDetailHTML(iv){
   const cur=iv.currency||'';
@@ -636,8 +682,9 @@ function renderCard(c){
   const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
   const invBtn=`<button class="invlink" onclick="toggleInv('${jsq(cid)}')">${c.count} invoice${c.count===1?'':'s'} ${EXP[cid]?'▴':'▾'}</button>`;
   const invBox=EXP[cid]?`<div class="invbox">${c.invoices.map(iv=>`<div class="inv">
-      <div class="invtop"><span class="num">${esc(iv.number)}</span>${iv.ready?`<span class="rtag">● Ready</span>`:''}<span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</div>
+      <div class="invtop"><span class="num">${esc(iv.number)}</span>${iv.ready?`<span class="rtag">● Ready</span>`:''}${iv.confirmed?`<span class="ctag">✓ Client OK'd</span>`:''}<span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</div>
       ${iv.about?`<div class="iabout">${esc(iv.about)}</div>`:''}
+      ${iv.id?`<div class="invact"><button class="okc ${iv.confirmed?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)">${iv.confirmed?"✓ Client said we can collect":"Client said we can collect?"}</button></div>`:''}
     </div>`).join('')}</div>`:'';
   const readyPill=(c.readyCount||0)>0?`<span class="pill ready">● ${esc(fmtMap(c.readyByCur))} ready · ${c.readyCount} inv</span>`:'';
   return `<div class="cx ${c.status==='Paid'?'paid':''} ${(c.readyCount||0)>0?'isready':''}">

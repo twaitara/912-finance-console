@@ -31,6 +31,14 @@ try {
         customer_name VARCHAR(190) DEFAULT '',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    /* client confirmed we may collect — set by Grace in her portal, read here by the local app */
+    $pdo->exec("CREATE TABLE IF NOT EXISTS collect_confirm (
+        invoice_id VARCHAR(64) PRIMARY KEY,
+        invoice_number VARCHAR(64) DEFAULT '',
+        customer_name VARCHAR(190) DEFAULT '',
+        confirmed_by VARCHAR(80) DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $in = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -59,5 +67,7 @@ try {
     foreach ($pdo->query("SELECT invoice_id FROM collect_flags WHERE ready=1")->fetchAll(PDO::FETCH_COLUMN) as $v) $ready[] = (string)$v;
     $share = [];
     foreach ($pdo->query("SELECT invoice_id FROM grace_share")->fetchAll(PDO::FETCH_COLUMN) as $v) $share[] = (string)$v;
-    echo json_encode(['ok'=>true, 'ready'=>$ready, 'share'=>$share]);
+    $confirm = [];
+    foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[] = (string)$v;
+    echo json_encode(['ok'=>true, 'ready'=>$ready, 'share'=>$share, 'confirm'=>$confirm]);
 } catch (\Throwable $e) { echo api_fail($e); }
