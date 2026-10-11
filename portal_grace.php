@@ -16,10 +16,14 @@ if (!function_exists('gp_build')) {
             note TEXT NULL,
             promised_date DATE NULL,
             phone VARCHAR(40) DEFAULT '',
+            email VARCHAR(190) DEFAULT '',
+            contact_name VARCHAR(190) DEFAULT '',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        /* migrate older tables that predate the phone column */
-        try { $pdo->exec("ALTER TABLE grace_notes ADD COLUMN phone VARCHAR(40) DEFAULT ''"); } catch (\Throwable $e) { /* already exists */ }
+        /* migrate older tables that predate these columns */
+        try { $pdo->exec("ALTER TABLE grace_notes ADD COLUMN phone VARCHAR(40) DEFAULT ''"); } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE grace_notes ADD COLUMN email VARCHAR(190) DEFAULT ''"); } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE grace_notes ADD COLUMN contact_name VARCHAR(190) DEFAULT ''"); } catch (\Throwable $e) {}
     }
     /* Fetch one invoice's line items from Zoho and distil a short "what it's for"
        summary. Returned struct feeds both the inline summary and the detail popup. */
@@ -145,7 +149,7 @@ if (!function_exists('gp_build')) {
 
         // 4) notes overlay (incl. Grace's own saved phone, which wins over Zoho)
         $notes = [];
-        try { $pdo = db(); gp_notes_table($pdo); foreach ($pdo->query("SELECT zoho_customer_id,status,note,promised_date,phone FROM grace_notes")->fetchAll(PDO::FETCH_ASSOC) as $n) { $notes[(string)$n['zoho_customer_id']] = $n; } } catch (Exception $e) { /* no notes yet */ }
+        try { $pdo = db(); gp_notes_table($pdo); foreach ($pdo->query("SELECT zoho_customer_id,status,note,promised_date,phone,email,contact_name FROM grace_notes")->fetchAll(PDO::FETCH_ASSOC) as $n) { $notes[(string)$n['zoho_customer_id']] = $n; } } catch (Exception $e) { /* no notes yet */ }
 
         // 5) compose
         $out = []; $totalByCur = []; $invCount = 0;
@@ -153,10 +157,13 @@ if (!function_exists('gp_build')) {
             usort($g['invoices'], fn($a, $b) => strcmp($a['due'], $b['due']));   // most overdue first
             $n = ($g['cid'] !== '' && isset($notes[$g['cid']])) ? $notes[$g['cid']] : null;
             $savedPhone = $n ? trim((string)($n['phone'] ?? '')) : '';
+            $savedEmail = $n ? trim((string)($n['email'] ?? '')) : '';
+            $contactName = $n ? trim((string)($n['contact_name'] ?? '')) : '';
             $out[] = [
-                'cid'=>$g['cid'], 'customer'=>$g['customer'],
-                'phone'=>$savedPhone !== '' ? $savedPhone : $g['phone'], 'mobile'=>$g['mobile'], 'email'=>$g['email'] ?? '',
-                'savedPhone'=>$savedPhone, 'hasZohoPhone'=>($g['phone'] !== '' || $g['mobile'] !== ''),
+                'cid'=>$g['cid'], 'customer'=>$g['customer'], 'contactName'=>$contactName,
+                'phone'=>$savedPhone !== '' ? $savedPhone : $g['phone'], 'mobile'=>$g['mobile'],
+                'email'=>$savedEmail !== '' ? $savedEmail : ($g['email'] ?? ''),
+                'savedPhone'=>$savedPhone, 'savedEmail'=>$savedEmail, 'hasZohoPhone'=>($g['phone'] !== '' || $g['mobile'] !== ''),
                 'totalByCur'=>$g['totalByCur'], 'sortTotal'=>$g['sortTotal'], 'count'=>count($g['invoices']),
                 'maxOverdue'=>$g['maxOverdue'], 'invoices'=>$g['invoices'],
                 'status'=>$n['status'] ?? '', 'note'=>$n['note'] ?? '', 'promised'=>$n['promised_date'] ?? '',
@@ -280,10 +287,12 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
             $note = mb_substr((string)($in['note'] ?? ''), 0, 3000);
             $pd = trim((string)($in['promised_date'] ?? '')); $pd = preg_match('/^\d{4}-\d{2}-\d{2}$/', $pd) ? $pd : null;
             $phone = mb_substr(trim((string)($in['phone'] ?? '')), 0, 40);
+            $email = mb_substr(trim((string)($in['email'] ?? '')), 0, 190);
+            $contact = mb_substr(trim((string)($in['contact_name'] ?? '')), 0, 190);
             $pdo = db(); gp_notes_table($pdo);
-            $pdo->prepare("INSERT INTO grace_notes (zoho_customer_id,customer_name,status,note,promised_date,phone) VALUES (?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),status=VALUES(status),note=VALUES(note),promised_date=VALUES(promised_date),phone=VALUES(phone)")
-                ->execute([$cid, $name, $status, $note, $pd, $phone]);
+            $pdo->prepare("INSERT INTO grace_notes (zoho_customer_id,customer_name,status,note,promised_date,phone,email,contact_name) VALUES (?,?,?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),status=VALUES(status),note=VALUES(note),promised_date=VALUES(promised_date),phone=VALUES(phone),email=VALUES(email),contact_name=VALUES(contact_name)")
+                ->execute([$cid, $name, $status, $note, $pd, $phone, $email, $contact]);
             echo json_encode(['ok'=>true]);
         } catch (\Throwable $e) { echo api_fail($e); }
         exit;
@@ -504,6 +513,50 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   /* toast */
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:4px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:300;box-shadow:0 6px 24px rgba(0,0,0,.25)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* open-loop banner */
+  .loopbar{margin-top:10px;background:var(--amber-bg);border:1px solid #E6D9A8;border-left:3px solid var(--amber);color:#7A5200;padding:11px 14px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .loopbar:hover{background:#F0E7CC}
+  /* mode toggle */
+  .modebar{display:flex;margin:14px 0 12px}
+  .seg2{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--card)}
+  .seg2 button{border:0;background:transparent;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--mute);border-left:1px solid var(--line)}
+  .seg2 button:first-child{border-left:0}
+  .seg2 button.on{background:var(--brand);color:#fff}
+  /* FOCUS card */
+  .focuscard{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--brand);padding:20px;max-width:560px;margin:0 auto}
+  .fprog{margin-bottom:14px}
+  .fpbar{height:7px;background:var(--soft);border-radius:999px;overflow:hidden}
+  .fpbar span{display:block;height:100%;background:linear-gradient(90deg,#D95E07,#1D7A3A);transition:width .4s}
+  .fplab{font-size:11.5px;color:var(--mute);margin-top:6px;font-weight:600}
+  .fname{font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;line-height:1.15}
+  .fsub{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+  .famt{font-family:var(--mono);font-size:30px;font-weight:700;margin-top:14px;color:var(--ink)}
+  .famtl{font-family:'IBM Plex Sans',sans-serif;font-size:12px;font-weight:500;color:var(--mute);margin-left:8px}
+  .finvs{margin:12px 0 4px;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:6px 0}
+  .finv{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:12.5px}
+  .finv .num{font-family:var(--mono);font-weight:600;flex:0 0 auto}
+  .finv .fia{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .finv .amt{font-family:var(--mono);font-weight:600;white-space:nowrap}
+  .frow1{display:flex;gap:10px;margin-top:16px}
+  .fbtn{flex:1;min-height:52px;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:4px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none}
+  .fbtn.call{background:var(--green);color:#fff} .fbtn.wa{background:#0F7A34;color:#fff} .fbtn.addc{background:var(--soft);border:1px dashed var(--line);color:var(--mute)}
+  .foutlabel{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px}
+  .frow2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .fout{min-height:46px;border:1px solid var(--line);background:var(--card);border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  .fout.promised{color:var(--amber)} .fout.noans{color:var(--mute)} .fout.ready{color:#0F7A34;border-color:#BFE0CB;background:var(--green-bg)} .fout.paid{color:var(--green)}
+  .fout:hover{border-color:var(--brand)}
+  .frow3{display:flex;gap:8px;margin-top:10px}
+  .fskip{flex:1;min-height:40px;background:transparent;border:0;color:var(--mute);font-weight:600;cursor:pointer;font-family:inherit;font-size:13px}
+  .fdetail{background:transparent;border:1px solid var(--line);border-radius:4px;padding:0 14px;color:var(--mail);font-weight:600;cursor:pointer;font-family:inherit;font-size:12.5px}
+  .fdate input{padding:11px 13px;border:1px solid var(--line);border-radius:4px;font-family:inherit;font-size:15px;background:var(--soft)}
+  .focusdone{background:var(--card);border:1px solid var(--line);padding:40px 20px;text-align:center;max-width:560px;margin:0 auto}
+  .focusdone .fdbig{font-size:22px;font-weight:700}
+  /* contact modal inputs */
+  .ctclbl{display:block;font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;margin:12px 0 5px}
+  .ctcin{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:4px;font-family:inherit;font-size:15px;background:var(--soft)}
+  .ctcin:focus{outline:none;border-color:var(--brand)}
+  .contactline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;margin-bottom:4px}
+  @media(max-width:560px){ .frow1{flex-direction:column} .famt{font-size:26px} .fname{font-size:19px} }
   .ghwrap .gcount{font-family:var(--mono);font-size:10.5px;color:var(--mute);background:var(--card);border:1px solid var(--line);border-radius:3px;padding:1px 6px;white-space:nowrap}
   .ghwrap .gtot{font-family:var(--mono);font-weight:700;font-size:14px;margin-left:4px;color:var(--ink)}
   .ghwrap .gacts{margin-left:auto;display:flex;gap:6px;align-items:center}
@@ -589,13 +642,34 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     <div class="mbody" id="invBody"></div>
   </div>
 </div>
+<div id="ctcModal" class="modal" onclick="if(event.target===this)closeContact()">
+  <div class="mcard" style="max-width:460px">
+    <div class="mhead"><span class="mt" id="ctcTitle">Contact</span><button class="mx" onclick="closeContact()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="ctcCid">
+      <label class="ctclbl">Contact name</label>
+      <input class="ctcin" id="ctcName" type="text" placeholder="Who to ask for">
+      <label class="ctclbl">Telephone</label>
+      <input class="ctcin" id="ctcPhone" type="tel" inputmode="tel" placeholder="e.g. 0712 345678">
+      <label class="ctclbl">Email</label>
+      <input class="ctcin" id="ctcEmail" type="email" inputmode="email" placeholder="name@company.co.ke">
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="go" style="margin-top:0" onclick="saveContact()">Save contact</button>
+        <button class="gbtn" style="padding:0 16px" onclick="closeContact()">Cancel</button>
+      </div>
+      <div class="muted" style="font-size:11.5px;margin-top:10px">Saved here and always used for Call, WhatsApp and Email. Doesn't change Zoho.</div>
+    </div>
+  </div>
+</div>
 <script>
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const att=s=>esc(s).replace(/'/g,'&#39;');
 const jsq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 const fmtC=(cur,n)=>(cur||'')+' '+Math.round(n||0).toLocaleString('en-US');
 const fmtMap=m=>{const k=Object.keys(m||{});if(!k.length)return '—';return k.sort().map(c=>fmtC(c,m[c])).join('  ·  ');};
-let DATA=null, Q='', SORT='priority', FILTER='all', EXP={}, EDITPH={};
+let DATA=null, Q='', SORT='priority', FILTER='all', EXP={}, EDITPH={}, VIEWMODE='focus', WORKED={};
+function isReady(iv){ return !!(iv&&(iv.ready||iv.confirmed)); }           // ready-to-collect = owner flag OR Grace tick
+function clientReady(c){ return (c.invoices||[]).some(isReady); }
 function bar(s){const b=document.getElementById('bar');if(!b)return;if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);}}
 async function load(refresh){bar(true);try{const r=await fetch('index.php?portal=grace&data=1'+(refresh?'&refresh=1':''),{credentials:'same-origin'});DATA=await r.json();}catch(e){DATA={ok:false,error:String(e)};}bar(false);render();}
 /* KE number → full international digits for wa.me */
@@ -609,7 +683,7 @@ function persist(cid,dot){
   clearTimeout(saveT[cid]);
   saveT[cid]=setTimeout(async()=>{
     try{const r=await fetch('index.php?portal=grace&save=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({customer_id:cid,customer_name:c.customer,status:c.status||'',note:c.note||'',promised_date:c.promised||'',phone:c.phone||''})});
+      body:JSON.stringify({customer_id:cid,customer_name:c.customer,status:c.status||'',note:c.note||'',promised_date:c.promised||'',phone:c.phone||'',email:c.email||'',contact_name:c.contactName||''})});
       const j=await r.json();if(j.ok&&dot){const b=document.getElementById(dot);if(b){b.classList.add('show');setTimeout(()=>b.classList.remove('show'),1400);}}}catch(e){}
   },450);
 }
@@ -634,6 +708,25 @@ async function confirmToggle(id, number, customer, btn){
   }catch(e){ btn.disabled=false; btn.textContent=old; alert('Error: '+e); }
 }
 function closeInv(){const m=document.getElementById('invModal');if(m)m.classList.remove('open');}
+function openContact(cid){
+  const c=cust(cid); if(!c)return;
+  document.getElementById('ctcCid').value=cid;
+  document.getElementById('ctcTitle').textContent=(c.customer||'Contact');
+  document.getElementById('ctcName').value=c.contactName||'';
+  document.getElementById('ctcPhone').value=c.phone||'';
+  document.getElementById('ctcEmail').value=c.email||'';
+  document.getElementById('ctcModal').classList.add('open');
+  setTimeout(()=>{const n=document.getElementById('ctcName');if(n)n.focus();},50);
+}
+function closeContact(){const m=document.getElementById('ctcModal');if(m)m.classList.remove('open');}
+function saveContact(){
+  const cid=document.getElementById('ctcCid').value; const c=cust(cid); if(!c)return;
+  c.contactName=document.getElementById('ctcName').value.trim();
+  c.phone=document.getElementById('ctcPhone').value.trim();
+  c.email=document.getElementById('ctcEmail').value.trim();
+  persist(cid);
+  closeContact(); toast('Contact saved'); renderList();
+}
 function invDetailHTML(iv){
   const cur=iv.currency||'';
   const rows=(iv.items||[]).map(it=>`<tr>
@@ -677,11 +770,11 @@ function matchFilter(c){
   if(FILTER==='promised')return c.status==='Promised';
   if(FILTER==='paid')return c.status==='Paid';
   if(FILTER==='nophone')return !(c.phone);
-  if(FILTER==='ready')return (c.invoices||[]).some(iv=>iv.confirmed);
+  if(FILTER==='ready')return clientReady(c);
   if(FILTER==='callback')return callbackDue(c);
   return true;
 }
-function readyTotals(){ const by={}; let n=0; (DATA.customers||[]).forEach(c=>(c.invoices||[]).forEach(iv=>{ if(iv.confirmed){ const cu=(iv.currency||'KES'); by[cu]=(by[cu]||0)+(+iv.balance||0); n++; } })); return {by,n}; }
+function readyTotals(){ const by={}; let n=0; (DATA.customers||[]).forEach(c=>(c.invoices||[]).forEach(iv=>{ if(isReady(iv)){ const cu=(iv.currency||'KES'); by[cu]=(by[cu]||0)+(+iv.balance||0); n++; } })); return {by,n}; }
 function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 /* Priority score — where her next call has the biggest expected payoff.
    amount owed × how-overdue, boosted when never contacted or the client already said
@@ -696,7 +789,7 @@ function cScore(c){
   return (+c.sortTotal||0)*w;
 }
 function nextAction(c){
-  if((c.invoices||[]).some(iv=>iv.confirmed)) return {t:'💰 Ready — arrange collection',cls:'hot'};
+  if(clientReady(c)) return {t:'💰 Ready — arrange collection',cls:'hot'};
   if(c.status==='Paid') return null;
   if(c.status==='Promised'){ const p=c.promised||''; if(p && p<todayISO()) return {t:'⚠ Promise overdue — call',cls:'hot'}; if(p) return {t:'Promised '+p,cls:'cool'}; return {t:'Promised — set a date',cls:'warn'}; }
   if(c.status==='No answer') return {t:'Try again',cls:'warn'};
@@ -708,9 +801,9 @@ function invNums(c){ const ns=(c.invoices||[]).map(iv=>iv.number).filter(Boolean
 /* Ready-to-use WhatsApp messages — one tap sends a clear, polite, professional ask
    (reduces her effort and keeps the wording consistent, which lifts response rates). */
 function waMsg(c, kind){
-  const name=(c.customer||'').replace(/\s+/g,' ').trim();
+  const name=((c.contactName||c.customer||'').replace(/\s+/g,' ').trim());
   const amt=fmtMap(c.totalByCur), nums=invNums(c);
-  if(kind==='followup') return 'Good day '+name+', following up on the outstanding balance of '+amt+' ('+nums+'). Could you kindly let me know the payment status? Thank you — Grace, Waitara Holdings.';
+  if(kind==='followup'){ const by=(c.status==='Promised'&&c.promised)?(', as we agreed, by '+c.promised):''; return 'Good day '+name+', following up on the outstanding balance of '+amt+' ('+nums+')'+by+'. Could you kindly let me know the payment status? Thank you — Grace, Waitara Holdings.'; }
   if(kind==='collect')  return 'Good day '+name+', thank you. Kindly confirm the payment / cheque of '+amt+' is ready so we can arrange collection. Thank you — Grace, Waitara Holdings.';
   return 'Good day '+name+', this is Grace from Waitara Holdings. A kind reminder regarding your outstanding balance of '+amt+' ('+nums+'). Kindly advise when payment will be ready or when we may collect. Thank you.';
 }
@@ -721,7 +814,7 @@ function toast(msg){ let e=document.getElementById('toast'); if(!e){ e=document.
 function renderProgress(cs){
   const n=cs.length||1;
   const paid=cs.filter(c=>c.status==='Paid').length;
-  const ready=cs.filter(c=>(c.invoices||[]).some(iv=>iv.confirmed)).length;
+  const ready=cs.filter(clientReady).length;
   const promised=cs.filter(c=>c.status==='Promised').length;
   const todo=cs.filter(c=>!c.status).length;
   const pct=Math.round((n-todo)/n*100);
@@ -756,7 +849,8 @@ function render(){
         <div class="stat"><div class="n">${nDone}</div><div class="l">Paid</div></div>
       </div>
     </div>
-    ${(()=>{const rt=readyTotals();return rt.n>0?`<div class="readybar">✅ Ready to collect — <b>${esc(fmtMap(rt.by))}</b> across ${rt.n} invoice${rt.n===1?'':'s'} you've marked</div>`:'';})()}
+    ${(()=>{const cb=cs.filter(callbackDue).length;return cb>0?`<div class="loopbar" onclick="focusCallbacks()">⏰ <b>${cb}</b> promise${cb===1?'':'s'} due or overdue — tap to start here →</div>`:'';})()}
+    ${(()=>{const rt=readyTotals();return rt.n>0?`<div class="readybar">✅ Ready to collect — <b>${esc(fmtMap(rt.by))}</b> across ${rt.n} invoice${rt.n===1?'':'s'}</div>`:'';})()}
     ${renderProgress(cs)}
     <div class="tool">
       <input class="srch" type="text" placeholder="Search a customer…" value="${att(Q)}" oninput="Q=this.value.toLowerCase();renderList()">
@@ -779,7 +873,7 @@ function renderChips(){
   const defs=[
     {k:'all',label:'All',cls:'',n:cs.length},
     {k:'callback',label:'📞 Call back today',cls:'red',n:cs.filter(callbackDue).length},
-    {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(c=>(c.invoices||[]).some(iv=>iv.confirmed)).length},
+    {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(clientReady).length},
     {k:'urgent',label:'30+ days late',cls:'red',n:cs.filter(c=>(c.maxOverdue||0)>=30).length},
     {k:'todo',label:'To contact',cls:'',n:cs.filter(c=>!c.status).length},
     {k:'promised',label:'Promised',cls:'amber',n:cs.filter(c=>c.status==='Promised').length},
@@ -788,21 +882,84 @@ function renderChips(){
   ];
   box.innerHTML=defs.map(d=>`<button class="chip ${FILTER===d.k?'on '+d.cls:''}" onclick="setFilter('${d.k}')">${d.label}<span class="c">${d.n}</span></button>`).join('');
 }
-function renderList(){
-  renderChips();
-  const box=document.getElementById('gList');if(!box||!DATA)return;
+function buildList(){
   let list=(DATA.customers||[]).slice();
   if(SORT==='owed')list.sort((a,b)=>(b.sortTotal||0)-(a.sortTotal||0));
   else if(SORT==='overdue')list.sort((a,b)=>(b.maxOverdue||0)-(a.maxOverdue||0)||(b.sortTotal||0)-(a.sortTotal||0));
   else list.sort((a,b)=>cScore(b)-cScore(a));   // priority (default)
-  if(Q)list=list.filter(c=>((c.customer||'')+' '+(c.phone||'')).toLowerCase().indexOf(Q)>=0);
-  list=list.filter(matchFilter);
-  if(!list.length){box.innerHTML='<div class="empty">Nothing here 🎉 — try a different filter.</div>';return;}
-  box.innerHTML=`<table class="gtbl">
+  if(Q)list=list.filter(c=>((c.customer||'')+' '+(c.phone||'')+' '+(c.contactName||'')).toLowerCase().indexOf(Q)>=0);
+  return list.filter(matchFilter);
+}
+function setMode(m){VIEWMODE=m;renderList();}
+function renderList(){
+  renderChips();
+  const box=document.getElementById('gList');if(!box||!DATA)return;
+  const list=buildList();
+  const toggle=`<div class="modebar"><div class="seg2">
+    <button class="${VIEWMODE==='focus'?'on':''}" onclick="setMode('focus')">🎯 Focus — one at a time</button>
+    <button class="${VIEWMODE==='list'?'on':''}" onclick="setMode('list')">☰ Full list</button>
+  </div></div>`;
+  if(VIEWMODE==='focus'){ box.innerHTML=toggle+renderFocus(list); return; }
+  if(!list.length){box.innerHTML=toggle+'<div class="empty">Nothing here 🎉 — try a different filter.</div>';return;}
+  box.innerHTML=toggle+`<table class="gtbl">
     <thead><tr><th>Invoice</th><th>What it's for</th><th>Due</th><th class="r">Amount</th><th class="r">Ready to collect</th><th class="r">Details</th></tr></thead>
     <tbody>${list.map(renderGroup).join('')}</tbody>
   </table>`;
 }
+function renderFocus(list){
+  const total=list.length;
+  const worked=list.filter(c=>WORKED[c.cid]).length;
+  const next=list.find(c=>!WORKED[c.cid]);
+  if(total===0) return '<div class="empty">Nothing here 🎉 — try a different filter.</div>';
+  if(!next) return `<div class="focusdone"><div class="fdbig">✅ All ${total} worked</div><div class="muted" style="margin-top:6px">You've been through every client in this view.</div><button class="go" style="max-width:220px;margin:14px auto 0" onclick="WORKED={};renderList()">Go through again</button></div>`;
+  const c=next, na=nextAction(c), ov=c.maxOverdue||0, oc=ovdClass(ov);
+  const tel=telNum(c.phone), wa=waNum(c.phone), amt=fmtMap(c.totalByCur);
+  const callBtn=c.phone?`<a class="fbtn call" href="tel:${att(tel)}">📞 Call</a>`:`<button class="fbtn addc" onclick="openContact('${jsq(c.cid)}')">+ Add contact first</button>`;
+  const waBtn=(c.phone&&wa)?`<a class="fbtn wa" href="${att(waLink(c,'reminder'))}" target="_blank" rel="noopener">WhatsApp</a>`:'';
+  const invlist=(c.invoices||[]).slice(0,4).map(iv=>`<div class="finv"><span class="num">${esc(iv.number)}</span><span class="fia about">${iv.about?esc(iv.about):''}</span><span class="amt mono">${esc(fmtC(iv.currency,iv.balance))}</span></div>`).join('');
+  const more=(c.invoices||[]).length>4?`<div class="muted" style="font-size:11.5px;padding:4px 0">+${c.invoices.length-4} more invoice(s)</div>`:'';
+  const prog=`<div class="fprog"><div class="fpbar"><span style="width:${Math.round(worked/total*100)}%"></span></div><div class="fplab">${worked} of ${total} worked</div></div>`;
+  let actions;
+  if(c.status==='Promised'){
+    actions=`<div class="foutlabel">When did they promise to pay?</div>
+      <div class="fdate"><input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(c.cid)}',this.value,'')"></div>
+      <button class="go" style="margin-top:12px" onclick="focusAdvance('${jsq(c.cid)}')">Save & next client →</button>`;
+  } else {
+    actions=`<div class="foutlabel">What happened on this call?</div>
+      <div class="frow2">
+        <button class="fout promised" onclick="focusOutcome('${jsq(c.cid)}','Promised')">Promised to pay</button>
+        <button class="fout noans" onclick="focusOutcome('${jsq(c.cid)}','No answer')">No answer</button>
+        <button class="fout ready" onclick="focusReady('${jsq(c.cid)}')">💰 Ready to collect</button>
+        <button class="fout paid" onclick="focusOutcome('${jsq(c.cid)}','Paid')">Paid</button>
+      </div>
+      <div class="frow3">
+        <button class="fskip" onclick="focusSkip('${jsq(c.cid)}')">Skip →</button>
+        <button class="fdetail" onclick="openContact('${jsq(c.cid)}')">Edit contact</button>
+      </div>`;
+  }
+  return `<div class="focuscard">
+    ${prog}
+    <div class="fname">${esc(c.customer||'(unnamed)')}</div>
+    <div class="fsub">${na?`<span class="na ${na.cls}">${esc(na.t)}</span>`:''}<span class="pill ${ov>0?oc:'green'}">${ov>0?ov+' days late':'On time'}</span>${c.contactName?`<span class="muted">Ask for ${esc(c.contactName)}</span>`:''}${c.phone?`<span class="muted mono">${esc(c.phone)}</span>`:''}</div>
+    <div class="famt">${esc(amt)}<span class="famtl">owed · ${c.count} invoice${c.count===1?'':'s'}</span></div>
+    <div class="finvs">${invlist}${more}</div>
+    <div class="frow1">${callBtn}${waBtn}</div>
+    ${actions}
+  </div>`;
+}
+function focusAdvance(cid){ WORKED[cid]=true; renderList(); }
+function focusSkip(cid){ WORKED[cid]=true; renderList(); }
+function focusOutcome(cid,status){ const c=cust(cid); if(!c)return; c.status=status; persist(cid); if(status==='Promised'){ renderList(); return; } WORKED[cid]=true; renderList(); }
+async function focusReady(cid){
+  const c=cust(cid); if(!c)return;
+  const invs=(c.invoices||[]).filter(iv=>iv.id && !iv.confirmed);
+  for(const iv of invs){
+    try{ const r=await fetch('index.php?portal=grace&confirm=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({invoice_id:iv.id,invoice_number:iv.number,customer_name:c.customer,confirmed:true})}); const j=await r.json(); if(j&&j.ok) iv.confirmed=true; }catch(e){}
+  }
+  if(!c.status) { c.status='Called'; persist(cid); }
+  WORKED[cid]=true; renderList(); toast('Marked ready to collect');
+}
+function focusCallbacks(){ FILTER='callback'; VIEWMODE='focus'; WORKED={}; renderList(); }
 function renderGroup(c){
   const cid=c.cid, dot='d_'+cid;
   const ov=c.maxOverdue||0, oc=ovdClass(ov);
@@ -810,9 +967,9 @@ function renderGroup(c){
   const spill=c.status?`<span class="spill ${c.status==='No answer'?'No':c.status}">${esc(c.status)}</span>`:'';
   const tel=telNum(c.phone), wa=waNum(c.phone);
   const callbtns=c.phone
-    ? `<a class="gbtn call" href="tel:${att(tel)}">Call</a>${wa?`<a class="gbtn wa" href="${att(waLink(c,'reminder'))}" target="_blank" rel="noopener" title="Opens WhatsApp with a ready reminder message">WhatsApp</a>`:''}`
-    : (c.email?`<a class="gbtn" href="mailto:${att(c.email)}">Email</a>`:`<button class="gbtn" onclick="openPhone('${jsq(cid)}')">Add phone</button>`);
-  const nConf=(c.invoices||[]).filter(iv=>iv.confirmed).length;
+    ? `<a class="gbtn call" href="tel:${att(tel)}">Call</a>${wa?`<a class="gbtn wa" href="${att(waLink(c,'reminder'))}" target="_blank" rel="noopener" title="Opens WhatsApp with a ready reminder message">WhatsApp</a>`:''}<button class="gbtn" onclick="openContact('${jsq(cid)}')">Edit contact</button>`
+    : `<button class="gbtn addc" onclick="openContact('${jsq(cid)}')">+ Add contact</button>`;
+  const nConf=(c.invoices||[]).filter(isReady).length;
   const na=nextAction(c);
   const open=!!EXP[cid];
   const head=`<tr class="grow ${open?'open':''}" onclick="toggleInv('${jsq(cid)}')">
@@ -829,11 +986,11 @@ function renderGroup(c){
       </div>
     </td></tr>`;
   const rows=open?(c.invoices||[]).map(iv=>`<tr class="girow">
-    <td data-l="Invoice"><span class="num">${esc(iv.number)}</span>${iv.ready?' <span class="otag" title="Flagged by the office">● office</span>':''}</td>
+    <td data-l="Invoice"><span class="num">${esc(iv.number)}</span></td>
     <td data-l="What it's for" class="about">${iv.about?esc(iv.about):'<span class="muted">—</span>'}</td>
     <td data-l="Due" class="mono dd">${esc(iv.due||'—')}${iv.overdue>0?` <span class="od">${iv.overdue}d late</span>`:''}</td>
     <td data-l="Amount" class="r mono amt">${esc(fmtC(iv.currency,iv.balance))}</td>
-    <td data-l="Ready to collect" class="r">${iv.id?`<button class="rc ${iv.confirmed?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)">${iv.confirmed?'✓ Ready to collect':'Mark ready'}</button>`:''}</td>
+    <td data-l="Ready to collect" class="r">${iv.id?`<button class="rc ${isReady(iv)?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)">${isReady(iv)?'✓ Ready to collect':'Mark ready'}</button>`:''}</td>
     <td data-l="Details" class="r">${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</td>
   </tr>`).join(''):'';
   let panel='';
@@ -841,9 +998,8 @@ function renderGroup(c){
     const STAT=['Called','Promised','No answer','Paid'];
     const schips=STAT.map(s=>`<button class="sc ${c.status===s?'on':''}" data-s="${s}" onclick="tapStatus('${jsq(cid)}','${s}')">${s}</button>`).join('');
     const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
-    let phone='';
-    if(EDITPH[cid]||!c.phone){ phone=`<div class="phrow"><input id="ph_${att(cid)}" type="tel" inputmode="tel" placeholder="Add phone e.g. 0712 345678" value="${att(c.phone||'')}" onkeydown="if(event.key==='Enter')savePhone('${jsq(cid)}')"><button class="save" onclick="savePhone('${jsq(cid)}')">Save</button></div>`; }
-    else { phone=`<div class="telno">${esc(c.phone)} <button class="gbtn" style="padding:4px 9px" onclick="openPhone('${jsq(cid)}')">Edit</button></div>`; }
+    const cline=[c.contactName?esc(c.contactName):'', c.phone?esc(c.phone):'', c.email?esc(c.email):''].filter(Boolean).join(' · ');
+    const phone=`<div class="contactline">${cline?`<span>${cline}</span>`:'<span class="muted">No contact saved</span>'} <button class="gbtn" style="padding:5px 11px" onclick="openContact('${jsq(cid)}')">${cline?'Edit contact':'+ Add contact'}</button></div>`;
     const waBtn=(kind,label)=> c.phone&&waNum(c.phone)?`<a class="msgb wa" href="${att(waLink(c,kind))}" target="_blank" rel="noopener">${label}</a>`:'';
     const msgs=`<div class="msgrow">
       <span class="msglbl">Send:</span>
