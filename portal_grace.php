@@ -33,8 +33,11 @@ if (!function_exists('gp_build')) {
                 $items[] = [
                     'name' => (string)($li['name'] ?? ''), 'desc' => (string)($li['description'] ?? ''),
                     'qty' => (float)($li['quantity'] ?? 0), 'rate' => (float)($li['rate'] ?? 0), 'amt' => (float)($li['item_total'] ?? 0),
+                    'tax' => (string)($li['tax_name'] ?? ''), 'taxpc' => (float)($li['tax_percentage'] ?? 0),
                 ];
             }
+            $taxes = [];
+            foreach (($iv['taxes'] ?? []) as $tx) { $taxes[] = ['name'=>(string)($tx['tax_name'] ?? ''), 'amount'=>(float)($tx['tax_amount'] ?? 0)]; }
             $names = [];
             foreach ($items as $it) { $t = trim($it['name'] !== '' ? $it['name'] : $it['desc']); if ($t !== '') $names[] = $t; }
             $summary = '';
@@ -45,6 +48,10 @@ if (!function_exists('gp_build')) {
                 'id' => (string)$id, 'number' => (string)($iv['invoice_number'] ?? ''), 'customer' => (string)($iv['customer_name'] ?? ''),
                 'date' => substr((string)($iv['date'] ?? ''), 0, 10), 'due' => substr((string)($iv['due_date'] ?? ''), 0, 10),
                 'status' => (string)($iv['status'] ?? ''), 'currency' => strtoupper((string)($iv['currency_code'] ?? '')),
+                'sub_total' => (float)($iv['sub_total'] ?? 0), 'tax_total' => (float)($iv['tax_total'] ?? 0),
+                'discount' => (float)($iv['discount_total'] ?? ($iv['discount'] ?? 0)),
+                'shipping' => (float)($iv['shipping_charge'] ?? 0), 'adjustment' => (float)($iv['adjustment'] ?? 0),
+                'inclusive' => !empty($iv['is_inclusive_tax']), 'taxes' => $taxes,
                 'total' => (float)($iv['total'] ?? 0), 'balance' => (float)($iv['balance'] ?? 0),
                 'notes' => (string)($iv['notes'] ?? ''), 'items' => $items, 'summary' => $summary,
             ];
@@ -275,7 +282,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
         try {
             $f = $gDir . '/grace_inv.json';
             $map = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : [];
-            if (isset($map[$iid])) { echo json_encode(['ok'=>true, 'invoice'=>$map[$iid]]); exit; }
+            if (isset($map[$iid]) && array_key_exists('tax_total', $map[$iid])) { echo json_encode(['ok'=>true, 'invoice'=>$map[$iid]]); exit; }
             $det = gp_inv_fetch_raw($iid);
             if (!$det) { http_response_code(502); echo json_encode(['ok'=>false, 'error'=>'Could not load this invoice.']); exit; }
             $map[$iid] = $det; @file_put_contents($f, json_encode($map));
@@ -496,6 +503,32 @@ function savePhone(cid){const i=document.getElementById('ph_'+cid);if(!i)return;
 function setSort(s){SORT=s;renderList();}
 function setFilter(f){FILTER=f;renderList();}
 function closeInv(){const m=document.getElementById('invModal');if(m)m.classList.remove('open');}
+function invDetailHTML(iv){
+  const cur=iv.currency||'';
+  const rows=(iv.items||[]).map(it=>`<tr>
+      <td><div style="color:var(--ink);font-weight:600">${esc(it.name||it.desc||'—')}</div>${(it.name&&it.desc)?`<div class="muted" style="font-size:11px;margin-top:2px">${esc(it.desc)}</div>`:''}</td>
+      <td class="r">${it.qty?(+it.qty).toLocaleString('en-US'):''}</td>
+      <td class="r">${it.rate?fmtC(cur,it.rate):''}</td>
+      <td class="r">${it.tax?esc(it.tax):(it.taxpc?(+it.taxpc)+'%':'—')}</td>
+      <td class="r">${fmtC(cur,it.amt)}</td></tr>`).join('');
+  const line=(lbl,val,extra)=>`<div class="mtot" style="font-weight:500;font-size:13px;${extra||''}"><span class="muted">${lbl}</span><span class="mono">${val}</span></div>`;
+  let breakdown='';
+  if(iv.sub_total||iv.tax_total||(iv.taxes&&iv.taxes.length)){
+    breakdown+=line('Subtotal'+(iv.inclusive?' (tax inclusive)':''), fmtC(cur,iv.sub_total));
+    if(+iv.discount>0) breakdown+=line('Discount', '− '+fmtC(cur,iv.discount));
+    if(iv.taxes&&iv.taxes.length) iv.taxes.forEach(tx=>{ breakdown+=line(esc(tx.name||'Tax'), fmtC(cur,tx.amount)); });
+    else if(+iv.tax_total>0) breakdown+=line('Tax (VAT)', fmtC(cur,iv.tax_total));
+    if(+iv.shipping>0) breakdown+=line('Shipping', fmtC(cur,iv.shipping));
+    if(+iv.adjustment) breakdown+=line('Adjustment', fmtC(cur,iv.adjustment));
+  }
+  return `
+    <div class="mmeta"><span><b style="color:var(--ink)">${esc(iv.customer||'')}</b></span><span>Date: ${esc(iv.date||'—')}</span><span>Due: ${esc(iv.due||'—')}</span>${iv.status?`<span>Status: ${esc(iv.status)}</span>`:''}</div>
+    ${rows?`<table class="mtbl"><thead><tr><th>Item / description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Tax</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="muted">No line items recorded on this invoice.</div>'}
+    <div style="margin-top:12px;border-top:1px solid var(--hair);padding-top:10px">${breakdown}</div>
+    <div class="mtot"><span>Invoice total</span><span class="mono">${fmtC(cur,iv.total)}</span></div>
+    ${(iv.balance!=null)?`<div class="mtot" style="color:var(--red)"><span>Balance due</span><span class="mono">${fmtC(cur,iv.balance)}</span></div>`:''}
+    ${iv.notes?`<div class="muted" style="margin-top:14px;font-size:12px"><b style="color:var(--ink)">Notes:</b> ${esc(iv.notes)}</div>`:''}`;
+}
 async function openInv(id){
   const m=document.getElementById('invModal'),b=document.getElementById('invBody'),t=document.getElementById('invTitle');
   if(!m)return; m.classList.add('open'); t.textContent='Invoice'; b.innerHTML='<div class="muted" style="padding:8px">Loading invoice…</div>';
@@ -504,17 +537,7 @@ async function openInv(id){
     const j=await r.json();
     if(!j||!j.ok){ b.innerHTML='<div style="padding:8px;color:var(--red)">'+esc((j&&j.error)||'Could not load this invoice.')+'</div>'; return; }
     const iv=j.invoice; t.textContent=iv.number||'Invoice';
-    const rows=(iv.items||[]).map(it=>`<tr>
-        <td><div style="color:var(--ink);font-weight:600">${esc(it.name||it.desc||'—')}</div>${(it.name&&it.desc)?`<div class="muted" style="font-size:11px;margin-top:2px">${esc(it.desc)}</div>`:''}</td>
-        <td class="r">${it.qty?(+it.qty).toLocaleString('en-US'):''}</td>
-        <td class="r">${it.rate?fmtC(iv.currency,it.rate):''}</td>
-        <td class="r">${fmtC(iv.currency,it.amt)}</td></tr>`).join('');
-    b.innerHTML=`
-      <div class="mmeta"><span><b style="color:var(--ink)">${esc(iv.customer||'')}</b></span><span>Date: ${esc(iv.date||'—')}</span><span>Due: ${esc(iv.due||'—')}</span>${iv.status?`<span>Status: ${esc(iv.status)}</span>`:''}</div>
-      ${rows?`<table class="mtbl"><thead><tr><th>Item / description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="muted">No line items recorded on this invoice.</div>'}
-      <div class="mtot"><span>Invoice total</span><span class="mono">${fmtC(iv.currency,iv.total)}</span></div>
-      <div class="mtot" style="color:var(--red)"><span>Balance due</span><span class="mono">${fmtC(iv.currency,iv.balance)}</span></div>
-      ${iv.notes?`<div class="muted" style="margin-top:14px;font-size:12px"><b style="color:var(--ink)">Notes:</b> ${esc(iv.notes)}</div>`:''}`;
+    b.innerHTML=invDetailHTML(iv);
   }catch(e){ b.innerHTML='<div style="padding:8px;color:var(--red)">Error: '+esc(String(e))+'</div>'; }
 }
 function matchFilter(c){

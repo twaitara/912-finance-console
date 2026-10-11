@@ -40,12 +40,19 @@ if (!function_exists('fp_build')) {
             $items = [];
             foreach (($iv['line_items'] ?? []) as $li) {
                 $items[] = ['name'=>(string)($li['name'] ?? ''), 'desc'=>(string)($li['description'] ?? ''),
-                    'qty'=>(float)($li['quantity'] ?? 0), 'rate'=>(float)($li['rate'] ?? 0), 'amt'=>(float)($li['item_total'] ?? 0)];
+                    'qty'=>(float)($li['quantity'] ?? 0), 'rate'=>(float)($li['rate'] ?? 0), 'amt'=>(float)($li['item_total'] ?? 0),
+                    'tax'=>(string)($li['tax_name'] ?? ''), 'taxpc'=>(float)($li['tax_percentage'] ?? 0)];
             }
+            $taxes = [];
+            foreach (($iv['taxes'] ?? []) as $tx) { $taxes[] = ['name'=>(string)($tx['tax_name'] ?? ''), 'amount'=>(float)($tx['tax_amount'] ?? 0)]; }
             return [
                 'id'=>(string)$id, 'number'=>(string)($iv['invoice_number'] ?? ''), 'customer'=>(string)($iv['customer_name'] ?? ''),
                 'date'=>substr((string)($iv['date'] ?? ''), 0, 10), 'due'=>substr((string)($iv['due_date'] ?? ''), 0, 10),
                 'status'=>(string)($iv['status'] ?? ''), 'currency'=>strtoupper((string)($iv['currency_code'] ?? '')),
+                'sub_total'=>(float)($iv['sub_total'] ?? 0), 'tax_total'=>(float)($iv['tax_total'] ?? 0),
+                'discount'=>(float)($iv['discount_total'] ?? ($iv['discount'] ?? 0)),
+                'shipping'=>(float)($iv['shipping_charge'] ?? 0), 'adjustment'=>(float)($iv['adjustment'] ?? 0),
+                'inclusive'=>!empty($iv['is_inclusive_tax']), 'taxes'=>$taxes,
                 'total'=>(float)($iv['total'] ?? 0), 'balance'=>(float)($iv['balance'] ?? 0),
                 'notes'=>(string)($iv['notes'] ?? ''), 'items'=>$items,
             ];
@@ -203,17 +210,20 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'fiscal') {
   .chip .c{color:var(--mute);font-weight:600;margin-left:5px;font-family:var(--mono)}
   .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}.chip.on .c{color:#B9B3A9}
   .chip.on.green{background:var(--green);border-color:var(--green)} .chip.on.amber{background:var(--amber);border-color:var(--amber)}
-  #fList{border:1px solid var(--line);border-bottom:0;background:var(--card)}
-  @media(min-width:900px){ #fList{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));border:0;background:transparent} .cx{border:1px solid var(--line);margin:0 -1px -1px 0} }
-  .cx{background:var(--card);border:1px solid var(--line);padding:13px 15px;margin-bottom:-1px}
-  .cx.done{background:var(--soft)}
-  .cx .r1{display:flex;align-items:center;gap:10px}
-  .cx .num{font-family:var(--mono);font-size:15px;font-weight:600;cursor:pointer;color:var(--mail);background:none;border:0;padding:0;font-family:var(--mono)}
-  .cx .num:hover{text-decoration:underline}
-  .cx .amt{margin-left:auto;font-family:var(--mono);font-size:16px;font-weight:600;white-space:nowrap}
-  .cx .nm{font-size:14px;font-weight:600;margin-top:7px;line-height:1.25}
-  .cx .ab{color:var(--mute);font-size:12px;margin-top:3px;line-height:1.35}
-  .cx .r3{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+  #fList{display:flex;flex-direction:column;gap:16px}
+  .grp{background:var(--card);border:1px solid var(--line)}
+  .ghead{display:flex;align-items:baseline;gap:12px;padding:12px 15px;background:var(--ink);color:#fff;border-bottom:2px solid var(--brand)}
+  .ghead .gname{font-size:14px;font-weight:700;letter-spacing:.2px;flex:1;min-width:0}
+  .ghead .gmeta{font-family:var(--mono);font-size:11.5px;color:#C9C4BB;white-space:nowrap}
+  .inv{padding:12px 15px;border-bottom:1px solid var(--hair)}
+  .inv:last-child{border-bottom:0}
+  .inv.done{background:var(--soft)}
+  .inv .ir1{display:flex;align-items:center;gap:10px}
+  .inv .num{font-family:var(--mono);font-size:14.5px;font-weight:600;cursor:pointer;color:var(--mail);background:none;border:0;padding:0}
+  .inv .num:hover{text-decoration:underline}
+  .inv .amt{margin-left:auto;font-family:var(--mono);font-size:15px;font-weight:600;white-space:nowrap}
+  .inv .ab{color:var(--mute);font-size:12px;margin-top:4px;line-height:1.35}
+  .inv .ir2{display:flex;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap}
   .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:2px}
   .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
   .dte{font-size:11.5px;color:var(--mute);font-family:var(--mono)}
@@ -323,17 +333,34 @@ async function openInv(id){
     const j=await r.json();
     if(!j||!j.ok){ b.innerHTML='<div style="padding:8px;color:var(--red)">'+esc((j&&j.error)||'Could not load this invoice.')+'</div>'; return; }
     const iv=j.invoice; t.textContent=iv.number||'Invoice';
-    const rows=(iv.items||[]).map(it=>`<tr>
-        <td><div style="color:var(--ink);font-weight:600">${esc(it.name||it.desc||'—')}</div>${(it.name&&it.desc)?`<div class="muted" style="font-size:11px;margin-top:2px">${esc(it.desc)}</div>`:''}</td>
-        <td class="r">${it.qty?(+it.qty).toLocaleString('en-US'):''}</td>
-        <td class="r">${it.rate?fmtC(iv.currency,it.rate):''}</td>
-        <td class="r">${fmtC(iv.currency,it.amt)}</td></tr>`).join('');
-    b.innerHTML=`
-      <div class="mmeta"><span><b style="color:var(--ink)">${esc(iv.customer||'')}</b></span><span>Date: ${esc(iv.date||'—')}</span><span>Due: ${esc(iv.due||'—')}</span>${iv.status?`<span>Status: ${esc(iv.status)}</span>`:''}</div>
-      ${rows?`<table class="mtbl"><thead><tr><th>Item / description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="muted">No line items recorded on this invoice.</div>'}
-      <div class="mtot"><span>Invoice total</span><span class="mono">${fmtC(iv.currency,iv.total)}</span></div>
-      ${iv.notes?`<div class="muted" style="margin-top:14px;font-size:12px"><b style="color:var(--ink)">Notes:</b> ${esc(iv.notes)}</div>`:''}`;
+    b.innerHTML=invDetailHTML(iv);
   }catch(e){ b.innerHTML='<div style="padding:8px;color:var(--red)">Error: '+esc(String(e))+'</div>'; }
+}
+function invDetailHTML(iv){
+  const cur=iv.currency||'';
+  const rows=(iv.items||[]).map(it=>`<tr>
+      <td><div style="color:var(--ink);font-weight:600">${esc(it.name||it.desc||'—')}</div>${(it.name&&it.desc)?`<div class="muted" style="font-size:11px;margin-top:2px">${esc(it.desc)}</div>`:''}</td>
+      <td class="r">${it.qty?(+it.qty).toLocaleString('en-US'):''}</td>
+      <td class="r">${it.rate?fmtC(cur,it.rate):''}</td>
+      <td class="r">${it.tax?esc(it.tax):(it.taxpc?(+it.taxpc)+'%':'—')}</td>
+      <td class="r">${fmtC(cur,it.amt)}</td></tr>`).join('');
+  const line=(lbl,val,extra)=>`<div class="mtot" style="font-weight:500;font-size:13px;${extra||''}"><span class="muted">${lbl}</span><span class="mono">${val}</span></div>`;
+  let breakdown='';
+  if(iv.sub_total||iv.tax_total||(iv.taxes&&iv.taxes.length)){
+    breakdown+=line('Subtotal'+(iv.inclusive?' (tax inclusive)':''), fmtC(cur,iv.sub_total));
+    if(+iv.discount>0) breakdown+=line('Discount', '− '+fmtC(cur,iv.discount));
+    if(iv.taxes&&iv.taxes.length) iv.taxes.forEach(tx=>{ breakdown+=line(esc(tx.name||'Tax'), fmtC(cur,tx.amount)); });
+    else if(+iv.tax_total>0) breakdown+=line('Tax (VAT)', fmtC(cur,iv.tax_total));
+    if(+iv.shipping>0) breakdown+=line('Shipping', fmtC(cur,iv.shipping));
+    if(+iv.adjustment) breakdown+=line('Adjustment', fmtC(cur,iv.adjustment));
+  }
+  return `
+    <div class="mmeta"><span><b style="color:var(--ink)">${esc(iv.customer||'')}</b></span><span>Date: ${esc(iv.date||'—')}</span><span>Due: ${esc(iv.due||'—')}</span>${iv.status?`<span>Status: ${esc(iv.status)}</span>`:''}</div>
+    ${rows?`<table class="mtbl"><thead><tr><th>Item / description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Tax</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="muted">No line items recorded on this invoice.</div>'}
+    <div style="margin-top:12px;border-top:1px solid var(--hair);padding-top:10px">${breakdown}</div>
+    <div class="mtot"><span>Invoice total</span><span class="mono">${fmtC(cur,iv.total)}</span></div>
+    ${(iv.balance!=null)?`<div class="mtot" style="color:var(--red)"><span>Balance due</span><span class="mono">${fmtC(cur,iv.balance)}</span></div>`:''}
+    ${iv.notes?`<div class="muted" style="margin-top:14px;font-size:12px"><b style="color:var(--ink)">Notes:</b> ${esc(iv.notes)}</div>`:''}`;
 }
 function render(){
   const app=document.getElementById('app');if(!DATA)return;
@@ -377,22 +404,37 @@ function renderList(){
   else if(VIEW==='done')list=list.filter(r=>r.done);
   if(Q)list=list.filter(r=>((r.number||'')+' '+(r.customer||'')).toLowerCase().indexOf(Q)>=0);
   if(!list.length){box.innerHTML='<div class="empty">'+(VIEW==='todo'?'Nothing waiting to fiscalise 🎉':'Nothing here.')+'</div>';return;}
-  box.innerHTML=list.map(renderCard).join('');
+  /* group by client */
+  const groups={};
+  list.forEach(r=>{ const k=(r.customer||'(unnamed)'); (groups[k]=groups[k]||[]).push(r); });
+  const names=Object.keys(groups).sort((a,b)=>{
+    const ma=Math.max(...groups[a].map(r=>r.days||0)), mb=Math.max(...groups[b].map(r=>r.days||0));
+    return mb-ma || a.localeCompare(b);
+  });
+  box.innerHTML=names.map(nm=>renderGroup(nm, groups[nm])).join('');
 }
-function renderCard(r){
-  const n=jsq(r.number);
-  const btn=r.done
-    ? `<button class="fbtn undo" onclick="mark('${n}',false,this)">Undo</button>`
-    : `<button class="fbtn" onclick="mark('${n}',true,this)">Fiscalised ✓</button>`;
-  return `<div class="cx ${r.done?'done':''}">
-    <div class="r1">
-      ${r.id?`<button class="num" onclick="openInv('${jsq(r.id)}')">${esc(r.number)}</button>`:`<span class="num" style="color:var(--ink)">${esc(r.number)}</span>`}
-      ${r.done?'<span class="donetag">Done</span>':''}
-      <span class="amt">${esc(fmtC(r.currency||'KES',r.amount))}</span>
-    </div>
-    <div class="nm">${esc(r.customer||'(unnamed)')}</div>
-    ${r.descr?`<div class="ab">${esc(r.descr)}</div>`:''}
-    <div class="r3">${daysPill(r.days||0)}<span class="dte">filed ${esc(r.date||'—')}</span>${btn}</div>
+function renderGroup(name, rows){
+  rows=rows.slice().sort((a,b)=>(b.days||0)-(a.days||0));
+  const tot=rows.reduce((s,r)=>s+(r.amount||0),0);
+  const n=rows.length;
+  const items=rows.map(r=>{
+    const num=jsq(r.number);
+    const btn=r.done
+      ? `<button class="fbtn undo" onclick="mark('${num}',false,this)">Undo</button>`
+      : `<button class="fbtn" onclick="mark('${num}',true,this)">Fiscalised ✓</button>`;
+    return `<div class="inv ${r.done?'done':''}">
+      <div class="ir1">
+        ${r.id?`<button class="num" onclick="openInv('${jsq(r.id)}')">${esc(r.number)}</button>`:`<span class="num" style="color:var(--ink)">${esc(r.number)}</span>`}
+        ${r.done?'<span class="donetag">Done</span>':''}
+        <span class="amt">${esc(fmtC(r.currency||'KES',r.amount))}</span>
+      </div>
+      ${r.descr?`<div class="ab">${esc(r.descr)}</div>`:''}
+      <div class="ir2">${daysPill(r.days||0)}<span class="dte">filed ${esc(r.date||'—')}</span>${btn}</div>
+    </div>`;
+  }).join('');
+  return `<div class="grp">
+    <div class="ghead"><span class="gname">${esc(name)}</span><span class="gmeta">${n} invoice${n===1?'':'s'} · ${esc(fmtC('KES',tot))}</span></div>
+    ${items}
   </div>`;
 }
 load();
