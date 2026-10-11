@@ -96,6 +96,7 @@ if (isset($_GET['hook']) && $_GET['hook'] === 'zoho') {
 }
 
 require_once __DIR__ . '/portal_grace.php';
+require_once __DIR__ . '/portal_fiscal.php';
 session_start();
 require_once __DIR__ . '/csrf.php'; csrf_guard();
 $cfg = require __DIR__ . '/config.php';
@@ -236,6 +237,45 @@ if (isset($_GET['gracepref'])) {
         @file_put_contents($pfFile, json_encode($cur));
     }
     $p = gp_prefs($pfDir);
+    echo json_encode(['ok'=>true, 'disabled'=>$p['disabled']]);
+    exit;
+}
+
+/* Admin-only: read/set the FISCALISATION PORTAL PIN (stored hashed in
+   data/fiscal_auth.json as {pin_hash}). PIN login, like the other portals. */
+if (isset($_GET['fiscalcreds'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $ff  = __DIR__ . '/data/fiscal_auth.json';
+    $curF = is_file($ff) ? (json_decode(@file_get_contents($ff), true) ?: []) : [];
+    $inF = json_decode(file_get_contents('php://input'), true) ?: [];
+    if (($inF['action'] ?? '') === 'save') {
+        $pin = preg_replace('/\D/', '', (string)($inF['pin'] ?? ''));
+        if (!preg_match('/^\d{4,6}$/', $pin)) { echo json_encode(['ok'=>false, 'error'=>'PIN must be 4 to 6 digits.']); exit; }
+        $curF['pin_hash'] = password_hash($pin, PASSWORD_DEFAULT);
+        $curF['updated'] = date('c');
+        $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true);
+        @file_put_contents($ff, json_encode($curF));
+        echo json_encode(['ok'=>true, 'configured'=>true]); exit;
+    }
+    echo json_encode(['ok'=>true, 'configured'=>!empty($curF['pin_hash'])]);
+    exit;
+}
+
+/* Admin-only: enable/disable the FISCALISATION portal (kill-switch). Stored in
+   data/fiscal_prefs.json. Clone of ?gracepref. */
+if (isset($_GET['fiscalpref'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['auth']) || empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Admins only.']); exit; }
+    $pfDir = __DIR__ . '/data'; $pfFile = $pfDir . '/fiscal_prefs.json';
+    $inP = json_decode(file_get_contents('php://input'), true) ?: [];
+    if (($inP['action'] ?? '') === 'save') {
+        $cur = is_file($pfFile) ? (json_decode(@file_get_contents($pfFile), true) ?: []) : [];
+        if (array_key_exists('disabled', $inP)) $cur['disabled'] = !empty($inP['disabled']);
+        if (!is_dir($pfDir)) @mkdir($pfDir, 0775, true);
+        @file_put_contents($pfFile, json_encode($cur));
+    }
+    $p = fp_prefs($pfDir);
     echo json_encode(['ok'=>true, 'disabled'=>$p['disabled']]);
     exit;
 }

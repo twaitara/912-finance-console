@@ -54,6 +54,7 @@ let FUNDFORM = { name:'', balance:'', msg:'', err:false };
 const AUDREY_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'audrey.php';
 const TASKBOARD_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'tasks_board.php';
 const GRACE_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'grace.php';
+const FISCAL_URL = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'') + 'fiscal.php';
 function copyBoard(btn){ try{ navigator.clipboard.writeText(TASKBOARD_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1500);}catch(e){} }
 let BK = { folder:'', running:false, msg:'', msgErr:false, loaded:false,
            pick:{ open:false, loading:false, current:null, folders:[], roots:[], err:'' } };
@@ -250,7 +251,7 @@ function render(){
   if(TAB==='bulkexp'){ p.innerHTML = vBulkExp(); expLoadAccounts(); }
   if(TAB==='ask'){ p.innerHTML = vAsk(); askScrollDown(); if(ME.admin&&!ASK.savedLoaded){ ASK.savedLoaded=true; askConvosLoad(); } }
   if(TAB==='settings'){ p.innerHTML = vSettings(); if(ME.admin){ whLoad(); } }
-  if(TAB==='portals'){ p.innerHTML = vPortals(); if(ME.admin){ graceStatusLoad(); graceAccessLoad(); } }
+  if(TAB==='portals'){ p.innerHTML = vPortals(); if(ME.admin){ graceStatusLoad(); graceAccessLoad(); fiscalStatusLoad(); fiscalAccessLoad(); } }
   if(TAB==='emails') p.innerHTML = vEmail();
   if(TAB==='todo') p.innerHTML = vTodo();
   if(TAB==='newquote') p.innerHTML = vNewQuote();
@@ -2912,6 +2913,36 @@ function graceAccessLoad(){
   }).catch(()=>{});
 }
 function graceSetDisabled(v){ fetch('?gracepref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>graceAccessLoad()).catch(()=>{}); }
+/* ---- Fiscalisation portal (admin management: PIN login + kill switch) ---- */
+function fiscalStatusLoad(){
+  if(!document.getElementById('fiscalStaffStatus')) return;
+  fetch('?fiscalcreds=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    if(!j||!j.ok) return;
+    const e=document.getElementById('fiscalStaffStatus');
+    if(e){ e.innerHTML=j.configured
+      ? '<span style="color:var(--good)">● Active</span> — a PIN is set. Enter a new PIN to change it.'
+      : '<span style="color:var(--bad)">● Not set up</span> — choose a 4–6 digit PIN.'; }
+  }).catch(()=>{});
+}
+function fiscalSave(){
+  const p=(document.getElementById('fiscalPin')||{}).value||'';
+  if(!/^\d{4,6}$/.test(p.trim())){ alert('PIN must be 4 to 6 digits.'); return; }
+  fetch('?fiscalcreds=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',pin:p.trim()})}).then(r=>r.json()).then(j=>{
+    if(j&&j.ok){ const pw=document.getElementById('fiscalPin'); if(pw) pw.value=''; fiscalStatusLoad(); alert('Fiscalisation PIN saved.'); }
+    else alert((j&&j.error)||'Could not save.');
+  }).catch(e=>alert('Error: '+e));
+}
+function fiscalCopy(btn){ try{ navigator.clipboard.writeText(FISCAL_URL); const t=btn.textContent; btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent=t,1400);}catch(e){} }
+function fiscalAccessLoad(){
+  fetch('?fiscalpref=1',{credentials:'same-origin'}).then(r=>r.json()).then(j=>{
+    if(!j||!j.ok) return;
+    const box=document.getElementById('fiscalAccessBox');
+    if(box){ box.innerHTML = j.disabled
+      ? `<span style="color:var(--bad);font-weight:700;font-size:12.5px">⛔ Access is DISABLED.</span> <button class="btn" style="width:auto;padding:6px 13px;margin-left:6px" onclick="fiscalSetDisabled(false)">Enable access</button>`
+      : `<button class="btn sec" style="width:auto;padding:8px 14px;border-color:var(--bad);color:var(--bad)" onclick="fiscalSetDisabled(true)">⛔ Disable access</button>`; }
+  }).catch(()=>{});
+}
+function fiscalSetDisabled(v){ fetch('?fiscalpref=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',disabled:v?1:0})}).then(r=>r.json()).then(()=>fiscalAccessLoad()).catch(()=>{}); }
 function vPortals(){
   if(!ME.admin) return `<div class="card muted" style="text-align:center">Admins only.</div>`;
   const sec = (t)=>`<div style="font-weight:700;font-size:12.5px;letter-spacing:.3px;margin:2px 0 10px">${t}</div>`;
@@ -2943,6 +2974,24 @@ function vPortals(){
     <div style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="grace.php" target="_blank" rel="noopener">Open portal ↗</a>
       <button class="btn sec" style="width:auto;padding:9px 14px" onclick="graceCopy(this)">Copy link</button>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid #1F4FD0">
+    ${sec('🧾 Fiscalisation')}
+    <div class="muted" style="font-size:12px;margin-bottom:10px">A private, login-protected work queue for the person who fiscalises invoices (gets the KRA ETR). She sees exactly the invoices you've <b>filed</b> (into INVOICES TO SORT) that <b>don't yet have an ETR</b> — KES only — and taps <b>Fiscalised ✓</b> to clear each one. The queue is set automatically by what's filed on the office PC; once a scan lands in SCANNED COPIES the invoice drops off by itself. Leave a password blank to keep the current one.</div>
+    <div id="fiscalAccessBox" style="margin:0 0 12px"></div>
+
+    <div style="font-weight:700;font-size:12px;margin:2px 0 6px">🔢 Worker PIN</div>
+    <div id="fiscalStaffStatus" class="muted" style="font-size:11.5px;margin-bottom:8px">Checking…</div>
+    <div class="grid2" style="gap:10px">
+      <div><label>PIN (4–6 digits)</label><input id="fiscalPin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" placeholder="e.g. 4821" style="margin-bottom:0"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" style="width:auto;padding:9px 16px" onclick="fiscalSave()">Save PIN</button></div>
+    </div>
+
+    <div style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <a class="btn sec" style="width:auto;padding:9px 15px;text-decoration:none" href="fiscal.php" target="_blank" rel="noopener">Open portal ↗</a>
+      <button class="btn sec" style="width:auto;padding:9px 14px" onclick="fiscalCopy(this)">Copy link</button>
     </div>
   </div>
 
