@@ -558,6 +558,9 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .contactline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;margin-bottom:4px}
   @media(max-width:560px){ .frow1{flex-direction:column} .famt{font-size:26px} .fname{font-size:19px} }
   .ghwrap .gcount{font-family:var(--mono);font-size:10.5px;color:var(--mute);background:var(--card);border:1px solid var(--line);border-radius:3px;padding:1px 6px;white-space:nowrap}
+  .gcontact{margin:5px 0 0 20px;font-size:11.5px;color:var(--mute);display:flex;gap:7px;flex-wrap:wrap;align-items:baseline}
+  .gcontact .cn{font-weight:700;color:var(--ink)} .gcontact .cp{font-family:var(--mono)} .gcontact .ce{color:var(--mail)}
+  .gcontact .csep{color:var(--line)}
   .ghwrap .gtot{font-family:var(--mono);font-weight:700;font-size:14px;margin-left:4px;color:var(--ink)}
   .ghwrap .gacts{margin-left:auto;display:flex;gap:6px;align-items:center}
   .gbtn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:3px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;white-space:nowrap}
@@ -984,6 +987,7 @@ function renderGroup(c){
         <span class="gtot">${esc(fmtMap(c.totalByCur))}</span>
         <span class="gacts" onclick="event.stopPropagation()">${callbtns}</span>
       </div>
+      ${(()=>{const d=[c.contactName,c.phone,c.email].filter(Boolean);return d.length?`<div class="gcontact">${d.map((x,i)=>`<span class="${i===0?'cn':(i===1?'cp':'ce')}">${esc(x)}</span>`).join('<span class="csep">·</span>')}</div>`:'';})()}
     </td></tr>`;
   const rows=open?(c.invoices||[]).map(iv=>`<tr class="girow">
     <td data-l="Invoice"><span class="num">${esc(iv.number)}</span></td>
