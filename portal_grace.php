@@ -480,7 +480,9 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .gtbl tr.grow{cursor:pointer}
   .gtbl tr.grow td{background:var(--ink);color:#fff;border-bottom:2px solid var(--brand);padding:10px 14px}
   .ghwrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ghwrap .gcar{font-size:11px;color:#C9C4BB;width:12px;flex:0 0 auto}
   .ghwrap .gname{font-size:14px;font-weight:700;letter-spacing:.2px}
+  .ghwrap .gcount{font-family:var(--mono);font-size:10.5px;color:#C9C4BB;background:#2A2824;border:1px solid #3A3833;border-radius:3px;padding:1px 6px;white-space:nowrap}
   .ghwrap .gtot{font-family:var(--mono);font-weight:700;font-size:14px;margin-left:4px}
   .ghwrap .gacts{margin-left:auto;display:flex;gap:6px;align-items:center}
   .gbtn{border:1px solid #3A3833;background:transparent;color:#E7E3DC;border-radius:3px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;white-space:nowrap}
@@ -729,26 +731,29 @@ function renderGroup(c){
     ? `<a class="gbtn call" href="tel:${att(tel)}">Call</a>${wa?`<a class="gbtn wa" href="https://wa.me/${att(wa)}" target="_blank" rel="noopener">WhatsApp</a>`:''}`
     : (c.email?`<a class="gbtn" href="mailto:${att(c.email)}">Email</a>`:`<button class="gbtn" onclick="openPhone('${jsq(cid)}')">Add phone</button>`);
   const nConf=(c.invoices||[]).filter(iv=>iv.confirmed).length;
-  const head=`<tr class="grow" onclick="toggleInv('${jsq(cid)}')">
+  const open=!!EXP[cid];
+  const head=`<tr class="grow ${open?'open':''}" onclick="toggleInv('${jsq(cid)}')">
     <td colspan="6">
       <div class="ghwrap">
+        <span class="gcar">${open?'▾':'▸'}</span>
         <span class="gname">${esc(c.customer||'(unnamed)')}</span>
+        <span class="gcount">${c.count} inv</span>
         ${spill}${daysPill}
         ${nConf>0?`<span class="pill ready">● ${nConf} ready to collect</span>`:''}
         <span class="gtot">${esc(fmtMap(c.totalByCur))}</span>
-        <span class="gacts" onclick="event.stopPropagation()">${callbtns}<button class="gbtn notes" onclick="toggleInv('${jsq(cid)}')">Notes ${EXP[cid]?'▴':'▾'}</button></span>
+        <span class="gacts" onclick="event.stopPropagation()">${callbtns}</span>
       </div>
     </td></tr>`;
-  const rows=(c.invoices||[]).map(iv=>`<tr class="girow">
+  const rows=open?(c.invoices||[]).map(iv=>`<tr class="girow">
     <td data-l="Invoice"><span class="num">${esc(iv.number)}</span>${iv.ready?' <span class="otag" title="Flagged by the office">● office</span>':''}</td>
     <td data-l="What it's for" class="about">${iv.about?esc(iv.about):'<span class="muted">—</span>'}</td>
     <td data-l="Due" class="mono dd">${esc(iv.due||'—')}${iv.overdue>0?` <span class="od">${iv.overdue}d late</span>`:''}</td>
     <td data-l="Amount" class="r mono amt">${esc(fmtC(iv.currency,iv.balance))}</td>
     <td data-l="Ready to collect" class="r">${iv.id?`<button class="rc ${iv.confirmed?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)">${iv.confirmed?'✓ Ready to collect':'Mark ready'}</button>`:''}</td>
     <td data-l="Details" class="r">${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</td>
-  </tr>`).join('');
+  </tr>`).join(''):'';
   let panel='';
-  if(EXP[cid]){
+  if(open){
     const STAT=['Called','Promised','No answer','Paid'];
     const schips=STAT.map(s=>`<button class="sc ${c.status===s?'on':''}" data-s="${s}" onclick="tapStatus('${jsq(cid)}','${s}')">${s}</button>`).join('');
     const promised=(c.status==='Promised')?`<div class="dt">Promised to pay by <input type="date" value="${att(c.promised||'')}" onchange="onPromised('${jsq(cid)}',this.value,'${dot}')"></div>`:'';
