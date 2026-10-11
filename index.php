@@ -381,6 +381,33 @@ if (isset($_GET['errlog'])) {
 
 // --- login gate (master password = admin; or a per-user account) ---
 $justLoggedIn = false;
+/* ---- PIN-only login (the default) ---- */
+if (isset($_POST['app_pin'])) {
+    $pin = preg_replace('/\D/', '', (string)$_POST['app_pin']);
+    $pk = '__pin__';
+    if (login_locked($pk)) { $loginError = 'Too many attempts. Please wait a few minutes and try again.'; }
+    elseif (!preg_match('/^\d{4,6}$/', $pin)) { login_fail($pk); $loginError = 'Enter your 4–6 digit PIN.'; }
+    elseif (admin_pin_verify($pin)) {
+        session_regenerate_id(true); login_clear($pk);
+        $_SESSION['auth'] = true; $_SESSION['user'] = 'admin'; $_SESSION['is_admin'] = 1; $_SESSION['tabs'] = '*'; $_SESSION['email'] = '';
+        $justLoggedIn = true;
+        try { require_once __DIR__ . '/db.php'; require_once __DIR__ . '/activity_store.php'; activity_log(db(), 'admin', 'logged in', 'admin PIN'); } catch (Exception $e) {}
+    } else {
+        $row = false;
+        try { require_once __DIR__ . '/db.php'; $row = user_find_by_pin(db(), $pin); } catch (Exception $e) { $row = false; }
+        if ($row) {
+            session_regenerate_id(true); login_clear($pk);
+            $_SESSION['auth'] = true; $_SESSION['user'] = $row['username']; $_SESSION['email'] = $row['email'] ?? '';
+            $_SESSION['is_admin'] = (int)$row['is_admin'] ? 1 : 0; $_SESSION['tabs'] = (int)$row['is_admin'] ? '*' : (string)($row['tabs'] ?? '');
+            $justLoggedIn = true;
+            try { require_once __DIR__ . '/activity_store.php'; activity_log(db(), $row['username'], 'logged in', (int)$row['is_admin'] ? 'admin (PIN)' : 'staff (PIN)'); } catch (Exception $e) {}
+        } else { login_fail($pk); $loginError = 'PIN not recognised. Try again, or use username & password.'; }
+    }
+    if ($RMB_OK && $justLoggedIn && $IS_MOBILE && function_exists('remember_issue')) {
+        try { $tok = remember_issue(['user'=>$_SESSION['user'], 'email'=>$_SESSION['email'] ?? '', 'is_admin'=>$_SESSION['is_admin'], 'tabs'=>$_SESSION['tabs']], 90);
+            setcookie('rmb912', $tok, ['expires'=>time()+90*86400, 'path'=>'/', 'secure'=>$RMB_SECURE, 'httponly'=>true, 'samesite'=>'Lax']); } catch (\Throwable $e) {}
+    }
+}
 if (isset($_POST['app_password'])) {
     $pw = $_POST['app_password'];                 // the typed PIN or password
     $un = trim($_POST['app_user'] ?? '');
@@ -448,7 +475,14 @@ if (isset($_POST['set_pin']) && !empty($_SESSION['auth']) && !empty($_SESSION['n
     $p2 = preg_replace('/\D/', '', (string)($_POST['pin2'] ?? ''));
     if (!preg_match('/^\d{4,6}$/', $p1)) { $pinError = 'Your PIN must be 4 to 6 digits.'; }
     elseif ($p1 !== $p2) { $pinError = 'The two PINs did not match — try again.'; }
-    else { try { require_once __DIR__ . '/db.php'; user_set_pin(db(), $_SESSION['user'], $p1); } catch (Exception $e) {} unset($_SESSION['need_pin']); header('Location: index.php'); exit; }
+    elseif (admin_pin_verify($p1)) { $pinError = 'That PIN is reserved — please choose another.'; }
+    else {
+        $r = 'format';
+        try { require_once __DIR__ . '/db.php'; $r = user_set_pin(db(), $_SESSION['user'], $p1); } catch (Exception $e) { $r = false; }
+        if ($r === 'dup') { $pinError = 'That PIN is already in use — please choose another.'; }
+        elseif ($r !== true) { $pinError = 'Could not save your PIN — please try again.'; }
+        else { unset($_SESSION['need_pin']); header('Location: index.php'); exit; }
+    }
 }
 if (isset($_GET['skip_pin']) && !empty($_SESSION['auth'])) { unset($_SESSION['need_pin']); header('Location: index.php'); exit; }
 
@@ -503,20 +537,36 @@ if ($NEED_PIN || empty($_SESSION['auth'])):
     <button type="submit">Save PIN →</button>
     <a class="skip" href="?skip_pin=1">Skip for now</a>
   </form>
-<?php else: ?>
-  <form class="card" method="post" autocomplete="off">
+<?php else: $showPw = !empty($_POST['app_password']); ?>
+  <div class="card">
     <div class="b">912</div>
     <div class="eyebrow">Waitara Holdings Group</div>
     <div class="ttl">Console</div>
-    <div class="sub">Sign in with your PIN or password.</div>
+
+    <form id="pinForm" method="post" autocomplete="off" style="<?php echo $showPw ? 'display:none' : ''; ?>">
+      <div class="sub">Enter your PIN to sign in.</div>
+      <label>PIN</label>
+      <input class="pin" type="password" name="app_pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••" <?php echo $showPw ? '' : 'autofocus'; ?>>
+      <button type="submit">Sign in →</button>
+      <a class="skip" href="#" onclick="show('pw');return false">Use username &amp; password</a>
+    </form>
+
+    <form id="pwForm" method="post" autocomplete="off" style="<?php echo $showPw ? '' : 'display:none'; ?>">
+      <div class="sub">Sign in with your username and password.</div>
+      <label>Username</label>
+      <input type="text" name="app_user" placeholder="Username or email" autocapitalize="none" autocorrect="off" value="<?php echo htmlspecialchars((string)($_POST['app_user'] ?? ''), ENT_QUOTES); ?>" <?php echo $showPw ? 'autofocus' : ''; ?>>
+      <label>Password</label>
+      <input type="password" name="app_password" placeholder="Password">
+      <button type="submit">Sign in →</button>
+      <a class="skip" href="#" onclick="show('pin');return false">Use PIN instead</a>
+    </form>
+
     <?php if(!empty($loginError)) echo '<div class="err">'.$loginError.'</div>'; ?>
-    <label>Username</label>
-    <input type="text" name="app_user" placeholder="Username or email" autocapitalize="none" autocorrect="off" autofocus>
-    <label>PIN or password</label>
-    <input type="password" name="app_password" placeholder="Enter your PIN or password">
-    <button type="submit">Sign in →</button>
     <div class="foot">Secure access · Live from Zoho Books</div>
-  </form>
+  </div>
+  <script>
+    function show(w){document.getElementById('pinForm').style.display=(w==='pin')?'':'none';document.getElementById('pwForm').style.display=(w==='pw')?'':'none';var f=document.querySelector('#'+(w==='pin'?'pinForm':'pwForm')+' input');if(f)f.focus();}
+  </script>
 <?php endif; ?>
 </body></html>
 <?php exit; endif; ?>

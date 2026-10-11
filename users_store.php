@@ -27,12 +27,27 @@ function user_find(PDO $pdo, $username) {
     return $st->fetch(PDO::FETCH_ASSOC) ?: false;
 }
 
-/* set / change a user's PIN (stored hashed). $pin must be 4–6 digits. */
-function user_set_pin(PDO $pdo, $username, $pin) {
+/* find an active user whose PIN matches (PIN-only login). PINs are unique (enforced in user_set_pin). */
+function user_find_by_pin(PDO $pdo, $pin) {
     users_table($pdo);
     if (!preg_match('/^\d{4,6}$/', (string)$pin)) return false;
+    foreach ($pdo->query("SELECT * FROM app_users WHERE pin_hash<>'' AND disabled=0")->fetchAll(PDO::FETCH_ASSOC) as $u) {
+        if (password_verify((string)$pin, $u['pin_hash'])) return $u;
+    }
+    return false;
+}
+
+/* set / change a user's PIN (hashed). 4–6 digits, unique across users.
+   Returns true | 'format' | 'dup'. */
+function user_set_pin(PDO $pdo, $username, $pin) {
+    users_table($pdo);
+    if (!preg_match('/^\d{4,6}$/', (string)$pin)) return 'format';
+    foreach ($pdo->query("SELECT username,pin_hash FROM app_users WHERE pin_hash<>''")->fetchAll(PDO::FETCH_ASSOC) as $u) {
+        if ($u['username'] !== trim($username) && password_verify((string)$pin, $u['pin_hash'])) return 'dup';
+    }
     $st = $pdo->prepare("UPDATE app_users SET pin_hash=? WHERE username=?");
-    return $st->execute([password_hash($pin, PASSWORD_DEFAULT), trim($username)]);
+    $st->execute([password_hash($pin, PASSWORD_DEFAULT), trim($username)]);
+    return true;
 }
 
 /* Canonical permissionable tabs: key => label. Keep in sync with the nav. */
