@@ -210,26 +210,38 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'fiscal') {
   .chip .c{color:var(--mute);font-weight:600;margin-left:5px;font-family:var(--mono)}
   .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}.chip.on .c{color:#B9B3A9}
   .chip.on.green{background:var(--green);border-color:var(--green)} .chip.on.amber{background:var(--amber);border-color:var(--amber)}
-  #fList{display:flex;flex-direction:column;gap:16px}
-  .grp{background:var(--card);border:1px solid var(--line)}
-  .ghead{display:flex;align-items:baseline;gap:12px;padding:12px 15px;background:var(--ink);color:#fff;border-bottom:2px solid var(--brand)}
-  .ghead .gname{font-size:14px;font-weight:700;letter-spacing:.2px;flex:1;min-width:0}
-  .ghead .gmeta{font-family:var(--mono);font-size:11.5px;color:#C9C4BB;white-space:nowrap}
-  .inv{padding:12px 15px;border-bottom:1px solid var(--hair)}
-  .inv:last-child{border-bottom:0}
-  .inv.done{background:var(--soft)}
-  .inv .ir1{display:flex;align-items:center;gap:10px}
-  .inv .num{font-family:var(--mono);font-size:14.5px;font-weight:600;cursor:pointer;color:var(--mail);background:none;border:0;padding:0}
-  .inv .num:hover{text-decoration:underline}
-  .inv .amt{margin-left:auto;font-family:var(--mono);font-size:15px;font-weight:600;white-space:nowrap}
-  .inv .ab{color:var(--mute);font-size:12px;margin-top:4px;line-height:1.35}
-  .inv .ir2{display:flex;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap}
-  .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:2px}
-  .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
-  .dte{font-size:11.5px;color:var(--mute);font-family:var(--mono)}
-  .fbtn{margin-left:auto;border:0;border-radius:3px;padding:11px 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.3px;background:var(--green);color:#fff}
+  .ftbl{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);font-size:13px}
+  .ftbl thead th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);font-weight:700;padding:10px 14px;background:var(--soft);border-bottom:1px solid var(--line);white-space:nowrap}
+  .ftbl th.r,.ftbl td.r{text-align:right}
+  .ftbl td{padding:11px 14px;border-bottom:1px solid var(--hair);vertical-align:middle}
+  .ftbl tr.irow:hover{background:var(--soft)}
+  .ftbl tr.irow.done{background:var(--soft);color:var(--mute)}
+  .ftbl tr.grow td{background:var(--ink);color:#fff;border-bottom:2px solid var(--brand);padding:9px 14px}
+  .ftbl tr.grow .gname{font-size:13px;font-weight:700;letter-spacing:.2px}
+  .ftbl tr.grow .gmeta{font-family:var(--mono);font-size:11px;color:#C9C4BB;margin-left:10px}
+  .ftbl .num{font-family:var(--mono);font-size:13.5px;font-weight:600;cursor:pointer;color:var(--mail);background:none;border:0;padding:0}
+  .ftbl .num:hover{text-decoration:underline}
+  .ftbl .amt{font-family:var(--mono);font-weight:600;white-space:nowrap}
+  .ftbl .dte{font-family:var(--mono);color:var(--mute);white-space:nowrap}
+  .ftbl td.desc{color:var(--mute);max-width:320px}
+  .fbtn{border:0;border-radius:3px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.2px;background:var(--green);color:#fff;white-space:nowrap}
   .fbtn.undo{background:var(--card);border:1px solid var(--line);color:var(--mute);font-weight:600}
   .fbtn:disabled{opacity:.6;cursor:default}
+  /* phone: collapse the table into labeled stacked rows */
+  @media(max-width:640px){
+    .ftbl,.ftbl tbody{display:block}
+    .ftbl thead{display:none}
+    .ftbl tr.grow{display:block}
+    .ftbl tr.grow td{display:block;width:100%}
+    .ftbl tr.irow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 14px;border-bottom:1px solid var(--hair)}
+    .ftbl tr.irow td{display:block;border:0;padding:0}
+    .ftbl td.desc{grid-column:1 / -1;max-width:none}
+    .ftbl td[data-l="Filed"],.ftbl td[data-l="Waiting"]{grid-column:1 / -1}
+    .ftbl td.amt{text-align:left;font-size:15px}
+    .ftbl td[data-l="Action"]{grid-row:1 / 3;grid-column:2;align-self:center}
+  }
+  .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:2px}
+  .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
   .donetag{font-size:9.5px;font-weight:800;color:#0F7A34;background:var(--green-bg);border:1px solid #BFE0CB;border-radius:3px;padding:2px 7px;text-transform:uppercase;letter-spacing:.04em}
   .modal{position:fixed;inset:0;background:rgba(20,16,12,.55);display:none;z-index:200;overflow:auto;padding:16px}
   .modal.open{display:block}
@@ -411,31 +423,32 @@ function renderList(){
     const ma=Math.max(...groups[a].map(r=>r.days||0)), mb=Math.max(...groups[b].map(r=>r.days||0));
     return mb-ma || a.localeCompare(b);
   });
-  box.innerHTML=names.map(nm=>renderGroup(nm, groups[nm])).join('');
+  box.innerHTML=`<table class="ftbl">
+    <thead><tr><th>Invoice</th><th>What it's for</th><th>Filed</th><th>Waiting</th><th class="r">Amount (KES)</th><th class="r">Action</th></tr></thead>
+    <tbody>${names.map(nm=>renderGroup(nm, groups[nm])).join('')}</tbody>
+  </table>`;
 }
 function renderGroup(name, rows){
   rows=rows.slice().sort((a,b)=>(b.days||0)-(a.days||0));
   const tot=rows.reduce((s,r)=>s+(r.amount||0),0);
   const n=rows.length;
-  const items=rows.map(r=>{
+  const head=`<tr class="grow"><td colspan="6"><span class="gname">${esc(name)}</span><span class="gmeta">${n} invoice${n===1?'':'s'} · ${esc(fmtC('KES',tot))}</span></td></tr>`;
+  const body=rows.map(r=>{
     const num=jsq(r.number);
     const btn=r.done
       ? `<button class="fbtn undo" onclick="mark('${num}',false,this)">Undo</button>`
       : `<button class="fbtn" onclick="mark('${num}',true,this)">Fiscalised ✓</button>`;
-    return `<div class="inv ${r.done?'done':''}">
-      <div class="ir1">
-        ${r.id?`<button class="num" onclick="openInv('${jsq(r.id)}')">${esc(r.number)}</button>`:`<span class="num" style="color:var(--ink)">${esc(r.number)}</span>`}
-        ${r.done?'<span class="donetag">Done</span>':''}
-        <span class="amt">${esc(fmtC(r.currency||'KES',r.amount))}</span>
-      </div>
-      ${r.descr?`<div class="ab">${esc(r.descr)}</div>`:''}
-      <div class="ir2">${daysPill(r.days||0)}<span class="dte">filed ${esc(r.date||'—')}</span>${btn}</div>
-    </div>`;
+    const numCell=r.id?`<button class="num" onclick="openInv('${jsq(r.id)}')">${esc(r.number)}</button>`:`<span class="num" style="color:var(--ink)">${esc(r.number)}</span>`;
+    return `<tr class="irow ${r.done?'done':''}">
+      <td data-l="Invoice">${numCell}${r.done?' <span class="donetag">Done</span>':''}</td>
+      <td data-l="What it's for" class="desc">${esc(r.descr||'—')}</td>
+      <td data-l="Filed" class="mono dte">${esc(r.date||'—')}</td>
+      <td data-l="Waiting">${daysPill(r.days||0)}</td>
+      <td data-l="Amount" class="r amt">${esc(fmtC(r.currency||'KES',r.amount))}</td>
+      <td data-l="Action" class="r">${btn}</td>
+    </tr>`;
   }).join('');
-  return `<div class="grp">
-    <div class="ghead"><span class="gname">${esc(name)}</span><span class="gmeta">${n} invoice${n===1?'':'s'} · ${esc(fmtC('KES',tot))}</span></div>
-    ${items}
-  </div>`;
+  return head+body;
 }
 load();
 </script>
