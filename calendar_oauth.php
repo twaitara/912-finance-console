@@ -3,6 +3,9 @@
    Self-contained: reuses your Zoho client_id/client_secret/accounts_url from config.php,
    stores each employee's own refresh token (after they connect once), and writes events
    straight into THAT employee's calendar. Does not depend on zoho.php. */
+/* Library file: only ever included by connect_calendar.php / api/task_calendar.php.
+   Block direct web access (defines functions only; nothing to run on its own). */
+if (realpath(__FILE__) === realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? ''))) { http_response_code(403); exit('Forbidden'); }
 require_once __DIR__ . '/db.php';
 
 function cal_cfg(){ static $c=null; if($c===null){ $c=require __DIR__.'/config.php'; } return $c; }
