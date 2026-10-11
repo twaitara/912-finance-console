@@ -14,6 +14,25 @@ function users_table(PDO $pdo) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     try { $pdo->exec("ALTER TABLE app_users ADD COLUMN email VARCHAR(190) DEFAULT '' AFTER pass_hash"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE app_users ADD COLUMN disabled TINYINT NOT NULL DEFAULT 0 AFTER is_admin"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE app_users ADD COLUMN pin_hash VARCHAR(255) DEFAULT '' AFTER pass_hash"); } catch (Exception $e) {}
+}
+
+/* find a user by username or email (no password check) — used by the PIN login flow. */
+function user_find(PDO $pdo, $username) {
+    users_table($pdo);
+    $id = trim($username);
+    if ($id === '') return false;
+    $st = $pdo->prepare("SELECT * FROM app_users WHERE username=? OR (email<>'' AND LOWER(email)=LOWER(?)) ORDER BY (username=?) DESC LIMIT 1");
+    $st->execute([$id, $id, $id]);
+    return $st->fetch(PDO::FETCH_ASSOC) ?: false;
+}
+
+/* set / change a user's PIN (stored hashed). $pin must be 4–6 digits. */
+function user_set_pin(PDO $pdo, $username, $pin) {
+    users_table($pdo);
+    if (!preg_match('/^\d{4,6}$/', (string)$pin)) return false;
+    $st = $pdo->prepare("UPDATE app_users SET pin_hash=? WHERE username=?");
+    return $st->execute([password_hash($pin, PASSWORD_DEFAULT), trim($username)]);
 }
 
 /* Canonical permissionable tabs: key => label. Keep in sync with the nav. */

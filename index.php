@@ -136,6 +136,32 @@ $RMB_OK = function_exists('remember_lookup');
 $IS_MOBILE  = !empty($_SERVER['HTTP_USER_AGENT']) && preg_match('/Mobile|Android|iPhone|iPad|iPod|Windows Phone/i', (string)$_SERVER['HTTP_USER_AGENT']);
 $RMB_SECURE = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
 
+/* ---- PIN login helpers (admin PIN in data/admin_pin.json; simple lockout) ---- */
+if (!function_exists('admin_pin_verify')) {
+    function _admin_pin_file() { $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true); return $d . '/admin_pin.json'; }
+    function admin_pin_hash() {
+        $f = _admin_pin_file();
+        if (is_file($f)) { $j = json_decode(@file_get_contents($f), true); if (!empty($j['hash'])) return (string)$j['hash']; }
+        $h = password_hash('5124', PASSWORD_DEFAULT); @file_put_contents($f, json_encode(['hash'=>$h, 'updated'=>date('c')]));   // seed default admin PIN 5124
+        return $h;
+    }
+    function admin_pin_verify($pin) { if (!preg_match('/^\d{4,6}$/', (string)$pin)) return false; return password_verify((string)$pin, admin_pin_hash()); }
+    function admin_pin_set($pin) { if (!preg_match('/^\d{4,6}$/', (string)$pin)) return false; @file_put_contents(_admin_pin_file(), json_encode(['hash'=>password_hash((string)$pin, PASSWORD_DEFAULT), 'updated'=>date('c')])); return true; }
+    function _login_file() { $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true); return $d . '/login_attempts.json'; }
+    function _login_key($un) { return sha1(strtolower(trim((string)$un)) . '|' . ($_SERVER['REMOTE_ADDR'] ?? '')); }
+    function login_locked($un) { $a = is_file(_login_file()) ? (json_decode(@file_get_contents(_login_file()), true) ?: []) : []; $e = $a[_login_key($un)] ?? null; return $e && ($e['until'] ?? 0) > time(); }
+    function login_fail($un) {
+        $f = _login_file(); $a = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; $k = _login_key($un); $now = time();
+        $e = $a[$k] ?? ['n'=>0, 'first'=>$now, 'until'=>0];
+        if (($now - ($e['first'] ?? $now)) > 900) $e = ['n'=>0, 'first'=>$now, 'until'=>0];
+        $e['n'] = ($e['n'] ?? 0) + 1; if ($e['n'] >= 6) $e['until'] = $now + 900;
+        $a[$k] = $e;
+        foreach ($a as $kk => $vv) { if (($vv['until'] ?? 0) < $now && ($now - ($vv['first'] ?? 0)) > 3600) unset($a[$kk]); }
+        @file_put_contents($f, json_encode($a));
+    }
+    function login_clear($un) { $f = _login_file(); $a = is_file($f) ? (json_decode(@file_get_contents($f), true) ?: []) : []; $k = _login_key($un); if (isset($a[$k])) { unset($a[$k]); @file_put_contents($f, json_encode($a)); } }
+}
+
 if ($RMB_OK && empty($_SESSION['auth']) && !empty($_COOKIE['rmb912'])) {
     try {
         $rv = remember_lookup($_COOKIE['rmb912']);
@@ -356,29 +382,43 @@ if (isset($_GET['errlog'])) {
 // --- login gate (master password = admin; or a per-user account) ---
 $justLoggedIn = false;
 if (isset($_POST['app_password'])) {
-    $pw = $_POST['app_password'];
+    $pw = $_POST['app_password'];                 // the typed PIN or password
     $un = trim($_POST['app_user'] ?? '');
-    if (hash_equals($cfg['app_password'], $pw)) {
+    if (login_locked($un)) {
+        $loginError = 'Too many attempts. Please wait a few minutes and try again.';
+    } elseif (admin_pin_verify($pw) || hash_equals($cfg['app_password'], $pw)) {
+        // admin: PIN 5124 (data/admin_pin.json) or the master password
         session_regenerate_id(true);                                // prevent session fixation
+        login_clear($un);
         $_SESSION['auth'] = true; $_SESSION['user'] = 'admin'; $_SESSION['is_admin'] = 1; $_SESSION['tabs'] = '*';
         $_SESSION['email'] = $un;                                   // remember who typed in the master login
         $justLoggedIn = true;
-        // stamp the typed identity so master-password logins are traceable in the Activity log
         try { require_once __DIR__ . '/db.php'; require_once __DIR__ . '/activity_store.php'; activity_log(db(), 'admin', 'logged in', 'master' . ($un !== '' ? (' as ' . $un) : ' (no id entered)')); } catch (Exception $e) {}
     } else {
-        $row = false;
-        try { require_once __DIR__ . '/db.php'; $row = user_authenticate(db(), $un, $pw); } catch (Exception $e) { $row = false; }
+        $row = false; $viaPassword = false;
+        try {
+            require_once __DIR__ . '/db.php';
+            $row = user_find(db(), $un);
+            if ($row && empty($row['disabled'])) {
+                if (!empty($row['pin_hash']) && preg_match('/^\d{4,6}$/', $pw) && password_verify($pw, $row['pin_hash'])) { /* PIN ok */ }
+                elseif (password_verify($pw, $row['pass_hash'])) { $viaPassword = true; }
+                else { $row = false; }
+            } else { $row = false; }
+        } catch (Exception $e) { $row = false; }
         if ($row) {
             session_regenerate_id(true);                            // prevent session fixation
+            login_clear($un);
             $_SESSION['auth'] = true;
             $_SESSION['user'] = $row['username'];
             $_SESSION['email'] = $row['email'] ?? '';
             $_SESSION['is_admin'] = (int)$row['is_admin'] ? 1 : 0;
             $_SESSION['tabs'] = (int)$row['is_admin'] ? '*' : (string)($row['tabs'] ?? '');
+            if (empty($row['pin_hash'])) $_SESSION['need_pin'] = true;   // first time: prompt to create a PIN for next login
             $justLoggedIn = true;
             try { require_once __DIR__ . '/activity_store.php'; activity_log(db(), $row['username'], 'logged in', (int)$row['is_admin'] ? 'admin' : 'staff'); } catch (Exception $e) {}
         } else {
-            $loginError = 'Wrong username or password.';
+            login_fail($un);
+            $loginError = 'Wrong username or PIN.';
         }
     }
     // On a fresh mobile login, mint a 90-day remember token so the app stays signed in.
@@ -402,61 +442,83 @@ if (isset($_GET['logout'])) {
     session_destroy(); header('Location: index.php'); exit;
 }
 
-if (empty($_SESSION['auth'])):
+// ---- first login: create a PIN to use next time ----
+if (isset($_POST['set_pin']) && !empty($_SESSION['auth']) && !empty($_SESSION['need_pin'])) {
+    $p1 = preg_replace('/\D/', '', (string)($_POST['pin1'] ?? ''));
+    $p2 = preg_replace('/\D/', '', (string)($_POST['pin2'] ?? ''));
+    if (!preg_match('/^\d{4,6}$/', $p1)) { $pinError = 'Your PIN must be 4 to 6 digits.'; }
+    elseif ($p1 !== $p2) { $pinError = 'The two PINs did not match — try again.'; }
+    else { try { require_once __DIR__ . '/db.php'; user_set_pin(db(), $_SESSION['user'], $p1); } catch (Exception $e) {} unset($_SESSION['need_pin']); header('Location: index.php'); exit; }
+}
+if (isset($_GET['skip_pin']) && !empty($_SESSION['auth'])) { unset($_SESSION['need_pin']); header('Location: index.php'); exit; }
+
+$NEED_PIN = !empty($_SESSION['auth']) && !empty($_SESSION['need_pin']);
+if ($NEED_PIN || empty($_SESSION['auth'])):
 ?><!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Poppins,Arial,sans-serif' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Arial' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
 <link rel="manifest" href="index.php?pwa=manifest">
-<meta name="theme-color" content="#15202B">
+<meta name="theme-color" content="#1B1A17">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="912 Console">
 <link rel="apple-touch-icon" href="index.php?pwa=icon&s=180">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
+  :root{--ink:#1B1A17;--mut:#6E6A63;--line:#D7D3CB;--bg:#E8E6E1;--card:#FFFFFF;--soft:#F5F3EF;--brand:#D95E07;--red:#BE2A17;--red-bg:#F6E5E1;--mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
   *{box-sizing:border-box}
-  body{font-family:Poppins,system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;color:#15202B;
-       background:radial-gradient(1100px 700px at 18% -10%,#22344A 0%,transparent 55%),
-                  radial-gradient(900px 600px at 110% 120%,rgba(245,111,0,.22) 0%,transparent 55%),
-                  linear-gradient(135deg,#1B2A3A 0%,#15202B 55%,#0E1822 100%);
-       overflow:hidden}
-  /* soft floating glow accents */
-  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(8px);pointer-events:none;z-index:0}
-  body::before{width:260px;height:260px;left:-70px;top:-60px;background:radial-gradient(circle,rgba(245,111,0,.20),transparent 68%)}
-  body::after{width:340px;height:340px;right:-110px;bottom:-120px;background:radial-gradient(circle,rgba(35,80,197,.20),transparent 68%)}
-  .card{position:relative;z-index:1;background:rgba(255,255,255,.96);padding:34px 30px 30px;border-radius:22px;width:320px;text-align:center;
-        box-shadow:0 30px 70px rgba(8,16,24,.55),0 2px 0 rgba(255,255,255,.5) inset;border:1px solid rgba(255,255,255,.5);
-        animation:rise .5s cubic-bezier(.22,.61,.36,1) both}
-  @keyframes rise{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
-  .b{width:54px;height:54px;border-radius:16px;background:linear-gradient(140deg,#FF8A1E,#F56F00 65%);color:#fff;display:grid;place-items:center;
-     font-weight:800;font-size:18px;margin:0 auto 16px;box-shadow:0 12px 26px rgba(245,111,0,.42),0 0 0 6px rgba(245,111,0,.10)}
-  .ttl{font-weight:700;font-size:16px;letter-spacing:.2px}
-  .sub{font-size:11px;color:#64748B;margin:4px 0 20px;letter-spacing:.6px;text-transform:uppercase}
-  .fld{position:relative;margin-bottom:12px}
-  input{width:100%;padding:13px 14px;border:1px solid #E6EAF0;border-radius:12px;font-size:14px;font-family:inherit;background:#FBFCFE;
-        transition:border-color .15s,box-shadow .15s,background .15s}
-  input:focus{outline:none;border-color:#F56F00;background:#fff;box-shadow:0 0 0 4px rgba(245,111,0,.15)}
-  input::placeholder{color:#94A3B8}
-  button{width:100%;padding:13px;background:linear-gradient(140deg,#FF8A1E,#F56F00 70%);color:#fff;border:none;border-radius:12px;font-weight:700;font-size:14px;
-         font-family:inherit;cursor:pointer;margin-top:4px;box-shadow:0 12px 24px rgba(245,111,0,.34);transition:transform .12s,box-shadow .2s,filter .15s}
-  button:hover{filter:brightness(1.04);box-shadow:0 16px 30px rgba(245,111,0,.42)}
-  button:active{transform:scale(.98)}
-  .err{color:#D64933;background:#FDECEA;font-size:12px;font-weight:600;margin-bottom:12px;padding:9px 11px;border-radius:10px}
-  .foot{margin-top:18px;font-size:10.5px;color:#94A3B8;letter-spacing:.4px}
-  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  body{font-family:'IBM Plex Sans',system-ui,'Segoe UI',Arial,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);background:var(--bg);font-size:14px;-webkit-font-smoothing:antialiased;padding:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--brand);width:100%;max-width:360px;padding:28px 26px}
+  .b{width:42px;height:42px;border-radius:4px;background:var(--brand);display:grid;place-items:center;font-family:var(--mono);font-weight:600;color:#fff;font-size:15px;margin-bottom:16px}
+  .eyebrow{font-size:9.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:#9A8B78}
+  .ttl{font-weight:600;font-size:20px;margin-top:4px;letter-spacing:.2px}
+  .sub{font-size:13px;color:var(--mut);margin:6px 0 4px;line-height:1.45}
+  label{display:block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 5px}
+  input{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:3px;font-size:15px;font-family:inherit;background:var(--soft)}
+  input.pin{font-family:var(--mono);letter-spacing:.35em;text-align:center;font-size:20px}
+  input:focus{outline:none;border-color:var(--brand)}
+  input::placeholder{color:#A69D92;letter-spacing:normal}
+  button{width:100%;padding:13px;background:var(--brand);color:#fff;border:none;border-radius:3px;font-weight:600;font-size:15px;font-family:inherit;cursor:pointer;margin-top:18px;letter-spacing:.3px}
+  .err{color:#9B2016;background:var(--red-bg);font-size:12.5px;font-weight:600;margin-top:14px;padding:10px 12px;border-radius:3px}
+  .foot{margin-top:18px;font-size:10px;color:var(--mut);letter-spacing:.08em;text-transform:uppercase;text-align:center}
+  .skip{display:block;text-align:center;margin-top:14px;font-size:12.5px;color:var(--mut);text-decoration:none}
+  .skip:hover{color:var(--brand)}
 </style></head>
-<body><form class="card" method="post" autocomplete="off">
-  <div class="b">912</div>
-  <div class="ttl">WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</div>
-  <div class="sub">Live from Zoho Books</div>
-  <?php if(!empty($loginError)) echo '<div class="err">'.$loginError.'</div>'; ?>
-  <div class="fld"><input type="text" name="app_user" placeholder="Username or email"></div>
-  <div class="fld"><input type="password" name="app_password" placeholder="Password" autofocus></div>
-  <button type="submit">Open console →</button>
-  <div class="foot">Secure access · Waitara Holdings</div>
-</form></body></html>
+<body>
+<?php if ($NEED_PIN): ?>
+  <form class="card" method="post" autocomplete="off">
+    <div class="b">912</div>
+    <div class="eyebrow">Waitara Holdings Group</div>
+    <div class="ttl">Create your PIN</div>
+    <div class="sub">Choose a 4–6 digit PIN. You'll use it to sign in from now on — your password still works too.</div>
+    <input type="hidden" name="set_pin" value="1">
+    <label>New PIN</label>
+    <input class="pin" type="password" name="pin1" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••" autofocus required>
+    <label>Confirm PIN</label>
+    <input class="pin" type="password" name="pin2" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••" required>
+    <?php if(!empty($pinError)) echo '<div class="err">'.$pinError.'</div>'; ?>
+    <button type="submit">Save PIN →</button>
+    <a class="skip" href="?skip_pin=1">Skip for now</a>
+  </form>
+<?php else: ?>
+  <form class="card" method="post" autocomplete="off">
+    <div class="b">912</div>
+    <div class="eyebrow">Waitara Holdings Group</div>
+    <div class="ttl">Console</div>
+    <div class="sub">Sign in with your PIN or password.</div>
+    <?php if(!empty($loginError)) echo '<div class="err">'.$loginError.'</div>'; ?>
+    <label>Username</label>
+    <input type="text" name="app_user" placeholder="Username or email" autocapitalize="none" autocorrect="off" autofocus>
+    <label>PIN or password</label>
+    <input type="password" name="app_password" placeholder="Enter your PIN or password">
+    <button type="submit">Sign in →</button>
+    <div class="foot">Secure access · Live from Zoho Books</div>
+  </form>
+<?php endif; ?>
+</body></html>
 <?php exit; endif; ?>
 <!DOCTYPE html>
 <html lang="en"><head>
