@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/../errors.php';
+session_name('AUDREYPORTAL'); session_start();
+if (empty($_SESSION['audrey_auth'])) { http_response_code(403); header('Content-Type: application/json; charset=utf-8'); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 /* api/audrey_mark.php (PUBLIC) — POST {invoice, status?, note?} */
 header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../db.php';

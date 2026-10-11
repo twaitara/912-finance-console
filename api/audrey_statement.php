@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/../errors.php';
+session_name('AUDREYPORTAL'); session_start();
+if (empty($_SESSION['audrey_auth'])) { http_response_code(403); header('Content-Type: application/json; charset=utf-8'); echo json_encode(['ok'=>false,'error'=>'Not signed in.']); exit; }
 /* api/audrey_statement.php  (PUBLIC) — POST { client | customer_id, from?, to? }
    Full statement for ONE Dunhill client over a period. Locked to the Dunhill
    list so a public page can never pull a non-Dunhill client.

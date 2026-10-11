@@ -1,4 +1,83 @@
-<?php /* PUBLIC page — no password. Audrey's unpaid-invoice tracker. */ ?>
+<?php
+/* Audrey's unpaid-invoice tracker — PIN-gated (own AUDREYPORTAL session).
+   First open: she creates a PIN. After that: she enters it. */
+session_name('AUDREYPORTAL'); session_start();
+$A_DIR = __DIR__ . '/data'; if (!is_dir($A_DIR)) @mkdir($A_DIR, 0775, true);
+$A_PIN = $A_DIR . '/audrey_pin.json';
+$A_hasPin = is_file($A_PIN) && !empty((json_decode(@file_get_contents($A_PIN), true) ?: [])['hash']);
+$A_ATT = $A_DIR . '/audrey_attempts.json';
+$A_key = sha1((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+$aLoad  = function() use ($A_ATT){ return is_file($A_ATT) ? (json_decode(@file_get_contents($A_ATT), true) ?: []) : []; };
+$aLocked= function() use ($aLoad,$A_key){ $a=$aLoad(); $e=$a[$A_key]??null; return $e && ($e['until']??0)>time(); };
+$aFail  = function() use ($aLoad,$A_ATT,$A_key){ $a=$aLoad(); $now=time(); $e=$a[$A_key]??['n'=>0,'first'=>$now,'until'=>0]; if(($now-($e['first']??$now))>900)$e=['n'=>0,'first'=>$now,'until'=>0]; $e['n']=($e['n']??0)+1; if($e['n']>=6)$e['until']=$now+900; $a[$A_key]=$e; @file_put_contents($A_ATT,json_encode($a)); };
+$aClear = function() use ($aLoad,$A_ATT,$A_key){ $a=$aLoad(); if(isset($a[$A_key])){ unset($a[$A_key]); @file_put_contents($A_ATT,json_encode($a)); } };
+
+if (isset($_GET['logout'])) { $_SESSION=[]; session_destroy(); header('Location: audrey.php'); exit; }
+
+$A_err='';
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['audrey_pin'])) {
+    $p1 = preg_replace('/\D/','',(string)$_POST['audrey_pin']);
+    if (!$A_hasPin) {
+        $p2 = preg_replace('/\D/','',(string)($_POST['audrey_pin2'] ?? ''));
+        if (!preg_match('/^\d{4,6}$/',$p1)) $A_err='Your PIN must be 4 to 6 digits.';
+        elseif ($p1!==$p2) $A_err='The two PINs did not match — try again.';
+        else { @file_put_contents($A_PIN,json_encode(['hash'=>password_hash($p1,PASSWORD_DEFAULT),'updated'=>date('c')])); session_regenerate_id(true); $_SESSION['audrey_auth']=true; header('Location: audrey.php'); exit; }
+    } elseif ($aLocked()) {
+        $A_err='Too many attempts. Please wait a few minutes.';
+    } else {
+        $h=(string)((json_decode(@file_get_contents($A_PIN),true)?:[])['hash'] ?? '');
+        if (preg_match('/^\d{4,6}$/',$p1) && $h!=='' && password_verify($p1,$h)) { $aClear(); session_regenerate_id(true); $_SESSION['audrey_auth']=true; header('Location: audrey.php'); exit; }
+        else { $aFail(); $A_err='Wrong PIN.'; }
+    }
+}
+
+if (empty($_SESSION['audrey_auth'])):
+    $A_esc = fn($s)=>htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8');
+?><!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AUDREY REPORT — WAITARA HOLDINGS GROUP</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F56F00'/%3E%3Ctext x='32' y='45' font-family='Arial' font-size='29' font-weight='700' fill='white' text-anchor='middle'%3E912%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#1B1A17;--mut:#6E6A63;--line:#D7D3CB;--bg:#E8E6E1;--card:#FFFFFF;--soft:#F5F3EF;--brand:#D95E07;--red:#BE2A17;--red-bg:#F6E5E1;--mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{font-family:'IBM Plex Sans',system-ui,'Segoe UI',Arial,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);background:var(--bg);font-size:14px;-webkit-font-smoothing:antialiased;padding:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--brand);width:100%;max-width:360px;padding:28px 26px}
+  .b{width:42px;height:42px;border-radius:4px;background:var(--brand);display:grid;place-items:center;font-family:var(--mono);font-weight:600;color:#fff;font-size:15px;margin-bottom:16px}
+  .eyebrow{font-size:9.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:#9A8B78}
+  .ttl{font-weight:600;font-size:20px;margin-top:4px;letter-spacing:.2px}
+  .sub{font-size:13px;color:var(--mut);margin:6px 0 4px;line-height:1.45}
+  label{display:block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 5px}
+  input.pin{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:3px;font-family:var(--mono);letter-spacing:.35em;text-align:center;font-size:20px;background:var(--soft)}
+  input.pin:focus{outline:none;border-color:var(--brand)}
+  button{width:100%;padding:13px;background:var(--brand);color:#fff;border:none;border-radius:3px;font-weight:600;font-size:15px;font-family:inherit;cursor:pointer;margin-top:18px;letter-spacing:.3px}
+  .err{color:#9B2016;background:var(--red-bg);font-size:12.5px;font-weight:600;margin-top:14px;padding:10px 12px;border-radius:3px}
+  .foot{margin-top:18px;font-size:10px;color:var(--mut);letter-spacing:.08em;text-transform:uppercase;text-align:center}
+</style></head>
+<body>
+  <form class="card" method="post" autocomplete="off">
+    <div class="b">912</div>
+    <div class="eyebrow">Waitara Holdings Group</div>
+    <div class="ttl"><?php echo $A_hasPin ? 'Audrey — Reports' : 'Welcome, Audrey'; ?></div>
+    <?php if (!$A_hasPin): ?>
+      <div class="sub">Set a 4–6 digit PIN. You'll use it to open this page from now on.</div>
+      <label>New PIN</label>
+      <input class="pin" type="password" name="audrey_pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••" autofocus required>
+      <label>Confirm PIN</label>
+      <input class="pin" type="password" name="audrey_pin2" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••" required>
+      <?php if ($A_err) echo '<div class="err">'.$A_esc($A_err).'</div>'; ?>
+      <button type="submit">Save PIN →</button>
+    <?php else: ?>
+      <div class="sub">Enter your PIN to view the report.</div>
+      <label>PIN</label>
+      <input class="pin" type="password" name="audrey_pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••" autofocus required>
+      <?php if ($A_err) echo '<div class="err">'.$A_esc($A_err).'</div>'; ?>
+      <button type="submit">Open report →</button>
+    <?php endif; ?>
+    <div class="foot">Secure access · Waitara Holdings</div>
+  </form>
+</body></html>
+<?php exit; endif; ?>
 <!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AUDREY REPORT — WAITARA HOLDINGS GROUP OF COMPANIES CONSOLE</title>
@@ -127,6 +206,7 @@
   <div class="b">912</div>
   <div><h1>AUDREY REPORT</h1><div class="sub">UNPAID INVOICES TRACKER</div></div>
   <button class="refresh" onclick="load(true)">⟳ Refresh</button>
+  <a class="refresh" style="margin-left:8px;text-decoration:none" href="audrey.php?logout=1">Sign out</a>
 </div>
 <div class="wrap" id="app"><div class="card muted" style="padding:14px">Loading unpaid invoices…</div></div>
 
