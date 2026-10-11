@@ -172,15 +172,18 @@ if (!function_exists('gp_build')) {
             $pdo->exec("CREATE TABLE IF NOT EXISTS collect_flags (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', ready TINYINT(1) DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             foreach ($pdo->query("SELECT invoice_id FROM collect_flags WHERE ready=1")->fetchAll(PDO::FETCH_COLUMN) as $v) $ready[(string)$v] = true;
         } catch (\Throwable $e) { return $res; }
-        $totalReady = 0;
+        $totalReady = 0; $amtByCur = [];
         foreach ($res['customers'] as &$c) {
-            $rc = 0;
-            foreach ($c['invoices'] as &$iv) { $r = isset($ready[(string)($iv['id'] ?? '')]); $iv['ready'] = $r; if ($r) $rc++; }
+            $rc = 0; $cbc = [];
+            foreach ($c['invoices'] as &$iv) {
+                $r = isset($ready[(string)($iv['id'] ?? '')]); $iv['ready'] = $r;
+                if ($r) { $rc++; $cur = (string)($iv['currency'] ?? 'KES'); $bal = (float)($iv['balance'] ?? 0); $cbc[$cur] = ($cbc[$cur] ?? 0) + $bal; $amtByCur[$cur] = ($amtByCur[$cur] ?? 0) + $bal; }
+            }
             unset($iv);
-            $c['readyCount'] = $rc; $totalReady += $rc;
+            $c['readyCount'] = $rc; $c['readyByCur'] = $cbc; $totalReady += $rc;
         }
         unset($c);
-        $res['readyTotal'] = $totalReady;
+        $res['readyTotal'] = $totalReady; $res['readyAmountByCur'] = $amtByCur;
         return $res;
     }
 }
@@ -333,6 +336,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:2px}
   .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
   .pill.ready{background:#0F7A34;color:#fff}
+  .readybar{margin-top:10px;background:var(--green-bg);border:1px solid #BFE0CB;border-left:3px solid #0F7A34;color:#0F5A28;padding:11px 14px;font-size:13.5px;font-weight:600}
   .cx.isready{border-left:3px solid #0F7A34}
   .rtag{flex:0 0 auto;font-size:9.5px;font-weight:800;color:#0F7A34;background:var(--green-bg);border:1px solid #BFE0CB;border-radius:3px;padding:1px 6px;text-transform:uppercase;letter-spacing:.04em}
   .invlink{margin-left:auto;background:none;border:0;color:var(--mail);font-weight:600;font-size:12px;cursor:pointer;font-family:inherit;padding:3px 2px;white-space:nowrap}
@@ -527,6 +531,7 @@ function render(){
         <div class="stat"><div class="n">${nDone}</div><div class="l">Paid</div></div>
       </div>
     </div>
+    ${(DATA.readyTotal||0)>0?`<div class="readybar">✅ Ready to collect — <b>${esc(fmtMap(DATA.readyAmountByCur))}</b> across ${DATA.readyTotal} invoice${DATA.readyTotal===1?'':'s'}</div>`:''}
     <div class="tool">
       <input class="srch" type="text" placeholder="Search a customer…" value="${att(Q)}" oninput="Q=this.value.toLowerCase();renderList()">
       <div class="chips" id="fchips"></div>
@@ -595,7 +600,7 @@ function renderCard(c){
       <div class="invtop"><span class="num">${esc(iv.number)}</span>${iv.ready?`<span class="rtag">● Ready</span>`:''}<span class="dd">due ${esc(iv.due||'—')}${iv.overdue>0?' · '+iv.overdue+'d late':''}</span><span class="ia">${esc(fmtC(iv.currency,iv.balance))}</span>${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</div>
       ${iv.about?`<div class="iabout">${esc(iv.about)}</div>`:''}
     </div>`).join('')}</div>`:'';
-  const readyPill=(c.readyCount||0)>0?`<span class="pill ready">● ${c.readyCount} ready to collect</span>`:'';
+  const readyPill=(c.readyCount||0)>0?`<span class="pill ready">● ${esc(fmtMap(c.readyByCur))} ready · ${c.readyCount} inv</span>`:'';
   return `<div class="cx ${c.status==='Paid'?'paid':''} ${(c.readyCount||0)>0?'isready':''}">
     <div class="r1"><div class="nm">${esc(c.customer||'(unnamed)')}</div>${readyPill}${spill}</div>
     <div class="r2"><div class="amt">${esc(fmtMap(c.totalByCur))}</div>${daysPill}${invBtn}</div>
