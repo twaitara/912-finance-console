@@ -24,11 +24,17 @@ try {
         invoice_id VARCHAR(64) DEFAULT '',
         customer_name VARCHAR(190) DEFAULT '',
         amount DECIMAL(14,2) DEFAULT 0,
+        total DECIMAL(14,2) DEFAULT 0,
+        balance DECIMAL(14,2) DEFAULT 0,
         currency VARCHAR(8) DEFAULT 'KES',
         inv_date VARCHAR(20) DEFAULT '',
+        due_date VARCHAR(20) DEFAULT '',
         descr VARCHAR(255) DEFAULT '',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    try { $pdo->exec("ALTER TABLE fiscal_queue ADD COLUMN total DECIMAL(14,2) DEFAULT 0"); } catch (\Throwable $e) {}
+    try { $pdo->exec("ALTER TABLE fiscal_queue ADD COLUMN balance DECIMAL(14,2) DEFAULT 0"); } catch (\Throwable $e) {}
+    try { $pdo->exec("ALTER TABLE fiscal_queue ADD COLUMN due_date VARCHAR(20) DEFAULT ''"); } catch (\Throwable $e) {}
     $pdo->exec("CREATE TABLE IF NOT EXISTS fiscal_flags (
         invoice_number VARCHAR(64) PRIMARY KEY,
         invoice_id VARCHAR(64) DEFAULT '',
@@ -47,9 +53,9 @@ try {
         $pdo->exec("DELETE FROM fiscal_queue");
         $keep = [];
         if ($items) {
-            $st = $pdo->prepare("INSERT INTO fiscal_queue (invoice_number,invoice_id,customer_name,amount,currency,inv_date,descr)
-                VALUES (?,?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE invoice_id=VALUES(invoice_id),customer_name=VALUES(customer_name),amount=VALUES(amount),currency=VALUES(currency),inv_date=VALUES(inv_date),descr=VALUES(descr)");
+            $st = $pdo->prepare("INSERT INTO fiscal_queue (invoice_number,invoice_id,customer_name,amount,total,balance,currency,inv_date,due_date,descr)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE invoice_id=VALUES(invoice_id),customer_name=VALUES(customer_name),amount=VALUES(amount),total=VALUES(total),balance=VALUES(balance),currency=VALUES(currency),inv_date=VALUES(inv_date),due_date=VALUES(due_date),descr=VALUES(descr)");
             foreach ($items as $it) {
                 $num = mb_substr(trim((string)($it['invoice_number'] ?? '')), 0, 64);
                 if ($num === '') continue;
@@ -59,8 +65,11 @@ try {
                     mb_substr((string)($it['invoice_id'] ?? ''), 0, 64),
                     mb_substr((string)($it['customer_name'] ?? ''), 0, 190),
                     (float)($it['amount'] ?? 0),
+                    (float)($it['total'] ?? 0),
+                    (float)($it['balance'] ?? 0),
                     mb_substr(strtoupper((string)($it['currency'] ?? 'KES')), 0, 8),
                     mb_substr((string)($it['date'] ?? ''), 0, 20),
+                    mb_substr((string)($it['due'] ?? ''), 0, 20),
                     mb_substr((string)($it['descr'] ?? ''), 0, 255),
                 ]);
             }

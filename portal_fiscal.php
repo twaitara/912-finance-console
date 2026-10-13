@@ -17,11 +17,17 @@ if (!function_exists('fp_build')) {
             invoice_id VARCHAR(64) DEFAULT '',
             customer_name VARCHAR(190) DEFAULT '',
             amount DECIMAL(14,2) DEFAULT 0,
+            total DECIMAL(14,2) DEFAULT 0,
+            balance DECIMAL(14,2) DEFAULT 0,
             currency VARCHAR(8) DEFAULT 'KES',
             inv_date VARCHAR(20) DEFAULT '',
+            due_date VARCHAR(20) DEFAULT '',
             descr VARCHAR(255) DEFAULT '',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { $pdo->exec("ALTER TABLE fiscal_queue ADD COLUMN total DECIMAL(14,2) DEFAULT 0"); } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE fiscal_queue ADD COLUMN balance DECIMAL(14,2) DEFAULT 0"); } catch (\Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE fiscal_queue ADD COLUMN due_date VARCHAR(20) DEFAULT ''"); } catch (\Throwable $e) {}
         $pdo->exec("CREATE TABLE IF NOT EXISTS fiscal_flags (
             invoice_number VARCHAR(64) PRIMARY KEY,
             invoice_id VARCHAR(64) DEFAULT '',
@@ -66,14 +72,17 @@ if (!function_exists('fp_build')) {
         try {
             $pdo = db(); fp_queue_table($pdo);
             foreach ($pdo->query("SELECT invoice_number FROM fiscal_flags WHERE done=1")->fetchAll(PDO::FETCH_COLUMN) as $v) $done[(string)$v] = true;
-            foreach ($pdo->query("SELECT invoice_number,invoice_id,customer_name,amount,currency,inv_date,descr FROM fiscal_queue")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            foreach ($pdo->query("SELECT invoice_number,invoice_id,customer_name,amount,total,balance,currency,inv_date,due_date,descr FROM fiscal_queue")->fetchAll(PDO::FETCH_ASSOC) as $r) {
                 $num = (string)$r['invoice_number'];
                 $dt = substr((string)$r['inv_date'], 0, 10);
+                $due = substr((string)($r['due_date'] ?? ''), 0, 10);
                 $days = ($dt !== '') ? (int)floor((strtotime($today) - strtotime($dt)) / 86400) : 0; if ($days < 0) $days = 0;
+                $bal = (float)$r['balance']; if ($bal <= 0) $bal = (float)$r['amount'];
+                $tot = (float)$r['total']; if ($tot <= 0) $tot = $bal;
                 $rows[] = [
                     'number'=>$num, 'id'=>(string)$r['invoice_id'], 'customer'=>(string)$r['customer_name'],
-                    'amount'=>(float)$r['amount'], 'currency'=>strtoupper((string)$r['currency'] ?: 'KES'),
-                    'date'=>$dt, 'descr'=>(string)$r['descr'], 'days'=>$days, 'done'=>isset($done[$num]),
+                    'amount'=>(float)$r['amount'], 'total'=>$tot, 'balance'=>$bal, 'currency'=>strtoupper((string)$r['currency'] ?: 'KES'),
+                    'date'=>$dt, 'due'=>$due, 'descr'=>(string)$r['descr'], 'days'=>$days, 'done'=>isset($done[$num]),
                 ];
             }
         } catch (\Throwable $e) { /* empty queue */ }
@@ -216,9 +225,17 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'fiscal') {
   .ftbl td{padding:11px 14px;border-bottom:1px solid var(--hair);vertical-align:middle}
   .ftbl tr.irow:hover{background:var(--soft)}
   .ftbl tr.irow.done{background:var(--soft);color:var(--mute)}
-  .ftbl tr.grow td{background:var(--ink);color:#fff;border-bottom:2px solid var(--brand);padding:9px 14px}
-  .ftbl tr.grow .gname{font-size:13px;font-weight:700;letter-spacing:.2px}
-  .ftbl tr.grow .gmeta{font-family:var(--mono);font-size:11px;color:#C9C4BB;margin-left:10px}
+  .ftbl tr.grow{cursor:pointer}
+  .ftbl tr.grow td{background:var(--soft);color:var(--ink);border-top:2px solid var(--line);border-bottom:1px solid var(--line);padding:10px 14px}
+  .ftbl tr.grow:hover td{background:#F0EDE7}
+  .ftbl tr.grow .gcar{color:var(--brand);font-size:10px;margin-right:8px}
+  .ftbl tr.grow .gname{font-size:13.5px;font-weight:700;letter-spacing:.2px}
+  .ftbl tr.grow .gmeta{font-family:var(--mono);font-size:11px;color:var(--mute);margin-left:10px}
+  .ftbl tr.grow .gtot{font-family:var(--mono);font-size:13px;font-weight:700;float:right}
+  .ftbl .etr{font-size:9.5px;font-weight:800;border-radius:3px;padding:2px 7px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+  .ftbl .etr.no{background:var(--amber-bg);color:#9A6700;border:1px solid #E6D9A8}
+  .ftbl .etr.yes{background:var(--green-bg);color:#0F7A34;border:1px solid #BFE0CB}
+  .ftbl .od{color:var(--red);font-weight:700;font-size:10.5px}
   .ftbl .num{font-family:var(--mono);font-size:13.5px;font-weight:600;cursor:pointer;color:var(--mail);background:none;border:0;padding:0}
   .ftbl .num:hover{text-decoration:underline}
   .ftbl .amt{font-family:var(--mono);font-weight:600;white-space:nowrap}
@@ -233,11 +250,13 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'fiscal') {
     .ftbl thead{display:none}
     .ftbl tr.grow{display:block}
     .ftbl tr.grow td{display:block;width:100%}
-    .ftbl tr.irow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 14px;border-bottom:1px solid var(--hair)}
+    .ftbl tr.irow{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:12px 14px;border-bottom:1px solid var(--hair)}
     .ftbl tr.irow td{display:block;border:0;padding:0}
-    .ftbl td.desc{grid-column:1 / -1;max-width:none}
-    .ftbl td[data-l="Filed"],.ftbl td[data-l="Waiting"]{grid-column:1 / -1}
-    .ftbl td.amt{text-align:left;font-size:15px}
+    .ftbl td[data-l="What it's about"]{grid-column:1 / -1;max-width:none}
+    .ftbl td[data-l="Due"],.ftbl td[data-l="ETR"]{grid-column:1 / -1}
+    .ftbl td[data-l="Total"]::before{content:"Total: ";color:var(--mute);font-weight:600}
+    .ftbl td[data-l="Balance"]::before{content:"Balance: ";color:var(--mute);font-weight:600}
+    .ftbl td[data-l="Total"],.ftbl td[data-l="Balance"]{text-align:left}
     .ftbl td[data-l="Action"]{grid-row:1 / 3;grid-column:2;align-self:center}
   }
   .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:2px}
@@ -313,7 +332,9 @@ const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 const att=s=>esc(s).replace(/'/g,'&#39;');
 const jsq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 const fmtC=(cur,n)=>(cur||'')+' '+Math.round(n||0).toLocaleString('en-US');
-let DATA=null, Q='', VIEW='todo';
+let DATA=null, Q='', VIEW='todo', OPENG={};
+function gOpen(k){ return OPENG[k]!==false; }           // groups start expanded
+function toggleGroup(k){ OPENG[k]=!gOpen(k); renderList(); }
 function bar(s){const b=document.getElementById('bar');if(!b)return;if(s){b.style.opacity='1';b.style.width='80%';}else{b.style.width='100%';setTimeout(()=>{b.style.opacity='0';b.style.width='0';},300);}}
 async function load(){bar(true);try{const r=await fetch('index.php?portal=fiscal&data=1',{credentials:'same-origin'});DATA=await r.json();}catch(e){DATA={ok:false,error:String(e)};}bar(false);render();}
 function row(n){return (DATA.rows||[]).find(x=>x.number===n);}
@@ -424,15 +445,19 @@ function renderList(){
     return mb-ma || a.localeCompare(b);
   });
   box.innerHTML=`<table class="ftbl">
-    <thead><tr><th>Invoice</th><th>What it's for</th><th>Filed</th><th>Waiting</th><th class="r">Amount (KES)</th><th class="r">Action</th></tr></thead>
+    <thead><tr><th>Invoice</th><th>What it's about</th><th>Due</th><th class="r">Total</th><th class="r">Balance</th><th>ETR</th><th class="r">Action</th></tr></thead>
     <tbody>${names.map(nm=>renderGroup(nm, groups[nm])).join('')}</tbody>
   </table>`;
 }
 function renderGroup(name, rows){
   rows=rows.slice().sort((a,b)=>(b.days||0)-(a.days||0));
-  const tot=rows.reduce((s,r)=>s+(r.amount||0),0);
-  const n=rows.length;
-  const head=`<tr class="grow"><td colspan="6"><span class="gname">${esc(name)}</span><span class="gmeta">${n} invoice${n===1?'':'s'} · ${esc(fmtC('KES',tot))}</span></td></tr>`;
+  const bal=rows.reduce((s,r)=>s+(r.balance||r.amount||0),0);
+  const n=rows.length, open=gOpen(name);
+  const head=`<tr class="grow" onclick="toggleGroup('${jsq(name)}')"><td colspan="7">
+    <span class="gcar">${open?'▼':'▶'}</span><span class="gname">${esc(String(name).toUpperCase())}</span>
+    <span class="gmeta">${n} inv · no ETR</span><span class="gtot">${esc(fmtC('KES',bal))}</span>
+  </td></tr>`;
+  if(!open) return head;
   const body=rows.map(r=>{
     const num=jsq(r.number);
     const btn=r.done
@@ -441,10 +466,11 @@ function renderGroup(name, rows){
     const numCell=r.id?`<button class="num" onclick="openInv('${jsq(r.id)}')">${esc(r.number)}</button>`:`<span class="num" style="color:var(--ink)">${esc(r.number)}</span>`;
     return `<tr class="irow ${r.done?'done':''}">
       <td data-l="Invoice">${numCell}${r.done?' <span class="donetag">Done</span>':''}</td>
-      <td data-l="What it's for" class="desc">${esc(r.descr||'—')}</td>
-      <td data-l="Filed" class="mono dte">${esc(r.date||'—')}</td>
-      <td data-l="Waiting">${daysPill(r.days||0)}</td>
-      <td data-l="Amount" class="r amt">${esc(fmtC(r.currency||'KES',r.amount))}</td>
+      <td data-l="What it's about" class="desc">${esc(r.descr||'—')}</td>
+      <td data-l="Due" class="mono dte">${esc(r.due||r.date||'—')}${(r.days||0)>0?` <span class="od">${r.days}d</span>`:''}</td>
+      <td data-l="Total" class="r mono">${esc(fmtC(r.currency||'KES',r.total||r.amount))}</td>
+      <td data-l="Balance" class="r mono amt">${esc(fmtC(r.currency||'KES',r.balance||r.amount))}</td>
+      <td data-l="ETR">${r.done?'<span class="etr yes">ETR done</span>':'<span class="etr no">NO ETR</span>'}</td>
       <td data-l="Action" class="r">${btn}</td>
     </tr>`;
   }).join('');
