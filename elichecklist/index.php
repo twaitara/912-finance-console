@@ -240,6 +240,28 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
   .credit a:hover .dev{color:var(--muted)}
   .gate .credit{margin-top:34px;padding-top:0;border-top:0}
 
+  /* ---- delight (evidence-based micro-feedback) ---- */
+  .pcap{font-family:var(--display);font-size:13px;font-weight:500;color:var(--accent);
+    letter-spacing:.02em;margin-top:13px;min-height:1.2em;transition:opacity .3s}
+  @keyframes pop{0%{transform:scale(1)}42%{transform:scale(1.22)}100%{transform:scale(1)}}
+  .item.just .box{animation:pop .36s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes ping{0%{box-shadow:0 0 0 0 rgba(255,143,51,.55)}100%{box-shadow:0 0 0 13px rgba(255,143,51,0)}}
+  .item.peer .box{animation:ping .95s ease-out}
+  .item.peer .by{animation:flash 1.2s ease-out}
+  @keyframes flash{0%,100%{color:var(--muted)}25%{color:var(--accent)}}
+  .section .tickbar{transition:box-shadow .3s,opacity .3s}
+  .section.complete .tickbar{box-shadow:0 0 11px 1px rgba(255,143,51,.6);opacity:1}
+  .section.complete .count b{color:var(--online)}
+  .confetti{position:fixed;inset:0;pointer-events:none;z-index:40;overflow:hidden}
+  .confetti i{position:absolute;top:-14px;width:7px;height:13px;opacity:.95;border-radius:1px;
+    animation:fall linear forwards}
+  @keyframes fall{to{transform:translateY(106vh) rotate(560deg);opacity:0}}
+  @media (prefers-reduced-motion: reduce){
+    .item.just .box,.item.peer .box,.item.peer .by{animation:none}
+    .confetti{display:none}
+    .panel{animation:none}
+  }
+
   @media(max-width:560px){
     .wrap{padding:18px 18px 110px}
     .userbar{margin:0 -18px 20px;padding:11px 18px}
@@ -317,6 +339,7 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
         <div class="label"><span id="done">0</span> of <?= $total_items ?> complete</div>
       </div>
       <div class="track"><span id="bar"></span></div>
+      <div class="pcap" id="pcap"></div>
     </div>
   </header>
 
@@ -492,22 +515,53 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     });
   }
 
+  var seen=null;  // id -> who, to detect teammates' new ticks between renders
+  function pulsePeer(lab){ lab.classList.remove('peer'); void lab.offsetWidth; lab.classList.add('peer');
+    setTimeout(function(){ lab.classList.remove('peer'); },1000); }
   function renderItems(){
-    var items=state.items||{};
+    var items=state.items||{}; var newSeen={};
     document.querySelectorAll('.item').forEach(function(lab){
       var id=lab.getAttribute('data-item'); var rec=items[id];
       var cb=lab.querySelector('input'); var by=lab.querySelector('.by');
       if(rec){
+        newSeen[id]=rec.by||'';
         lab.classList.add('done'); if(cb) cb.checked=true;
         var mine=(rec.by||'').toLowerCase()===me.toLowerCase();
         lab.classList.toggle('mine',mine);
         by.innerHTML=byTick+(mine?'You':esc(rec.by));
+        if(seen && !seen[id] && !mine) pulsePeer(lab);   // a teammate just ticked this
       }else{
         lab.classList.remove('done','mine'); if(cb) cb.checked=false; by.textContent='';
       }
     });
+    seen=newSeen;
   }
 
+  var prevPct=null;
+  function capFor(p){
+    if(p>=100) return 'Everything’s ready.';
+    if(p>=95)  return 'So close — just a few to go.';
+    if(p>=75)  return 'Almost ready.';
+    if(p>=50)  return 'Over halfway there.';
+    if(p>=25)  return 'Momentum is building.';
+    if(p>0)    return 'Good start — keep going.';
+    return 'Let’s get this event ready.';
+  }
+  function celebrate(){
+    if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if(navigator.vibrate) try{ navigator.vibrate([14,45,14]); }catch(e){}
+    var c=document.createElement('div'); c.className='confetti';
+    var cols=['#FF8F33','#F0F4FF','#2350C5','#FFB066'];
+    for(var i=0;i<30;i++){ var p=document.createElement('i');
+      p.style.left=(Math.random()*100)+'%';
+      p.style.background=cols[i%cols.length];
+      p.style.animationDuration=(1+Math.random()*0.9)+'s';
+      p.style.animationDelay=(Math.random()*0.25)+'s';
+      c.appendChild(p);
+    }
+    document.body.appendChild(c);
+    setTimeout(function(){ c.remove(); },2300);
+  }
   function renderProgress(){
     var main=document.querySelectorAll('.chk'); var items=state.items||{};
     var total=main.length, done=0;
@@ -516,10 +570,14 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     document.getElementById('pct').innerHTML=pct+'<b>%</b>';
     document.getElementById('done').textContent=done;
     document.getElementById('bar').style.width=pct+'%';
+    document.getElementById('pcap').textContent=capFor(pct);
     document.querySelectorAll('.section').forEach(function(sec){
-      var d=0; sec.querySelectorAll('.chk').forEach(function(cb){ if(items[cb.id]) d++; });
+      var b=sec.querySelectorAll('.chk'), d=0; b.forEach(function(cb){ if(items[cb.id]) d++; });
       sec.querySelector('.cdone').textContent=d;
+      sec.classList.toggle('complete', b.length>0 && d===b.length);
     });
+    if(prevPct!==null && pct===100 && prevPct<100) celebrate();  // peak-end moment, once
+    prevPct=pct;
   }
 
   function renderRoster(){
@@ -539,9 +597,13 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
       var id=lab.getAttribute('data-item');
       var currentlyDone=!!(state.items&&state.items[id]);
       var want=!currentlyDone;
-      // optimistic
-      if(want){ state.items[id]={by:me,at:Math.floor(Date.now()/1000)}; }
-      else { delete state.items[id]; }
+      // optimistic + immediate sensory feedback
+      if(want){
+        state.items[id]={by:me,at:Math.floor(Date.now()/1000)};
+        if(navigator.vibrate) try{ navigator.vibrate(9); }catch(_){}
+        lab.classList.remove('just'); void lab.offsetWidth; lab.classList.add('just');
+        setTimeout(function(){ lab.classList.remove('just'); },380);
+      } else { delete state.items[id]; }
       renderItems(); renderProgress();
       api({action:'toggle',user:me,item:id,done:want}).then(function(res){
         if(res&&res.ok){ state=res.state; render(); }
