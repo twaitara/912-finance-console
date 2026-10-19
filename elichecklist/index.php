@@ -107,6 +107,11 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
   .switch{font-family:var(--display);font-size:12px;font-weight:500;color:var(--muted);background:0;border:0;
     cursor:pointer;letter-spacing:.02em;padding:4px 2px}
   .switch:hover{color:var(--accent)}
+  .ubtns{display:flex;align-items:center;gap:10px;flex:none}
+  .logout{font-family:var(--display);font-size:12px;font-weight:600;color:var(--accent);background:0;
+    border:1px solid var(--line-2);border-radius:8px;padding:6px 12px;cursor:pointer;letter-spacing:.02em;
+    transition:border-color .18s,background .18s}
+  .logout:hover{border-color:var(--accent);background:rgba(255,143,51,.1)}
 
   /* ---- Masthead ---- */
   .mast h1{font-family:var(--display);font-weight:300;font-size:clamp(32px,7vw,52px);
@@ -264,10 +269,12 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
 
   @media(max-width:560px){
     .wrap{padding:18px 18px 110px}
-    .userbar{margin:0 -18px 20px;padding:11px 18px}
+    .userbar{margin:0 -18px 20px;padding:11px 18px;gap:10px}
     nav{gap:20px}
     .tl{grid-template-columns:52px 1fr;gap:16px}
-    .whoami .lbl b{max-width:36vw}
+    .whoami .lbl b{max-width:30vw}
+    .switch{display:none}
+    .roster .chip{width:26px;height:26px}
   }
 
   @media print{
@@ -317,7 +324,10 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     </div>
     <div class="sp"></div>
     <div class="roster" id="roster" title="People using this checklist"></div>
-    <button class="switch" id="switchBtn" title="Switch user">Not you?</button>
+    <div class="ubtns">
+      <button class="switch" id="switchBtn" title="Sign in as someone else">Switch</button>
+      <button class="logout" id="logoutBtn" title="Log out completely">Log out</button>
+    </div>
   </div>
 
   <header class="mast">
@@ -467,6 +477,7 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
 
   function showGate(){
     gate.classList.remove('hidden'); app.hidden=true;
+    if(timer){ clearInterval(timer); timer=null; }   // stop syncing while signed out
     nameInput.value=me||''; gateErr.textContent='';
     setTimeout(function(){ nameInput.focus(); },60);
     // show who's already here, if we can
@@ -495,6 +506,14 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
   });
 
   document.getElementById('switchBtn').addEventListener('click',function(){ showGate(); });
+  document.getElementById('logoutBtn').addEventListener('click',function(){
+    if(!confirm('Log out completely? You will be removed from the list and returned to the sign-in screen.')) return;
+    if(timer){ clearInterval(timer); timer=null; }
+    api({action:'leave',user:me}).catch(function(){});   // leave the shared roster
+    try{ localStorage.removeItem(NAME_KEY); }catch(e){}
+    me=''; seen=null; prevPct=null;
+    showGate();
+  });
 
   /* ---------- App ---------- */
   function enterApp(){

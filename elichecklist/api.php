@@ -186,4 +186,17 @@ if ($action === 'meta') {
     exit;
 }
 
+if ($action === 'leave') {
+    // Complete logout: remove the user from the shared roster.
+    $user = clean_user((string)($in['user'] ?? ''));
+    if ($user !== '') {
+        with_lock($DATA_DIR, $STATE, function (array &$s) use ($user) {
+            $k = user_key($user);
+            if (isset($s['users'][$k])) { unset($s['users'][$k]); $s['rev']++; }
+        });
+    }
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 fail('Unknown action.');
