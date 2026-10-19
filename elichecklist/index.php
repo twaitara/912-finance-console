@@ -76,8 +76,10 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     transition:filter .15s}
   .gate button:hover{filter:brightness(1.07)}
   .gate .err{color:#ff9a7a;font-size:13.5px;min-height:1.2em;margin:0}
-  .gate .seen{margin-top:22px;font-size:13px;color:var(--faint)}
+  .gate .err.demo{color:var(--accent);font-size:14px;line-height:1.5;font-weight:500}
+  .gate .seen{margin-top:22px;font-size:13px;color:var(--faint);line-height:1.7}
   .gate .seen b{color:var(--muted);font-weight:500}
+  .gate .seen .demoline{color:var(--accent);font-family:var(--display);font-weight:600;letter-spacing:.02em}
 
   .eyebrow{font-family:var(--display);font-weight:700;font-size:11.5px;letter-spacing:.28em;
     text-transform:uppercase;color:var(--accent)}
@@ -112,6 +114,11 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     border:1px solid var(--line-2);border-radius:8px;padding:6px 12px;cursor:pointer;letter-spacing:.02em;
     transition:border-color .18s,background .18s}
   .logout:hover{border-color:var(--accent);background:rgba(255,143,51,.1)}
+  .demostrip{display:flex;align-items:center;gap:8px;margin:-4px 0 22px;font-family:var(--display);
+    font-size:12.5px;font-weight:500;color:var(--muted);letter-spacing:.01em}
+  .demostrip .ld{width:7px;height:7px;border-radius:50%;background:var(--online);flex:none}
+  .demostrip.full .ld{background:var(--accent)}
+  .demostrip b{color:var(--accent);font-weight:600}
 
   /* ---- Masthead ---- */
   .mast h1{font-family:var(--display);font-weight:300;font-size:clamp(32px,7vw,52px);
@@ -330,6 +337,8 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     </div>
   </div>
 
+  <div class="demostrip" id="demoStrip"></div>
+
   <header class="mast">
     <h1><input id="m_name" placeholder="Name your event" autocomplete="off" spellcheck="false"></h1>
     <div class="metaline">
@@ -460,11 +469,13 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
   var NAME_KEY='eliChecklist.name';
   var me = (localStorage.getItem(NAME_KEY)||'').trim();
   var state = {meta:{},items:{},users:[],rev:-1};
+  var MAXU=2;   // demo cap, mirrored from the server
   var byTick = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
   function esc(s){ return (s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function initials(n){ n=(n||'').trim(); if(!n) return '?';
     var p=n.split(/\s+/); return (p[0][0]+(p.length>1?p[p.length-1][0]:'')).toUpperCase(); }
+  function onlineUsers(){ return (state.users||[]).filter(function(x){return x.online;}); }
 
   function api(params){
     return fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -482,16 +493,19 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     setTimeout(function(){ nameInput.focus(); },60);
     // show who's already here, if we can
     api({action:'state'}).then(function(res){
-      if(res && res.ok){ state=res.state; renderSeen(); }
+      if(res && res.ok){ state=res.state; if(res.max)MAXU=res.max; renderSeen(); }
     }).catch(function(){});
   }
   function renderSeen(){
     var el=document.getElementById('gateSeen');
-    var u=state.users||[];
-    if(!u.length){ el.innerHTML=''; return; }
-    var on=u.filter(function(x){return x.online;}).length;
-    var names=u.slice(0,6).map(function(x){return esc(x.name);}).join(', ');
-    el.innerHTML='Already here: <b>'+names+(u.length>6?' +'+(u.length-6):'')+'</b>'+(on?' · '+on+' online now':'');
+    var on=onlineUsers();
+    var names=on.map(function(x){return esc(x.name);}).join(', ');
+    var full=on.length>=MAXU;
+    var html='<span class="demoline">Live demo · '+on.length+'/'+MAXU+' in use</span>';
+    if(on.length) html+='<br>Already here: <b>'+names+'</b>';
+    else html+='<br>Be the first to sign in.';
+    if(full) html+='<br>Both spots are taken right now — try again shortly.';
+    el.innerHTML=html;
   }
   document.getElementById('gateForm').addEventListener('submit',function(e){
     e.preventDefault();
@@ -499,7 +513,14 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
     if(!n){ gateErr.textContent='Please enter your name.'; return; }
     gateErr.textContent='';
     api({action:'join',user:n}).then(function(res){
-      if(!res||!res.ok){ gateErr.textContent=(res&&res.error)||'Could not sign in. Try again.'; return; }
+      if(res&&res.max) MAXU=res.max;
+      if(!res||!res.ok){
+        gateErr.textContent=(res&&res.error)||'Could not sign in. Try again.';
+        gateErr.classList.toggle('demo', !!(res&&res.demo));
+        if(res&&res.demo){ api({action:'state'}).then(function(r){ if(r&&r.ok){ state=r.state; if(r.max)MAXU=r.max; renderSeen(); } }).catch(function(){}); }
+        return;
+      }
+      gateErr.classList.remove('demo');
       me=n; localStorage.setItem(NAME_KEY,me);
       state=res.state; enterApp();
     }).catch(function(){ gateErr.textContent='Network error. Check your connection.'; });
@@ -607,6 +628,16 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
         +esc(initials(x.name))+(x.online?'<span class="dot"></span>':'')+'</span>';
     }).join('')+'</div>'+(extra>0?'<span class="more">+'+extra+'</span>':'');
     el.innerHTML=html;
+    renderDemo();
+  }
+  function renderDemo(){
+    var el=document.getElementById('demoStrip'); if(!el) return;
+    var on=onlineUsers();
+    var others=on.filter(function(x){return x.name.toLowerCase()!==me.toLowerCase();}).map(function(x){return esc(x.name);});
+    el.classList.toggle('full', on.length>=MAXU);
+    var html='<span class="ld"></span>Live demo · <b>'+on.length+'/'+MAXU+'</b> in use';
+    if(others.length) html+=' · with '+others.join(', ');
+    el.innerHTML=html;
   }
 
   /* ---------- Toggling ---------- */
@@ -672,7 +703,7 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
   function setSync(ok){ syncEl.classList.toggle('off',!ok); syncTxt.textContent=ok?'Live':'Reconnecting…'; }
   function poll(){
     api({action:'state',user:me}).then(function(res){
-      if(res&&res.ok){ setSync(true);
+      if(res&&res.ok){ setSync(true); if(res.max)MAXU=res.max;
         if(res.state.rev!==state.rev){ state=res.state; render(); } else { renderRoster(); }
       } else setSync(false);
     }).catch(function(){ setSync(false); });
@@ -683,7 +714,9 @@ $chevron_svg = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d
 
   /* ---------- Boot ---------- */
   if(me){ api({action:'join',user:me}).then(function(res){
-      if(res&&res.ok){ state=res.state; enterApp(); } else showGate();
+      if(res&&res.max) MAXU=res.max;
+      if(res&&res.ok){ state=res.state; enterApp(); }
+      else { showGate(); if(res&&res.error){ gateErr.textContent=res.error; gateErr.classList.toggle('demo',!!res.demo); } }
     }).catch(function(){ showGate(); });
   } else { showGate(); }
 })();

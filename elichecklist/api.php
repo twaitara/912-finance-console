@@ -25,6 +25,7 @@ const USER_MAX   = 40;
 const VALUE_MAX  = 120;
 const USERS_MAX  = 500;
 const ONLINE_SECS = 90;   // a user is "online" if seen within this window
+const MAX_ONLINE = 2;     // demo cap: only this many people may use it at once
 
 $DATA_DIR = __DIR__ . '/data';
 $STATE    = $DATA_DIR . '/state.json';
@@ -117,14 +118,25 @@ function with_lock(string $dir, string $file, callable $fn): array {
     }
 }
 
-function touch_user(array &$s, string $name): void {
+function touch_user(array &$s, string $name, bool $create = true): void {
     $key = user_key($name);
     if (!isset($s['users'][$key])) {
+        if (!$create) return;                       // refresh-only: never add a new user here
         if (count($s['users']) >= USERS_MAX) return;
         $s['users'][$key] = ['name' => $name, 'joined' => time()];
     }
     $s['users'][$key]['name'] = $name;   // keep latest capitalisation
     $s['users'][$key]['seen'] = time();
+}
+
+/** How many users are online (seen within the window), excluding $exceptKey. */
+function online_count(array $s, int $now, string $exceptKey = ''): int {
+    $n = 0;
+    foreach (($s['users'] ?? []) as $k => $u) {
+        if ($k === $exceptKey) continue;
+        if ($now - (int)($u['seen'] ?? 0) <= ONLINE_SECS) $n++;
+    }
+    return $n;
 }
 
 /* ------------------------------------------------------------------ routing */
@@ -136,19 +148,33 @@ if ($action === 'state') {
     // A read, but also refresh the caller's "seen" if they pass a name (keeps them online).
     $user = clean_user((string)($in['user'] ?? ''));
     if ($user !== '') {
-        $s = with_lock($DATA_DIR, $STATE, function (array &$s) use ($user) { touch_user($s, $user); $s['rev']++; });
+        // refresh-only: polling must never create a user or exceed the demo cap
+        $s = with_lock($DATA_DIR, $STATE, function (array &$s) use ($user) { touch_user($s, $user, false); $s['rev']++; });
     } else {
         $s = load_state($STATE);
     }
-    echo json_encode(['ok' => true, 'state' => public_state($s)]);
+    echo json_encode(['ok' => true, 'state' => public_state($s), 'max' => MAX_ONLINE]);
     exit;
 }
 
 if ($action === 'join') {
     $user = clean_user((string)($in['user'] ?? ''));
     if ($user === '') fail('Please enter your name.');
-    $s = with_lock($DATA_DIR, $STATE, function (array &$s) use ($user) { touch_user($s, $user); $s['rev']++; });
-    echo json_encode(['ok' => true, 'state' => public_state($s)]);
+    $blocked = false;
+    $s = with_lock($DATA_DIR, $STATE, function (array &$s) use ($user, &$blocked) {
+        // Demo cap: block if MAX_ONLINE others are already online (a returning
+        // user reclaims their own slot, so exclude their key from the count).
+        if (online_count($s, time(), user_key($user)) >= MAX_ONLINE) { $blocked = true; return; }
+        touch_user($s, $user, true);
+        $s['rev']++;
+    });
+    if ($blocked) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'demo' => true, 'max' => MAX_ONLINE,
+            'error' => 'This is a live demo, limited to ' . MAX_ONLINE . ' people at a time. Both spots are in use right now — please try again in a few minutes.']);
+        exit;
+    }
+    echo json_encode(['ok' => true, 'state' => public_state($s), 'max' => MAX_ONLINE]);
     exit;
 }
 
@@ -160,7 +186,7 @@ if ($action === 'toggle') {
     $valid = checklist_valid_ids();
     if (!isset($valid[$item])) fail('Unknown item.');
     $s = with_lock($DATA_DIR, $STATE, function (array &$s) use ($user, $item, $done) {
-        touch_user($s, $user);
+        touch_user($s, $user, false);
         if ($done) $s['items'][$item] = ['by' => $user, 'at' => time()];
         else unset($s['items'][$item]);
         $s['rev']++;
@@ -178,7 +204,7 @@ if ($action === 'meta') {
     $value = trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $value));
     $value = function_exists('mb_substr') ? mb_substr($value, 0, VALUE_MAX) : substr($value, 0, VALUE_MAX);
     $s = with_lock($DATA_DIR, $STATE, function (array &$s) use ($user, $field, $value) {
-        touch_user($s, $user);
+        touch_user($s, $user, false);
         $s['meta'][$field] = $value;
         $s['rev']++;
     });
