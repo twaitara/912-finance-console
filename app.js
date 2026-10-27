@@ -5214,13 +5214,13 @@ function mqLoad(){ MQ.loading=true;
 function mqSync(silent){ if(MQ.syncing)return; MQ.syncing=true; if(!silent) MQ.msg=''; if(TAB==='myquotes')render();
   fetch('api/quote_sync.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
   .then(r=>r.json()).then(j=>{ MQ.syncing=false;
-    if(j.ok){ (j.quotes||[]).forEach(u=>{ const q=MQ.quotes.find(x=>x.id===u.id); if(q) q.status=u.status; }); mqNormalize(MQ.quotes); }
+    if(j.ok){ (j.quotes||[]).forEach(u=>{ const q=MQ.quotes.find(x=>x.id===u.id); if(q){ q.status=u.status; if(u.invoice_number) q.zoho_invoice_number=u.invoice_number; } }); mqNormalize(MQ.quotes); }
     if(TAB==='myquotes')render();
   }).catch(()=>{ MQ.syncing=false; if(TAB==='myquotes')render(); });
 }
 function mqSyncOne(id){ MQ.busyId=id; render();
   fetch('api/quote_sync.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
-  .then(r=>r.json()).then(j=>{ MQ.busyId=0; if(j.ok&&j.quotes&&j.quotes[0]){ const q=MQ.quotes.find(x=>x.id===id); if(q)q.status=j.quotes[0].status; } render(); })
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0; if(j.ok&&j.quotes&&j.quotes[0]){ const q=MQ.quotes.find(x=>x.id===id); if(q){ q.status=j.quotes[0].status; if(j.quotes[0].invoice_number) q.zoho_invoice_number=j.quotes[0].invoice_number; } } render(); })
   .catch(()=>{ MQ.busyId=0; render(); });
 }
 function mqPush(id){ MQ.busyId=id; render();

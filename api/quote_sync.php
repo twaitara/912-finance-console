@@ -37,15 +37,27 @@ try {
         if (empty($q['zoho_estimate_id'])) continue;
         [$d, $c] = zoho_api('GET', 'estimates/' . rawurlencode($q['zoho_estimate_id']));
         if ($c >= 400 || empty($d['estimate'])) continue;
-        $status = (string)($d['estimate']['status'] ?? $q['status']);
+        $est = $d['estimate'];
+        $status = (string)($est['status'] ?? $q['status']);
+        $invId = (string)$q['zoho_invoice_id'];
+        $invNo = (string)$q['zoho_invoice_number'];
+        // If the estimate was converted to an invoice in Zoho (now or in the past), the estimate
+        // carries invoice_ids — adopt that invoice so we can show its number.
+        if ($invId === '' && !empty($est['invoice_ids']) && is_array($est['invoice_ids'])) {
+            $invId = (string)$est['invoice_ids'][0];
+            if ($invNo === '' && $invId !== '') {
+                [$iv, $ic] = zoho_api('GET', 'invoices/' . rawurlencode($invId));
+                if ($ic < 400 && !empty($iv['invoice'])) $invNo = (string)($iv['invoice']['invoice_number'] ?? '');
+            }
+        }
         // Don't let the estimate's own Zoho status overwrite our local lifecycle states:
-        //  - invoiced stays invoiced
+        //  - any linked invoice => invoiced
         //  - a project (converted to a job) stays 'project' until it is billed
-        if (!empty($q['zoho_invoice_id']) || !empty($q['zoho_invoice_number'])) $status = 'invoiced';
-        elseif (!empty($q['is_project']) || $q['status'] === 'project')          $status = 'project';
-        $pdo->prepare("UPDATE quotes SET status=?, zoho_estimate_number=?, last_synced_at=NOW() WHERE id=?")
-            ->execute([$status, (string)($d['estimate']['estimate_number'] ?? $q['zoho_estimate_number']), (int)$q['id']]);
-        $updated[] = ['id'=>(int)$q['id'], 'status'=>$status];
+        if ($invId !== '' || $invNo !== '') $status = 'invoiced';
+        elseif (!empty($q['is_project']) || $q['status'] === 'project') $status = 'project';
+        $pdo->prepare("UPDATE quotes SET status=?, zoho_estimate_number=?, zoho_invoice_id=?, zoho_invoice_number=?, last_synced_at=NOW() WHERE id=?")
+            ->execute([$status, (string)($est['estimate_number'] ?? $q['zoho_estimate_number']), $invId, $invNo, (int)$q['id']]);
+        $updated[] = ['id'=>(int)$q['id'], 'status'=>$status, 'invoice_number'=>$invNo];
     }
 
     echo json_encode(['ok'=>true, 'synced'=>count($updated), 'quotes'=>$updated]);
