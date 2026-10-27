@@ -5170,11 +5170,25 @@ function mqJobCard(id){
     else { MQ.msg=j.error||'Could not generate job card.'; MQ.err=true; render(); }
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
-function mqSetStatus(id,status){ MQ.busyId=id; MQ.msg=''; render();
+function mqSetStatus(id,status){
+  // "Invoiced" must actually create the invoice in Zoho Books (not just relabel it here).
+  if(status==='invoiced'){ return mqInvoice(id); }
+  MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_set_status.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
     if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q)q.status=j.status; MQ.msg='Status set to '+j.status+'.'+(j.note?' '+j.note:''); MQ.err=!!j.note; }
     else { MQ.msg=j.error||'Could not change status.'; MQ.err=true; } render();
+  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+}
+/* Create the Zoho invoice for this quote (same endpoint as "Bill client"), so marking a
+   quote Invoiced reflects as a real invoice in Zoho Books. */
+function mqInvoice(id){ const q=MQ.quotes.find(x=>x.id===id);
+  if(!confirm('Create the invoice for this quote in Zoho Books now?'+((q&&q.status!=='approved'&&q.status!=='project')?'\n\n(Tip: usually you Approve first — but this will invoice it regardless.)':'')))  { render(); return; }
+  MQ.busyId=id; MQ.msg=''; render();
+  fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ MQ.busyId=0;
+    if(j.ok){ const x=MQ.quotes.find(y=>y.id===id); if(x){x.status='invoiced'; if(j.invoice_number)x.zoho_invoice_number=j.invoice_number;} MQ.msg='Invoiced in Zoho ✓ '+(j.invoice_number?('('+j.invoice_number+')'):'')+(j.already?' — already invoiced':''); MQ.err=false; }
+    else { MQ.msg=j.error||'Could not invoice in Zoho.'; MQ.err=true; } render();
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
 function mqApprove(id){ MQ.busyId=id; MQ.msg=''; render();

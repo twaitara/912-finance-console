@@ -54,8 +54,8 @@ try {
     $q = $st->fetch(PDO::FETCH_ASSOC);
     if (!$q) throw new Exception('Quote not found.');
     if (empty($q['zoho_estimate_id'])) throw new Exception('Push the quote to Zoho first.');
-    if (!in_array($q['status'], ['project','approved','sent','accepted','invoiced'], true)) {
-        throw new Exception('Only a project (or approved quote) can be billed.');
+    if (in_array($q['status'], ['declined','expired'], true)) {
+        throw new Exception('A declined or expired quote cannot be invoiced.');
     }
 
     // already converted?  (fast path)
