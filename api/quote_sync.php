@@ -21,13 +21,19 @@ try {
     $in = json_decode(file_get_contents('php://input'), true); if (!is_array($in)) $in = $_POST;
     $one = (int)($in['id'] ?? 0);
 
+    // Bulk sync only touches quotes whose status can still change (not invoiced/declined/expired),
+    // and only those not refreshed in the last 10 minutes, capped per call (oldest first). This keeps
+    // opening My Quotes fast instead of hitting Zoho once per quote every time.
+    //   terminal statuses never need a Zoho round-trip; a single-id sync (↻ Status) always runs.
+    $OPEN = "status NOT IN ('invoiced','declined','expired')";
+    $STALE = "(last_synced_at IS NULL OR last_synced_at < (NOW() - INTERVAL 10 MINUTE))";
     if ($one > 0) {
         $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([$one]);
         $rows = array_filter([$st->fetch(PDO::FETCH_ASSOC)]);
     } elseif ($admin) {
-        $rows = $pdo->query("SELECT * FROM quotes WHERE zoho_estimate_id<>'' ")->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $pdo->query("SELECT * FROM quotes WHERE zoho_estimate_id<>'' AND $OPEN AND $STALE ORDER BY (last_synced_at IS NULL) DESC, last_synced_at ASC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC);
     } else {
-        $st = $pdo->prepare("SELECT * FROM quotes WHERE zoho_estimate_id<>'' AND created_by=?");
+        $st = $pdo->prepare("SELECT * FROM quotes WHERE zoho_estimate_id<>'' AND created_by=? AND $OPEN AND $STALE ORDER BY (last_synced_at IS NULL) DESC, last_synced_at ASC LIMIT 40");
         $st->execute([$me]); $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     }
 
