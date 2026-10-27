@@ -4909,6 +4909,7 @@ function mqListHtml(){
         <div style="text-align:right;white-space:nowrap">
           <div style="color:var(--orange);font-weight:700;font-size:15px">${qesc(q.currency||'KES')} ${fmtn(q.total)}</div>
           <div style="margin-top:5px">${quoteBadge(q.status)}</div>
+          ${(isInvoiced && q.zoho_invoice_number)?`<div style="margin-top:5px"><span class="pill" style="background:#EEF2FE;color:var(--blue);font-weight:700;padding:3px 9px;font-size:11px" ${tip('This quote is invoiced in Zoho Books as this invoice')}>🧾 ${qesc(q.zoho_invoice_number)}</span></div>`:''}
           ${ME.admin?(()=>{const useActual=isProject||isInvoiced;const p=(useActual?q.actual_profit:q.profit)||0;return `<div style="margin-top:5px;font-size:10.5px;font-weight:600;color:${p<0?'var(--bad)':'var(--good)'}">${useActual?'Actual profit':'Profit'} ${fmtn(p)}</div>`;})():''}
         </div>
       </div>
