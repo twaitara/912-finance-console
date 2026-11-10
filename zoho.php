@@ -120,6 +120,14 @@ function zoho_api($method, $path, $body = null, $query = []) {
         $respBody   = substr($res, $hsz);
         if (preg_match('/^Retry-After:\s*([0-9]+)/im', $rawHeaders, $m)) $retryAfter = $m[1]; else $retryAfter = null;
 
+        // Zoho can revoke a cached access token before it expires (401, code 57/14);
+        // drop it and retry once with a freshly minted token instead of failing until expiry.
+        if ($code === 401 && empty($refreshed)) {
+            $refreshed = true;
+            @unlink(__DIR__ . '/data/token.json');
+            continue;
+        }
+
         $wait = zoho_retry_delay($code, $method, $attempt, $max, $retryAfter);
         if ($wait >= 0) { sleep($wait); continue; }
 

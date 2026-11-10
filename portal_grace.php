@@ -72,7 +72,14 @@ if (!function_exists('gp_build')) {
         $rows = []; $page = 1;
         do {
             [$d, $c] = zoho_api('GET', 'invoices', null, ['filter_by'=>'Status.Unpaid', 'per_page'=>200, 'page'=>$page, 'sort_column'=>'due_date']);
-            if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error (invoices)');
+            if ($c >= 400) {
+                // a brief Zoho refusal shouldn't blank Grace's page: serve the last good snapshot
+                if (is_file($cache) && is_array($j = json_decode(@file_get_contents($cache), true))) {
+                    $j['cached'] = true; $j['stale'] = true; $j['stale_at'] = date('c', filemtime($cache));
+                    return $j;
+                }
+                throw new Exception($d['message'] ?? 'Zoho error (invoices)');
+            }
             foreach (($d['invoices'] ?? []) as $inv) {
                 $bal = (float)($inv['balance'] ?? 0); if ($bal <= 0) continue;
                 if (($inv['status'] ?? '') === 'void') continue;
