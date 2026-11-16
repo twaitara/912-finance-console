@@ -33,6 +33,7 @@ try {
     $docNo  = $q['zoho_invoice_number'] ?: ($q['zoho_estimate_number'] ?: ('Q-' . $id));
     $date   = date('d M Y');
     $theme  = (($_GET['theme'] ?? '') === 'dark') ? 'dark' : '';   // match the app's dark mode on screen (prints light)
+    $copy   = !empty($_GET['copy']);   // a reprint of an already-invoiced job: stamp it COPY
 
     // Document mode: jobcard (default) | boq (materials, no labour) | profit (per-invoice P&L, admin only)
     $g = strtolower((string)($_GET['doc'] ?? ''));
@@ -160,7 +161,9 @@ try {
   @page{size:A4;margin:14mm}
   *{box-sizing:border-box}
   body{font-family:Arial,Helvetica,sans-serif;color:#15202B;margin:0;background:#eef1f5}
-  .sheet{background:#fff;max-width:780px;margin:18px auto;border:1px solid #C9D2DD;border-radius:4px;padding:0}
+  .sheet{background:#fff;max-width:780px;margin:18px auto;border:1px solid #C9D2DD;border-radius:4px;padding:0;position:relative;overflow:hidden}
+  .copymark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:150px;font-weight:800;color:rgba(224,112,0,.12);letter-spacing:14px;pointer-events:none;z-index:4;white-space:nowrap}
+  .copytag{display:inline-block;background:#E07000;color:#fff;font-size:11px;font-weight:800;letter-spacing:1px;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle}
   .pad{padding:26px 30px}
   .top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:1px solid #C9D2DD;padding:26px 30px}
   .logo{width:52px;height:52px;border-radius:50%;background:#F56F00;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex:0 0 auto;margin-right:14px}
@@ -202,15 +205,16 @@ try {
   @media print{.bar{display:none}body{background:#fff}.sheet{border:none;margin:0;max-width:none}}
 </style></head>
 <body>
-  <div class="bar"<?php echo !empty($_GET['embed']) ? ' style="display:none"' : ''; ?>><span><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
+  <div class="bar"<?php echo !empty($_GET['embed']) ? ' style="display:none"' : ''; ?>><span><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?><?php echo $copy ? ' — COPY' : ''; ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
+    <?php if ($copy) echo '<div class="copymark">COPY</div>'; ?>
     <div class="top">
       <div class="co"><?php echo $logoUrl !== '' ? '<img class="logo-img" src="'.jc_esc($logoUrl).'" alt="'.jc_esc($coName).'">' : '<div class="logo">912</div>'; ?>
         <div><div class="name"><?php echo jc_esc($coName); ?></div>
           <div class="meta">KRA PIN: <?php echo jc_esc($coPin); ?><br><?php echo $addrHtml; ?></div></div>
       </div>
       <div class="title"><div class="t"><?php echo $docTop; ?></div>
-        <div class="no"># <b><?php echo jc_esc($docNo); ?></b></div></div>
+        <div class="no"># <b><?php echo jc_esc($docNo); ?></b><?php echo $copy ? '<span class="copytag">COPY</span>' : ''; ?></div></div>
     </div>
     <div class="rowline"><div class="k">Date</div><div class="k" style="font-weight:400">: <b><?php echo jc_esc($date); ?></b></div></div>
     <div class="billto">

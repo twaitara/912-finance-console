@@ -1225,7 +1225,7 @@ function vUsers(){
     return `<div class="card" style="${u.disabled?'opacity:.62':''}">
       <div class="row"><b style="font-size:14px">${esc(u.username)}${u.is_admin?' 👑':''} ${u.disabled?'<span class="pill" style="background:var(--surface-2);color:var(--bad);border:1px solid var(--line)">Disabled</span>':''}</b>
         <span class="muted" style="font-size:11px">#${u.id}</span></div>
-      <div class="muted" style="font-size:11px;margin-top:2px">${u.email?('✉ '+esc(u.email)):'<span style="color:var(--bad)">no email — cannot see their tasks</span>'}${u.calendar?' · <span style="color:var(--good)">📅 calendar connected</span>':''}</div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${u.email?('✉ '+esc(u.email)):'<span style="color:var(--bad)">no email — cannot see their tasks</span>'}${u.phone?(' · 💬 '+esc(u.phone)):' · <span class="muted">no WhatsApp number</span>'}${u.calendar?' · <span style="color:var(--good)">📅 calendar connected</span>':''}</div>
       <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">${chips}</div>
       ${!u.is_admin&&editing?`<div style="margin-top:10px"><div class="row"><label style="margin:0">Allowed tabs</label>
         <button class="btn sec" style="width:auto;padding:4px 10px;font-size:11px" onclick="uTechPreset('edit')">⚡ Technician preset</button></div>
@@ -1235,6 +1235,7 @@ function vUsers(){
       : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
           ${u.is_admin?'':`<button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userEdit(${u.id})">Edit tabs</button>`}
           <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userSetEmail(${u.id},'${esc(u.email||'').replace(/'/g,'')}')">Set email</button>
+          <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userSetPhone(${u.id},'${esc(u.phone||'').replace(/'/g,'')}')">Set WhatsApp</button>
           <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userPasswd(${u.id},'${esc(u.username).replace(/'/g,'')}')">Reset password</button>
           <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px;${u.disabled?'color:var(--good)':'color:var(--bad)'}" onclick="userToggleActive(${u.id},${u.disabled?0:1},'${esc(u.username).replace(/'/g,'')}')">${u.disabled?'Enable':'Disable'}</button>
           <button class="btn sec" style="width:auto;padding:5px 11px;font-size:11px" onclick="userDelete(${u.id},'${esc(u.username).replace(/'/g,'')}')">Delete</button>
@@ -1267,6 +1268,12 @@ async function userCreate(){
 async function userSetEmail(id,cur){
   const e = prompt('Email used when assigning tasks to this user:', cur||''); if(e===null) return;
   const j = await api('api/users.php?action=update',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id, email:e})});
+  if(j.ok){ USERS.list=j.users||[]; } else alert(j.error||'Failed.');
+  render();
+}
+async function userSetPhone(id,cur){
+  const e = prompt('WhatsApp number for sending this user their tasks (e.g. 0712 345678):', cur||''); if(e===null) return;
+  const j = await api('api/users.php?action=update',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id, phone:e})});
   if(j.ok){ USERS.list=j.users||[]; } else alert(j.error||'Failed.');
   render();
 }
@@ -4433,7 +4440,7 @@ function vTodo(){
 /* ================= end To-Do ================= */
 
 function themeIsDark(){ return document.documentElement.classList.contains('dark'); }
-function openJobCard(id){ window.open('api/job_card.php?id='+id+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* job card follows dark mode on screen, prints light */
+function openJobCard(id, original){ window.open('api/job_card.php?id='+id+(original?'':'&copy=1')+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* reprints of an already-invoiced job are stamped COPY; original=true only at first generation */
 /* open a branded document (BOQ / profit report) in a popup with a print/save-PDF button */
 function docOpen(url,title){ document.getElementById('docModalTitle').textContent=title||'Document'; document.getElementById('docFrame').src=url; document.getElementById('docModal').classList.add('open'); document.body.style.overflow='hidden'; }
 function docClose(){ document.getElementById('docModal').classList.remove('open'); document.body.style.overflow=''; const f=document.getElementById('docFrame'); if(f) f.src='about:blank'; }
@@ -4892,6 +4899,10 @@ function mqListHtml(){
     // convert an approved quote OR an already-invoiced quote (that isn't already a project) into a project
     const canProject=ME.admin && pushed && !alreadyProject && (['approved','sent','accepted'].includes(q.status) || isInvoiced);
     const canBill=ME.admin && isProject;
+    // Who may generate / reprint the job card (which creates the Zoho invoice the first time):
+    // admin, the quote's creator (the technician who raised it), or someone with the projects/costcap tab.
+    const canJob = ME.admin || q.created_by===ME.user || ME.tabs==='*' || (Array.isArray(ME.tabs) && (ME.tabs.includes('projects')||ME.tabs.includes('costcap')));
+    const canGenJob = canJob && pushed && !isInvoiced && ['approved','accepted','sent','project'].includes(q.status);
     const canCost=(isProject||isInvoiced) && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || (ME.tabs||[]).includes('projects') || q.created_by===ME.user);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
@@ -4921,7 +4932,8 @@ function mqListHtml(){
         ${canProject?`<button class="btn qb" style="background:#7A5AF8;box-shadow:none" ${tip('Start the job: capture actual costs against this quote before billing')} onclick="mqToProject(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'📋 Convert to project'}</button>`:''}
         ${canCost?`<button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Enter or edit the actual costs that went into this job, broken down per line')} onclick="jcOpen(${q.id},'capture')">${isInvoiced?'💰 Capture costs':'💰 Costs'}</button>`:''}
         ${canBill?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? Review costs vs profit, create the invoice, and post the expenses to Zoho')} onclick="jcOpen(${q.id},'bill')" ${busy?'disabled':''}>${busy?'Working…':'🧾 Bill client'}</button>`:''}
-        ${(ME.admin && isInvoiced)?`<button class="btn sec qb" ${tip('Open the printable job card')} onclick="openJobCard(${q.id})">⤓ Job card</button>`:''}
+        ${canGenJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? This creates the invoice in Zoho and opens the printable job card to download')} onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Generate Job Card'}</button>`:''}
+        ${(canJob && isInvoiced)?`<button class="btn sec qb" ${tip('Open the printable job card (reprints are stamped COPY)')} onclick="openJobCard(${q.id})">⤓ Job card</button>`:''}
         ${(ME.admin && (isProject||isInvoiced))?`<button class="btn sec qb" ${tip('Bill of Quantities — materials required (labour excluded), branded PDF')} onclick="openBoq(${q.id})">⤓ BOQ</button>`:''}
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
         ${pushed?`<button class="btn sec qb" ${tip('Download this quote as a PDF')} onclick="mqPdf(${q.id})">⤓ PDF</button>`:''}
@@ -5166,8 +5178,8 @@ function mqJobCard(id){
   fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
     if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q){ q.status='invoiced'; q.zoho_invoice_number=j.invoice_number; }
-      MQ.msg='Job card ready — invoice '+(j.invoice_number||'')+(j.already?' (already invoiced).':' created in Zoho.'); MQ.err=false;
-      openJobCard(id); render(); }
+      MQ.msg='Job card ready — invoice '+(j.invoice_number||'')+(j.already?' (already invoiced — card marked COPY).':' created in Zoho.'); MQ.err=false;
+      openJobCard(id, !j.already); render(); }   /* original only when this call created the invoice; otherwise COPY */
     else { MQ.msg=j.error||'Could not generate job card.'; MQ.err=true; render(); }
   }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
@@ -5622,18 +5634,32 @@ function projCardAdmin(p){
 }
 
 function projCardTeam(p){
+  const inv=p.status==='invoiced'||!!p.zoho_invoice_number; const busy=PROJ.busyId===p.id;
   return `<div class="card" style="border-left:4px solid #7A5AF8;margin-bottom:10px">
     <div class="row" style="align-items:flex-start;gap:12px">
       <div style="min-width:0;flex:1"><b style="font-size:14px">${qesc(p.customer_name||'(no customer)')}</b>
         ${p.subject?`<div style="font-size:12px;color:var(--ink);font-weight:500;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${qesc(p.subject)}</div>`:''}
-        <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(p.zoho_estimate_number||('#'+p.id))} · ${p.line_count} item${p.line_count===1?'':'s'}</div></div>
+        <div class="muted" style="margin-top:3px;font-size:11.5px">${qesc(p.zoho_invoice_number||p.zoho_estimate_number||('#'+p.id))} · ${p.line_count} item${p.line_count===1?'':'s'}</div></div>
       <div style="text-align:right;white-space:nowrap"><div style="font-size:11px;color:var(--mute)">Cost so far</div><b>${fmtn(p.actual_cost||0)}</b></div>
     </div>
     <div class="qact">
       <button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Add the parts, labour and materials that went into this job')} onclick="jcOpen(${p.id},'capture')">💰 Input costs</button>
+      ${inv
+        ? `<button class="btn sec qb" ${tip('Open the printable job card (reprints are stamped COPY)')} onclick="openJobCard(${p.id})">⤓ Job card</button>`
+        : `<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? This creates the invoice in Zoho and opens the printable job card to download')} onclick="projGenJobCard(${p.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Generate Job Card'}</button>`}
       <button class="btn sec qb" ${tip('Bill of Quantities — the materials required for this job (branded PDF)')} onclick="openBoq(${p.id})">⤓ BOQ</button>
     </div>
   </div>`;
+}
+/* Technician on an assigned project: generate the job card (creates the Zoho invoice the first time). */
+function projGenJobCard(id){
+  if(!confirm('Have you completed this job?\n\nGenerating the Job Card will create the INVOICE in Zoho. This cannot be undone.')) return;
+  PROJ.busyId=id; PROJ.msg=''; render();
+  fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+  .then(r=>r.json()).then(j=>{ PROJ.busyId=0;
+    if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p){ p.status='invoiced'; p.zoho_invoice_number=j.invoice_number; } PROJ.msg='Invoice '+(j.invoice_number||'')+(j.already?' (already invoiced — card marked COPY).':' created in Zoho.'); PROJ.err=false; openJobCard(id, !j.already); }
+    else { PROJ.msg=j.error||'Could not generate job card.'; PROJ.err=true; } render();
+  }).catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
 }
 
 function projClose(id){ if(!confirm('Close this project? Your team will no longer see it or add costs. You can reopen it anytime.'))return; PROJ.busyId=id; render();

@@ -40,7 +40,7 @@ try {
     $cfg = require __DIR__ . '/../config.php';
     $vat = (float)($cfg['vat_rate'] ?? 0.16);   // was undefined -> pc_refresh_quote got null (fix)
     $me    = $_SESSION['user'] ?? '';
-    if (empty($_SESSION['is_admin'])) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'Only an admin can bill a client / create an invoice.']); exit; }
+    $admin = !empty($_SESSION['is_admin']);
 
     foreach ([
         "ADD COLUMN zoho_invoice_id VARCHAR(64) DEFAULT '' AFTER zoho_estimate_number",
@@ -53,6 +53,13 @@ try {
     $st = $pdo->prepare("SELECT * FROM quotes WHERE id=?"); $st->execute([$id]);
     $q = $st->fetch(PDO::FETCH_ASSOC);
     if (!$q) throw new Exception('Quote not found.');
+    // Admin, the quote's creator, or an assigned technician may invoice / generate the job card.
+    if (!$admin && $q['created_by'] !== $me) {
+        pa_table($pdo);
+        if (!in_array($me, pa_for_quote($pdo, $id), true)) {
+            http_response_code(403); echo json_encode(['ok'=>false,'error'=>'You do not have access to invoice this job.']); exit;
+        }
+    }
     if (empty($q['zoho_estimate_id'])) throw new Exception('Push the quote to Zoho first.');
     if (in_array($q['status'], ['declined','expired'], true)) {
         throw new Exception('A declined or expired quote cannot be invoiced.');
