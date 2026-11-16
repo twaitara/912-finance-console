@@ -47,7 +47,8 @@ try {
     foreach ((is_array($in['attachments'] ?? null) ? $in['attachments'] : []) as $a) {
         $name = preg_replace('/[^A-Za-z0-9 ._()\-]/', '_', mb_substr((string)($a['name'] ?? 'invoice.pdf'), 0, 120));
         $bin  = base64_decode((string)($a['b64'] ?? ''), true);
-        if ($bin === false || strncmp($bin, '%PDF', 4) !== 0) { $failed[] = $name . ' (not a PDF)'; continue; }
+        $isDoc = $bin !== false && (strncmp($bin, '%PDF', 4) === 0 || strncmp($bin, "ÿØ", 2) === 0 || strncmp($bin, "‰PNG", 4) === 0);   // PDF / JPEG / PNG scans only
+        if (!$isDoc) { $failed[] = $name . ' (not a PDF or image)'; continue; }
         $ch = curl_init($base . '/messages/attachments?fileName=' . rawurlencode($name));
         curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>60, CURLOPT_POSTFIELDS=>$bin,
             CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . mail_access_token(), 'Content-Type: application/octet-stream', 'Accept: application/json']]);
