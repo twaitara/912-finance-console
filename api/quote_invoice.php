@@ -45,6 +45,8 @@ try {
     foreach ([
         "ADD COLUMN zoho_invoice_id VARCHAR(64) DEFAULT '' AFTER zoho_estimate_number",
         "ADD COLUMN zoho_invoice_number VARCHAR(64) DEFAULT '' AFTER zoho_invoice_id",
+        "ADD COLUMN jobcard_by VARCHAR(80) DEFAULT ''",      // who generated the job card (created the invoice)
+        "ADD COLUMN jobcard_at DATETIME NULL",
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
 
     $in = json_decode(file_get_contents('php://input'), true); if (!is_array($in)) $in = $_POST;
@@ -141,8 +143,8 @@ try {
             $invNo = (string)($d['invoice']['invoice_number'] ?? '');
         }
 
-        $pdo->prepare("UPDATE quotes SET zoho_invoice_id=?, zoho_invoice_number=?, status='invoiced', last_synced_at=NOW() WHERE id=?")
-            ->execute([$invId, $invNo, $id]);
+        $pdo->prepare("UPDATE quotes SET zoho_invoice_id=?, zoho_invoice_number=?, status='invoiced', last_synced_at=NOW(), jobcard_by=?, jobcard_at=NOW() WHERE id=?")
+            ->execute([$invId, $invNo, mb_substr((string)$me, 0, 80), $id]);
     } finally {
         $pdo->query("SELECT RELEASE_LOCK(" . $pdo->quote($lockName) . ")");
     }

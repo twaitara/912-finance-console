@@ -51,7 +51,28 @@ function quotes_table(PDO $pdo){
         "ADD COLUMN profit DECIMAL(14,2) DEFAULT 0 AFTER total_cost",
         "ADD COLUMN zoho_invoice_id VARCHAR(64) DEFAULT '' AFTER zoho_estimate_number",
         "ADD COLUMN zoho_invoice_number VARCHAR(64) DEFAULT '' AFTER zoho_invoice_id",
+        "ADD COLUMN jobcard_by VARCHAR(80) DEFAULT ''",      // who generated the job card (created the invoice)
+        "ADD COLUMN jobcard_at DATETIME NULL",
     ] as $alter) { try { $pdo->exec("ALTER TABLE quotes $alter"); } catch (Exception $e) {} }
+
+    /* One-time backfill: older job cards get their generator from the activity log
+       ("billed client" entries start with the invoice number). Runs once, then never again. */
+    $flag = __DIR__ . '/../data/jobcard_backfill.done';
+    if (!is_file($flag)) {
+        try {
+            $rows = $pdo->query("SELECT id, zoho_invoice_number FROM quotes WHERE zoho_invoice_number<>'' AND (jobcard_by='' OR jobcard_by IS NULL)")->fetchAll(PDO::FETCH_ASSOC);
+            if ($rows) {
+                $find = $pdo->prepare("SELECT username, created_at FROM activity_log WHERE action='billed client' AND detail LIKE ? ORDER BY id ASC LIMIT 1");
+                $upd  = $pdo->prepare("UPDATE quotes SET jobcard_by=?, jobcard_at=?, updated_at=updated_at WHERE id=?");
+                foreach ($rows as $r) {
+                    $find->execute([str_replace(['%','_'], ['\\%','\\_'], $r['zoho_invoice_number']) . ' for %']);
+                    $a = $find->fetch(PDO::FETCH_ASSOC);
+                    if ($a) $upd->execute([$a['username'], $a['created_at'], (int)$r['id']]);
+                }
+            }
+            @file_put_contents($flag, date('c'));
+        } catch (\Throwable $e) { /* try again next time */ }
+    }
 }
 
 try {
@@ -92,6 +113,11 @@ try {
                 $st2->execute([$me]);
                 foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $r) { $out[] = quote_strip_prices(quote_out($r)); }
             }
+            // job cards this user generated on someone else's quote (assigned technician) — prices stripped
+            $have = []; foreach ($out as $o) $have[(int)$o['id']] = true;
+            $st3 = $pdo->prepare("SELECT * FROM quotes WHERE created_by<>? AND jobcard_by=? ORDER BY updated_at DESC LIMIT 300");
+            $st3->execute([$me, $me]);
+            foreach ($st3->fetchAll(PDO::FETCH_ASSOC) as $r) { if (!isset($have[(int)$r['id']])) $out[] = quote_strip_prices(quote_out($r)); }
         }
         echo json_encode(['ok'=>true, 'quotes'=>$out]);
         exit;
