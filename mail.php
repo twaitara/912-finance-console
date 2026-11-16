@@ -20,6 +20,19 @@ function mail_refresh_token($who = '') {
     $c = zoho_config();
     return $c['mail_refresh_token'] ?? '';
 }
+/* OAuth client for a mailbox. The owner's uses config.php. A named mailbox (Grace) uses the
+   server-based client saved by mail_client_setup.php in data/mail_client.json, because the
+   config.php client is a Zoho Self Client, which cannot run a browser sign-in for another person. */
+function mail_client($who = '') {
+    $c = zoho_config();
+    $out = ['client_id' => $c['client_id'] ?? '', 'client_secret' => $c['client_secret'] ?? '', 'own' => false];
+    if (mail_who($who) !== '') {
+        $f = __DIR__ . '/data/mail_client.json';
+        $j = is_file($f) ? (json_decode((string)@file_get_contents($f), true) ?: []) : [];
+        if (!empty($j['client_id']) && !empty($j['client_secret'])) $out = ['client_id' => (string)$j['client_id'], 'client_secret' => (string)$j['client_secret'], 'own' => true];
+    }
+    return $out;
+}
 function mail_is_connected($who = '') { return mail_refresh_token($who) !== ''; }
 function mail_save_refresh_token($who, $token) {
     $d = __DIR__ . '/data'; if (!is_dir($d)) @mkdir($d, 0775, true);
@@ -35,6 +48,7 @@ function mail_access_token($who = '') {
         if ($t && ($t['expires_at'] ?? 0) > time() + 60) return $t['access_token'];
     }
     $rt = mail_refresh_token($who);
+    $cl = mail_client($who);
     if ($rt === '') throw new Exception(mail_who($who) !== ''
         ? 'This mailbox is not connected yet.'
         : 'Zoho Mail is not connected yet. Run mail_token.php once to set it up.');
@@ -43,8 +57,8 @@ function mail_access_token($who = '') {
     curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_RETURNTRANSFER=>true,
         CURLOPT_POSTFIELDS => http_build_query([
             'refresh_token' => $rt,
-            'client_id'     => $c['client_id'],
-            'client_secret' => $c['client_secret'],
+            'client_id'     => $cl['client_id'],
+            'client_secret' => $cl['client_secret'],
             'grant_type'    => 'refresh_token',
         ])]);
     $res = curl_exec($ch); $err = curl_error($ch); curl_close($ch);

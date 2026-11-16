@@ -30,6 +30,7 @@ function cm_redirect_uri() {
     return $scheme . '://' . $host . $dir . '/connect_mail.php';
 }
 $portal = 'index.php?portal=grace';
+$cl = mail_client(CM_WHO);
 
 if (empty($_SESSION['grace_auth'])) {
     cm_page('Sign in first', '<h1>Please sign in first</h1><p>Open the Collections portal, sign in with your PIN, then tap “Connect my mailbox” again.</p><p><a class="btn" href="' . $portal . '">Go to the portal</a></p>');
@@ -49,7 +50,7 @@ if (isset($_GET['code'])) {
     $ch = curl_init(rtrim($c['accounts_url'], '/') . '/oauth/v2/token');
     curl_setopt_array($ch, [CURLOPT_POST=>true, CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>40,
         CURLOPT_POSTFIELDS => http_build_query([
-            'grant_type'=>'authorization_code', 'client_id'=>$c['client_id'] ?? '', 'client_secret'=>$c['client_secret'] ?? '',
+            'grant_type'=>'authorization_code', 'client_id'=>$cl['client_id'], 'client_secret'=>$cl['client_secret'],
             'redirect_uri'=>cm_redirect_uri(), 'code'=>(string)$_GET['code'],
         ])]);
     $res = curl_exec($ch); $hc = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
@@ -77,7 +78,7 @@ if (isset($_GET['start'])) {
     $c = zoho_config();
     $_SESSION['cm_state'] = bin2hex(random_bytes(16));
     header('Location: ' . rtrim($c['accounts_url'], '/') . '/oauth/v2/auth?' . http_build_query([
-        'response_type'=>'code', 'client_id'=>$c['client_id'] ?? '', 'scope'=>CM_SCOPE,
+        'response_type'=>'code', 'client_id'=>$cl['client_id'], 'scope'=>CM_SCOPE,
         'redirect_uri'=>cm_redirect_uri(), 'access_type'=>'offline', 'prompt'=>'consent', 'state'=>$_SESSION['cm_state'],
     ]));
     exit;
@@ -89,6 +90,10 @@ if (isset($_GET['disconnect'])) {
     exit;
 }
 
+if (empty($cl['own'])) {
+    cm_page('Not set up yet', '<h1>Almost ready</h1><p>The office still has to finish a one-time mail setup before you can connect. Please ask the administrator, then try again.</p><p><a class="btn sec" href="' . $portal . '">Back to the portal</a></p>');
+    exit;
+}
 // landing
 $connected = mail_is_connected(CM_WHO);
 cm_page('Connect Zoho Mail', '<h1>Connect your Zoho Mail</h1>'
