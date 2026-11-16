@@ -199,7 +199,7 @@ if (!function_exists('gp_build')) {
             foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[(string)$v] = true;
         } catch (\Throwable $e) { /* leave sets empty -> KES-only, no ready */ }
         /* sent-out ticks + per-invoice ETR (fiscalised) pushed from the office PC + statement-draft log */
-        $sent = []; $etr = []; $etrAt = ''; $stmt = []; $hide = []; $hideOk = false;
+        $sent = []; $etr = []; $etrAt = ''; $stmt = []; $picked = []; $hide = []; $hideOk = false;
         try {
             $pdo = db();
             $pdo->exec("CREATE TABLE IF NOT EXISTS grace_hide (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -213,6 +213,8 @@ if (!function_exists('gp_build')) {
             $pdo->exec("CREATE TABLE IF NOT EXISTS invoice_etr (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             $pdo->exec("CREATE TABLE IF NOT EXISTS bridge_meta (k VARCHAR(64) PRIMARY KEY, v VARCHAR(255) DEFAULT '') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             gp_stmt_table($pdo);
+            $pdo->exec("CREATE TABLE IF NOT EXISTS collect_picked (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            foreach ($pdo->query("SELECT invoice_id FROM collect_picked")->fetchAll(PDO::FETCH_COLUMN) as $v) $picked[(string)$v] = true;
             foreach ($pdo->query("SELECT invoice_id FROM collect_sent")->fetchAll(PDO::FETCH_COLUMN) as $v) $sent[(string)$v] = true;
             foreach ($pdo->query("SELECT invoice_id FROM invoice_etr")->fetchAll(PDO::FETCH_COLUMN) as $v) $etr[(string)$v] = true;
             $etrAt = (string)($pdo->query("SELECT v FROM bridge_meta WHERE k='etr_synced_at'")->fetchColumn() ?: '');
@@ -240,6 +242,7 @@ if (!function_exists('gp_build')) {
                 unset($iv['bcy']);
                 $iv['ready'] = isset($ready[(string)($iv['id'] ?? '')]);
                 $iv['confirmed'] = isset($confirm[(string)($iv['id'] ?? '')]);
+                $iv['picked'] = isset($picked[(string)($iv['id'] ?? '')]);
                 $iv['sent'] = isset($sent[(string)($iv['id'] ?? '')]);
                 $iv['fiscalised'] = isset($etr[(string)($iv['id'] ?? '')]);
                 if ($iv['fiscalised']) $fc++;
@@ -570,6 +573,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .hfig .hn{font-size:11.5px;color:var(--mute);margin-top:2px}
   .itag{font-size:9.5px;font-weight:800;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;border:1px solid var(--line);color:#8a857c;background:#F5F3EF;margin-right:3px}
   .itag.etr{color:#0F7A34;background:var(--green-bg);border-color:#BFE0CB}
+  .itag.pkd{color:#fff;background:#0F7A34;border-color:#0F7A34}
   .itag.snt{color:var(--mail);background:var(--blue-bg);border-color:#BccCF0}
   .stmprev{border:1px solid var(--line);background:#fff;padding:12px;max-height:46vh;overflow:auto}
   .stmwarn{background:#FFF6E5;border:1px solid #F0D9A8;color:#7a5200;padding:10px 12px;font-size:13px;margin-bottom:6px}
@@ -919,7 +923,8 @@ function fisc(iv){ return !!(iv&&iv.fiscalised); }
 function wasSent(iv){ return !!(iv&&iv.sent); }
 function invTags(iv){ return (ownerReady(iv)?'<span class="rtag2" title="Cleared by the office — ready to collect">● ready</span> ':'')
   +(fisc(iv)?'<span class="itag etr" title="Fiscalised — ETR receipt is on file">ETR</span>':'<span class="itag" title="Not fiscalised yet">no ETR</span>')
-  +(wasSent(iv)?'<span class="itag snt" title="Invoice has been sent out to the client">sent</span>':''); }
+  +(wasSent(iv)?'<span class="itag snt" title="Invoice has been sent out to the client">sent</span>':'')
+  +(iv&&iv.picked?'<span class="itag pkd" title="The office has already picked the cheque for this invoice">✓ cheque picked</span>':''); }
 function shortDate(s){ if(!s)return ''; const d=new Date(String(s).replace(' ','T')); return isNaN(d)?'':d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
 function closeStmt(){const m=document.getElementById('stmModal');if(m)m.classList.remove('open');}
 async function stmtPost(route,body){ const r=await fetch('index.php?portal=grace&'+route+'=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return r.json(); }
@@ -1239,7 +1244,7 @@ function renderGroup(c){
         <span class="gcount">${c.count} inv</span>
         ${na?`<span class="na ${na.cls}">${esc(na.t)}</span>`:''}
         ${spill}${daysPill}
-        ${nReady>0?`<span class="pill ready">● ${nReady} ready to collect</span>`:''}${nArr>0?`<span class="pill arr">📦 ${nArr} collection arranged</span>`:''}
+        ${(c.invoices||[]).filter(iv=>iv.picked).length>0?`<span class="itag pkd">✓ ${(c.invoices||[]).filter(iv=>iv.picked).length} cheque picked</span>`:''}${nReady>0?`<span class="pill ready">● ${nReady} ready to collect</span>`:''}${nArr>0?`<span class="pill arr">📦 ${nArr} collection arranged</span>`:''}
         <span class="itag ${c.fiscalCount>0?'etr':''}" title="Invoices with an ETR receipt on file">ETR ${c.fiscalCount||0}/${c.count}</span>${c.stmtAt?`<span class="stmd">✉ statement drafted ${esc(shortDate(c.stmtAt))}</span>`:''}
         <span class="gtot">${esc(fmtMap(c.totalByCur))}</span>
         <span class="gacts" onclick="event.stopPropagation()">${callbtns}</span>
