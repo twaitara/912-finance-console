@@ -836,7 +836,7 @@ const att=s=>esc(s).replace(/'/g,'&#39;');
 const jsq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 const fmtC=(cur,n)=>(cur||'')+' '+Math.round(n||0).toLocaleString('en-US');
 const fmtMap=m=>{const k=Object.keys(m||{});if(!k.length)return '—';return k.sort().map(c=>fmtC(c,m[c])).join('  ·  ');};
-let DATA=null, Q='', SORT='priority', FILTER='all', EXP={}, EDITPH={}, VIEWMODE='focus', WORKED={};
+let DATA=null, Q='', SORT='priority', FILTER='all', EXP={}, EDITPH={}, VIEWMODE='list', WORKED={};
 // Two stages:
 //  ownerReady (iv.ready, set by owner on the local app) = invoice cleared the process → Grace may contact & chase.
 //  arranged  (iv.confirmed, set by Grace here)          = customer confirmed → office must send someone to collect.
