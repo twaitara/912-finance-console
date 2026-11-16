@@ -4902,7 +4902,9 @@ function mqListHtml(){
     // Who may generate / reprint the job card (which creates the Zoho invoice the first time):
     // admin, the quote's creator (the technician who raised it), or someone with the projects/costcap tab.
     const canJob = ME.admin || q.created_by===ME.user || ME.tabs==='*' || (Array.isArray(ME.tabs) && (ME.tabs.includes('projects')||ME.tabs.includes('costcap')));
-    const canGenJob = canJob && pushed && !isInvoiced && ['approved','accepted','sent','project'].includes(q.status);
+    // Admin can generate the job card (and the invoice) from any pushed, not-yet-invoiced quote;
+    // a technician only from an approved/accepted/sent/in-progress one.
+    const canGenJob = canJob && pushed && !isInvoiced && (ME.admin || ['approved','accepted','sent','project'].includes(q.status));
     const canCost=(isProject||isInvoiced) && (ME.admin || ME.tabs==='*' || (ME.tabs||[]).includes('costcap') || (ME.tabs||[]).includes('projects') || q.created_by===ME.user);
     const date=(q.quote_date||String(q.created_at||'').slice(0,10))||'';
     const meta=[ pushed?`<span style="color:var(--ink);font-weight:600">${qesc(q.zoho_estimate_number||'—')}</span>`:null,
