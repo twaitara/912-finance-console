@@ -61,8 +61,9 @@ try {
         }
     }
     if (empty($q['zoho_estimate_id'])) throw new Exception('Push the quote to Zoho first.');
-    if (in_array($q['status'], ['declined','expired'], true)) {
-        throw new Exception('A declined or expired quote cannot be invoiced.');
+    // A job card / invoice is only possible once the quote is approved (or further along).
+    if (!in_array($q['status'], ['approved','accepted','sent','project','invoiced'], true)) {
+        throw new Exception('Approve the quote first — a job card / invoice is only possible once it is approved.');
     }
 
     // already converted?  (fast path)
