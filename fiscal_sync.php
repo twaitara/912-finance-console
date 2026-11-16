@@ -44,12 +44,38 @@ try {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+    /* every open invoice that HAS an ETR scan on the office PC (all currencies) — read by Grace's portal */
+    $pdo->exec("CREATE TABLE IF NOT EXISTS invoice_etr (
+        invoice_id VARCHAR(64) PRIMARY KEY,
+        invoice_number VARCHAR(64) DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS bridge_meta (
+        k VARCHAR(64) PRIMARY KEY,
+        v VARCHAR(255) DEFAULT ''
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $in = json_decode(file_get_contents('php://input'), true) ?: [];
         $items = is_array($in['items'] ?? null) ? $in['items'] : null;
         if ($items === null) { echo json_encode(['ok'=>false, 'error'=>'no items array']); exit; }
+        $etr = is_array($in['etr'] ?? null) ? $in['etr'] : null;   // absent on an older local app -> leave invoice_etr alone
 
         $pdo->beginTransaction();
+        $etrCount = null;
+        if ($etr !== null) {
+            $pdo->exec("DELETE FROM invoice_etr");
+            $ie = $pdo->prepare("INSERT INTO invoice_etr (invoice_id,invoice_number) VALUES (?,?)
+                ON DUPLICATE KEY UPDATE invoice_number=VALUES(invoice_number)");
+            $etrCount = 0;
+            foreach ($etr as $e) {
+                $eid = mb_substr(trim((string)($e['invoice_id'] ?? '')), 0, 64);
+                if ($eid === '') continue;
+                $ie->execute([$eid, mb_substr((string)($e['invoice_number'] ?? ''), 0, 64)]);
+                $etrCount++;
+            }
+            $pdo->prepare("REPLACE INTO bridge_meta (k,v) VALUES ('etr_synced_at',?)")->execute([date('c')]);
+        }
         $pdo->exec("DELETE FROM fiscal_queue");
         $keep = [];
         if ($items) {
@@ -80,9 +106,11 @@ try {
         foreach ($flagNums as $fn) { if (!isset($keep[(string)$fn])) $del->execute([(string)$fn]); }
         $pdo->commit();
 
-        echo json_encode(['ok'=>true, 'count'=>count($keep)]); exit;
+        echo json_encode(['ok'=>true, 'count'=>count($keep), 'etr_count'=>$etrCount]); exit;
     }
 
     $count = (int)$pdo->query("SELECT COUNT(*) FROM fiscal_queue")->fetchColumn();
-    echo json_encode(['ok'=>true, 'count'=>$count]);
+    $etrN  = (int)$pdo->query("SELECT COUNT(*) FROM invoice_etr")->fetchColumn();
+    $at    = (string)($pdo->query("SELECT v FROM bridge_meta WHERE k='etr_synced_at'")->fetchColumn() ?: '');
+    echo json_encode(['ok'=>true, 'count'=>$count, 'etr_count'=>$etrN, 'etr_synced_at'=>$at]);
 } catch (\Throwable $e) { if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack(); echo api_fail($e); }

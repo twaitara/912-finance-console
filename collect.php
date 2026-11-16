@@ -40,15 +40,28 @@ try {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+    /* invoice has been sent out to the client — ticked by the owner in the local app */
+    $pdo->exec("CREATE TABLE IF NOT EXISTS collect_sent (
+        invoice_id VARCHAR(64) PRIMARY KEY,
+        invoice_number VARCHAR(64) DEFAULT '',
+        customer_name VARCHAR(190) DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $in = json_decode(file_get_contents('php://input'), true) ?: [];
         $iid = trim((string)($in['invoice_id'] ?? ''));
         if ($iid === '') { echo json_encode(['ok'=>false, 'error'=>'no invoice_id']); exit; }
-        $kind = (($in['kind'] ?? 'ready') === 'share') ? 'share' : 'ready';
-        $on   = !empty($in['ready']);   // reused as the on/off flag for both kinds
-        $table = $kind === 'share' ? 'grace_share' : 'collect_flags';
+        $k = (string)($in['kind'] ?? 'ready');
+        $kind = in_array($k, ['share', 'sent'], true) ? $k : 'ready';
+        $on   = !empty($in['ready']);   // reused as the on/off flag for every kind
+        $table = $kind === 'share' ? 'grace_share' : ($kind === 'sent' ? 'collect_sent' : 'collect_flags');
         if ($on) {
-            if ($kind === 'share') {
+            if ($kind === 'sent') {
+                $pdo->prepare("INSERT INTO collect_sent (invoice_id,invoice_number,customer_name) VALUES (?,?,?)
+                    ON DUPLICATE KEY UPDATE invoice_number=VALUES(invoice_number),customer_name=VALUES(customer_name)")
+                    ->execute([$iid, mb_substr((string)($in['invoice_number'] ?? ''), 0, 64), mb_substr((string)($in['customer_name'] ?? ''), 0, 190)]);
+            } elseif ($kind === 'share') {
                 $pdo->prepare("INSERT INTO grace_share (invoice_id,invoice_number,customer_name) VALUES (?,?,?)
                     ON DUPLICATE KEY UPDATE invoice_number=VALUES(invoice_number),customer_name=VALUES(customer_name)")
                     ->execute([$iid, mb_substr((string)($in['invoice_number'] ?? ''), 0, 64), mb_substr((string)($in['customer_name'] ?? ''), 0, 190)]);
@@ -69,5 +82,7 @@ try {
     foreach ($pdo->query("SELECT invoice_id FROM grace_share")->fetchAll(PDO::FETCH_COLUMN) as $v) $share[] = (string)$v;
     $confirm = [];
     foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[] = (string)$v;
-    echo json_encode(['ok'=>true, 'ready'=>$ready, 'share'=>$share, 'confirm'=>$confirm]);
+    $sent = [];
+    foreach ($pdo->query("SELECT invoice_id FROM collect_sent")->fetchAll(PDO::FETCH_COLUMN) as $v) $sent[] = (string)$v;
+    echo json_encode(['ok'=>true, 'ready'=>$ready, 'share'=>$share, 'confirm'=>$confirm, 'sent'=>$sent]);
 } catch (\Throwable $e) { echo api_fail($e); }

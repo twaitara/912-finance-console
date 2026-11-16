@@ -197,18 +197,35 @@ if (!function_exists('gp_build')) {
             foreach ($pdo->query("SELECT invoice_id FROM grace_share")->fetchAll(PDO::FETCH_COLUMN) as $v) $share[(string)$v] = true;
             foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[(string)$v] = true;
         } catch (\Throwable $e) { /* leave sets empty -> KES-only, no ready */ }
+        /* sent-out ticks + per-invoice ETR (fiscalised) pushed from the office PC + statement-draft log */
+        $sent = []; $etr = []; $etrAt = ''; $stmt = [];
+        try {
+            $pdo = db();
+            $pdo->exec("CREATE TABLE IF NOT EXISTS collect_sent (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS invoice_etr (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS bridge_meta (k VARCHAR(64) PRIMARY KEY, v VARCHAR(255) DEFAULT '') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            gp_stmt_table($pdo);
+            foreach ($pdo->query("SELECT invoice_id FROM collect_sent")->fetchAll(PDO::FETCH_COLUMN) as $v) $sent[(string)$v] = true;
+            foreach ($pdo->query("SELECT invoice_id FROM invoice_etr")->fetchAll(PDO::FETCH_COLUMN) as $v) $etr[(string)$v] = true;
+            $etrAt = (string)($pdo->query("SELECT v FROM bridge_meta WHERE k='etr_synced_at'")->fetchColumn() ?: '');
+            foreach ($pdo->query("SELECT customer_id, MAX(created_at) AS at FROM grace_statements GROUP BY customer_id")->fetchAll(PDO::FETCH_ASSOC) as $r) $stmt[(string)$r['customer_id']] = (string)$r['at'];
+        } catch (\Throwable $e) { /* tags simply absent */ }
 
         /* Rebuild per-request so USD visibility (share) and ready flags are always current:
            KES invoices always shown; USD shown only when the invoice is shared to Grace. */
         $out = []; $gTotalByCur = []; $invCount = 0; $totalReady = 0; $amtByCur = [];
         foreach ($res['customers'] as $c) {
-            $inv = []; $tbc = []; $sortTotal = 0; $maxOv = 0; $rc = 0; $rbc = [];
+            $inv = []; $tbc = []; $sortTotal = 0; $maxOv = 0; $rc = 0; $rbc = []; $fc = 0; $sc = 0;
             foreach ($c['invoices'] as $iv) {
                 $cur = strtoupper((string)($iv['currency'] ?? 'KES'));
                 if ($cur !== 'KES' && !isset($share[(string)($iv['id'] ?? '')])) continue;   // USD hidden unless shared
                 $bal = (float)($iv['balance'] ?? 0);
                 $iv['ready'] = isset($ready[(string)($iv['id'] ?? '')]);
                 $iv['confirmed'] = isset($confirm[(string)($iv['id'] ?? '')]);
+                $iv['sent'] = isset($sent[(string)($iv['id'] ?? '')]);
+                $iv['fiscalised'] = isset($etr[(string)($iv['id'] ?? '')]);
+                if ($iv['fiscalised']) $fc++;
+                if ($iv['sent']) $sc++;
                 if ($iv['ready']) { $rc++; $rbc[$cur] = ($rbc[$cur] ?? 0) + $bal; $amtByCur[$cur] = ($amtByCur[$cur] ?? 0) + $bal; }
                 $tbc[$cur] = ($tbc[$cur] ?? 0) + $bal; $sortTotal += $bal;
                 $ov = (int)($iv['overdue'] ?? 0); if ($ov > $maxOv) $maxOv = $ov;
@@ -217,6 +234,7 @@ if (!function_exists('gp_build')) {
             if (!$inv) continue;   // customer has no visible invoices
             $c['invoices'] = $inv; $c['totalByCur'] = $tbc; $c['sortTotal'] = $sortTotal;
             $c['count'] = count($inv); $c['maxOverdue'] = $maxOv; $c['readyCount'] = $rc; $c['readyByCur'] = $rbc;
+            $c['fiscalCount'] = $fc; $c['sentCount'] = $sc; $c['stmtAt'] = $stmt[(string)($c['cid'] ?? '')] ?? '';
             foreach ($tbc as $k => $v) $gTotalByCur[$k] = ($gTotalByCur[$k] ?? 0) + $v;
             $invCount += count($inv); $totalReady += $rc;
             $out[] = $c;
@@ -224,7 +242,76 @@ if (!function_exists('gp_build')) {
         usort($out, fn($a, $b) => $b['sortTotal'] <=> $a['sortTotal']);
         $res['customers'] = $out; $res['totalByCur'] = $gTotalByCur; $res['custCount'] = count($out); $res['invCount'] = $invCount;
         $res['readyTotal'] = $totalReady; $res['readyAmountByCur'] = $amtByCur;
+        $res['etrAsOf'] = $etrAt;
         return $res;
+    }
+
+    function gp_stmt_table($pdo) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS grace_statements (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_id VARCHAR(64) NOT NULL,
+            customer_name VARCHAR(190) DEFAULT '',
+            to_email VARCHAR(190) DEFAULT '',
+            total DECIMAL(14,2) DEFAULT 0,
+            created_by VARCHAR(80) DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_cust (customer_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
+
+    /* Statement of account for ONE client, built server-side from the same data Grace sees
+       (so it can never include an invoice she isn't allowed to see). Returns null if unknown. */
+    function gp_statement($cid, $note = '') {
+        $res = gp_apply_collect(gp_build(false));
+        $c = null;
+        foreach ($res['customers'] as $x) { if ((string)$x['cid'] === (string)$cid) { $c = $x; break; } }
+        if (!$c) return null;
+        $cfg = require __DIR__ . '/config.php';
+        $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+        $fmt = fn($n) => number_format((float)$n, 2);
+        $name = (string)$c['customer'];
+        $who  = trim((string)($c['contactName'] ?? ''));
+        $note = trim((string)$note);
+        $intro = $note !== '' ? $note
+            : ('Dear ' . ($who !== '' ? $who : 'Sir/Madam') . ",\n\nPlease find below your statement of account showing the invoices pending payment as at " . date('j F Y') . ". Kindly arrange settlement, and let us know once payment is ready so we can arrange collection.\n\nThank you.");
+        $td = 'padding:9px 12px;border-bottom:1px solid #ECEFF3;';
+        $th = 'padding:10px 12px;font-size:11px;letter-spacing:.4px;text-transform:uppercase;';
+        $rows = ''; $tot = []; $ovd = []; $i = 0;
+        foreach ($c['invoices'] as $iv) {
+            $cur = (string)($iv['currency'] ?: 'KES'); $bal = (float)$iv['balance']; $late = (int)($iv['overdue'] ?? 0);
+            $tot[$cur] = ($tot[$cur] ?? 0) + $bal;
+            if ($late > 0) $ovd[$cur] = ($ovd[$cur] ?? 0) + $bal;
+            $rows .= '<tr style="background:' . ($i++ % 2 ? '#FAFBFD' : '#FFFFFF') . '">'
+                . '<td style="' . $td . 'color:#15202B">' . $e($iv['number']) . (!empty($iv['about']) ? '<div style="color:#94A3B8;font-size:10.5px;margin-top:2px">' . $e($iv['about']) . '</div>' : '') . '</td>'
+                . '<td style="' . $td . 'color:#475569">' . $e($iv['date'] ?? '') . '</td>'
+                . '<td style="' . $td . 'color:#475569">' . $e($iv['due'] ?? '') . ($late > 0 ? '<div style="color:#D64933;font-size:10.5px;font-weight:600">' . $late . ' days overdue</div>' : '') . '</td>'
+                . '<td style="' . $td . 'color:' . (!empty($iv['fiscalised']) ? '#16A34A' : '#94A3B8') . ';font-weight:600">' . (!empty($iv['fiscalised']) ? 'Yes' : 'Pending') . '</td>'
+                . '<td style="' . $td . 'text-align:right;color:#15202B;font-weight:600">' . $e($cur) . ' ' . $fmt($bal) . '</td></tr>';
+        }
+        ksort($tot);
+        $join = function ($m) use ($fmt, $e) { $p = []; foreach ($m as $k => $v) $p[] = $e($k) . ' ' . $fmt($v); return implode(' &nbsp;·&nbsp; ', $p); };
+        $foot = '<tr style="background:#15202B;color:#fff"><td colspan="4" style="padding:11px 12px;text-align:right;font-weight:700;letter-spacing:.3px">TOTAL OUTSTANDING</td>'
+              . '<td style="padding:11px 12px;text-align:right;font-weight:700;color:#F8B26A;white-space:nowrap">' . $join($tot) . '</td></tr>';
+        if ($ovd) { ksort($ovd); $foot = '<tr style="background:#FDF1EE"><td colspan="4" style="padding:9px 12px;text-align:right;font-weight:600;color:#D64933">Of which overdue</td>'
+              . '<td style="padding:9px 12px;text-align:right;font-weight:700;color:#D64933;white-space:nowrap">' . $join($ovd) . '</td></tr>' . $foot; }
+        $footer = (string)($cfg['statement_footer'] ?? '');
+        if ($footer === '') $footer = "Prepared and reconciled by the Waitara Holdings Group of Companies Console — Nine One Two Holdings' intelligent finance engine, delivering precise, automated account statements in real time.";
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#15202B;max-width:680px">'
+            . '<div style="background:#15202B;border-radius:10px 10px 0 0;padding:18px 22px;color:#fff"><table width="100%" style="border-collapse:collapse"><tr>'
+            . '<td style="vertical-align:middle"><span style="display:inline-block;background:#F56F00;color:#fff;font-weight:700;font-size:15px;padding:7px 10px;border-radius:8px;letter-spacing:.5px">912</span></td>'
+            . '<td style="vertical-align:middle;text-align:right"><div style="font-size:16px;font-weight:700;letter-spacing:.5px">STATEMENT OF ACCOUNT</div><div style="font-size:12px;color:#AEB9C7">' . $e($name) . '</div></td></tr></table></div>'
+            . '<div style="border:1px solid #E6EAF0;border-top:0;border-radius:0 0 10px 10px;padding:22px">'
+            . '<p style="margin:0 0 16px;line-height:1.55">' . nl2br($e($intro)) . '</p>'
+            . '<table style="border-collapse:collapse;width:100%;font-size:13px;margin:0 0 16px;border:1px solid #E6EAF0"><thead><tr style="background:#F56F00;color:#fff">'
+            . '<th style="' . $th . 'text-align:left">Invoice</th><th style="' . $th . 'text-align:left">Date</th><th style="' . $th . 'text-align:left">Due</th><th style="' . $th . 'text-align:left">ETR</th><th style="' . $th . 'text-align:right">Balance</th></tr></thead>'
+            . '<tbody>' . $rows . '</tbody><tfoot>' . $foot . '</tfoot></table>'
+            . '<p style="margin:0;color:#64748B;font-size:12px;line-height:1.5">For any queries on this statement, please reply to this email.</p>'
+            . '<p style="margin:14px 0 0;padding-top:12px;border-top:1px solid #EEF1F5;color:#AEB9C7;font-size:10px;line-height:1.5;font-style:italic">' . $e($footer) . '</p></div></div>';
+        return [
+            'cid' => (string)$c['cid'], 'customer' => $name, 'to' => (string)($c['email'] ?? ''),
+            'subject' => ((string)($cfg['statement_subject'] ?? 'Pending invoices and Statement')) . ' — ' . $name,
+            'html' => $html, 'intro' => $intro, 'count' => count($c['invoices']), 'total' => array_sum($tot),
+        ];
     }
 }
 
@@ -278,8 +365,50 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     if (isset($_GET['data'])) {
         header('Content-Type: application/json; charset=utf-8');
         if (!$gAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
-        try { echo json_encode(gp_apply_collect(gp_build(isset($_GET['refresh'])))); }
+        try {
+            $out = gp_apply_collect(gp_build(isset($_GET['refresh'])));
+            require_once __DIR__ . '/mail.php';
+            $out['mailConnected'] = mail_is_connected('grace');
+            echo json_encode($out);
+        }
         catch (\Throwable $e) { http_response_code(500); echo api_fail($e); }
+        exit;
+    }
+
+    /* Statement of account: preview (?statement) and save-as-draft in Grace's OWN mailbox (?stmtdraft).
+       Both POST {cid, to, note}. The HTML is always rebuilt here — never taken from the browser — and
+       nothing is ever sent: the draft waits in her Drafts for her to review and send. */
+    if (isset($_GET['statement']) || isset($_GET['stmtdraft'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$gAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['ok'=>false, 'error'=>'POST only.']); exit; }
+        try {
+            $in  = json_decode(file_get_contents('php://input'), true) ?: [];
+            $cid = trim((string)($in['cid'] ?? ''));
+            $st  = $cid !== '' ? gp_statement($cid, mb_substr((string)($in['note'] ?? ''), 0, 2000)) : null;
+            if (!$st) { echo json_encode(['ok'=>false, 'error'=>'Client not found (or no unpaid invoices).']); exit; }
+            require_once __DIR__ . '/mail.php';
+            $connected = mail_is_connected('grace');
+            if (isset($_GET['statement'])) {
+                echo json_encode(['ok'=>true, 'connected'=>$connected, 'customer'=>$st['customer'], 'to'=>$st['to'], 'subject'=>$st['subject'], 'html'=>$st['html'], 'intro'=>$st['intro'], 'count'=>$st['count']]);
+                exit;
+            }
+            if (!$connected) { echo json_encode(['ok'=>false, 'error'=>'Connect your mailbox first.', 'connect'=>true]); exit; }
+            $to = trim((string)($in['to'] ?? '')); if ($to === '') $to = $st['to'];
+            $list = array_values(array_filter(array_map('trim', preg_split('/[,;\s]+/', $to))));
+            foreach ($list as $addr) { if (!filter_var($addr, FILTER_VALIDATE_EMAIL)) { echo json_encode(['ok'=>false, 'error'=>'"' . $addr . '" is not a valid email address.']); exit; } }
+            if (!$list) { echo json_encode(['ok'=>false, 'error'=>'Add the client\'s email address first.']); exit; }
+            $acct = mail_primary_account('grace');
+            [$d, $code] = mail_api('POST', '/api/accounts/' . rawurlencode($acct['accountId']) . '/messages', [
+                'mode' => 'draft', 'fromAddress' => $acct['from'], 'toAddress' => implode(',', $list),
+                'subject' => $st['subject'], 'content' => $st['html'], 'mailFormat' => 'html',
+            ], 'grace');
+            if ($code >= 400) { echo json_encode(['ok'=>false, 'error'=>'Zoho Mail did not save the draft (' . $code . '): ' . (string)($d['data']['moreInfo'] ?? ($d['status']['description'] ?? 'unknown error'))]); exit; }
+            $pdo = db(); gp_stmt_table($pdo);
+            $pdo->prepare("INSERT INTO grace_statements (customer_id,customer_name,to_email,total,created_by) VALUES (?,?,?,?,?)")
+                ->execute([$st['cid'], mb_substr($st['customer'], 0, 190), mb_substr(implode(',', $list), 0, 190), round((float)$st['total'], 2), mb_substr((string)($_SESSION['grace_user'] ?? ''), 0, 80)]);
+            echo json_encode(['ok'=>true, 'from'=>$acct['from'], 'to'=>implode(', ', $list), 'at'=>date('Y-m-d H:i:s')]);
+        } catch (\Throwable $e) { echo api_fail($e); }
         exit;
     }
 
@@ -418,6 +547,13 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
   .pill.ready{background:#0F7A34;color:#fff}
   .pill.arr{background:var(--blue-bg);color:var(--mail);border:1px solid #BccCF0}
+  .itag{font-size:9.5px;font-weight:800;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;border:1px solid var(--line);color:#8a857c;background:#F5F3EF;margin-right:3px}
+  .itag.etr{color:#0F7A34;background:var(--green-bg);border-color:#BFE0CB}
+  .itag.snt{color:var(--mail);background:var(--blue-bg);border-color:#BccCF0}
+  .stmprev{border:1px solid var(--line);background:#fff;padding:12px;max-height:46vh;overflow:auto}
+  .stmwarn{background:#FFF6E5;border:1px solid #F0D9A8;color:#7a5200;padding:10px 12px;font-size:13px;margin-bottom:6px}
+  .stmwarn a{color:#D95E07;font-weight:700}
+  .stmd{font-size:11px;color:var(--mail);white-space:nowrap}
   .rtag2{font-size:9.5px;font-weight:800;color:#0F7A34;background:var(--green-bg);border:1px solid #BFE0CB;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
   .readybar{margin-top:10px;background:var(--green-bg);border:1px solid #BFE0CB;border-left:3px solid #0F7A34;color:#0F5A28;padding:11px 14px;font-size:13.5px;font-weight:600}
   .arrbar{margin-top:8px;background:var(--blue-bg);border:1px solid #BccCF0;border-left:3px solid var(--mail);color:#163B9E;padding:11px 14px;font-size:13.5px;font-weight:600}
@@ -674,6 +810,26 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
     </div>
   </div>
 </div>
+<div id="stmModal" class="modal" onclick="if(event.target===this)closeStmt()">
+  <div class="mcard" style="max-width:760px">
+    <div class="mhead"><span class="mt" id="stmTitle">Statement</span><button class="mx" onclick="closeStmt()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="stmCid">
+      <div id="stmConn"></div>
+      <label class="ctclbl">Send to (client email)</label>
+      <input class="ctcin" id="stmTo" type="text" inputmode="email" placeholder="name@company.co.ke">
+      <label class="ctclbl">Message at the top <span class="muted" style="font-weight:400">(optional — leave as is for the standard wording)</span></label>
+      <textarea class="nt" id="stmNote" style="min-height:92px" onchange="stmtPreview()"></textarea>
+      <div class="muted" style="font-size:11.5px;margin:12px 0 6px" id="stmSubj"></div>
+      <div id="stmPrev" class="stmprev"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+        <button class="go" style="margin-top:0;flex:1" id="stmGo" onclick="stmtDraft()">Save to my Drafts</button>
+        <button class="gbtn" style="padding:0 16px" onclick="closeStmt()">Close</button>
+      </div>
+      <div class="muted" style="font-size:11.5px;margin-top:10px">Nothing is sent from here. The statement is saved in your Zoho Mail Drafts — open it there, check it and press Send.</div>
+    </div>
+  </div>
+</div>
 <script>
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const att=s=>esc(s).replace(/'/g,'&#39;');
@@ -737,6 +893,53 @@ function openContact(cid){
   setTimeout(()=>{const n=document.getElementById('ctcName');if(n)n.focus();},50);
 }
 function closeContact(){const m=document.getElementById('ctcModal');if(m)m.classList.remove('open');}
+/* ---- status tags (set by the office) + statement drafts ---- */
+function fisc(iv){ return !!(iv&&iv.fiscalised); }
+function wasSent(iv){ return !!(iv&&iv.sent); }
+function invTags(iv){ return (ownerReady(iv)?'<span class="rtag2" title="Cleared by the office — ready to collect">● ready</span> ':'')
+  +(fisc(iv)?'<span class="itag etr" title="Fiscalised — ETR receipt is on file">ETR</span>':'<span class="itag" title="Not fiscalised yet">no ETR</span>')
+  +(wasSent(iv)?'<span class="itag snt" title="Invoice has been sent out to the client">sent</span>':''); }
+function shortDate(s){ if(!s)return ''; const d=new Date(String(s).replace(' ','T')); return isNaN(d)?'':d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+function closeStmt(){const m=document.getElementById('stmModal');if(m)m.classList.remove('open');}
+async function stmtPost(route,body){ const r=await fetch('index.php?portal=grace&'+route+'=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return r.json(); }
+function openStmt(cid){
+  const c=cust(cid); if(!c)return;
+  document.getElementById('stmCid').value=cid;
+  document.getElementById('stmTitle').textContent='Statement — '+(c.customer||'');
+  document.getElementById('stmTo').value=c.email||'';
+  document.getElementById('stmNote').value='';
+  document.getElementById('stmSubj').textContent='';
+  document.getElementById('stmPrev').innerHTML='<div class="muted">Building the statement…</div>';
+  document.getElementById('stmModal').classList.add('open');
+  stmtPreview(true);
+}
+async function stmtPreview(first){
+  const cid=document.getElementById('stmCid').value, note=first?'':document.getElementById('stmNote').value;
+  const prev=document.getElementById('stmPrev'), go=document.getElementById('stmGo'), conn=document.getElementById('stmConn');
+  try{
+    const j=await stmtPost('statement',{cid,note});
+    if(!j||!j.ok){ prev.innerHTML='<div style="color:var(--red)">'+esc((j&&j.error)||'Could not build the statement.')+'</div>'; return; }
+    prev.innerHTML=j.html;   /* built by our own server from escaped data */
+    document.getElementById('stmSubj').textContent='Subject: '+j.subject+' · '+j.count+' invoice'+(j.count===1?'':'s');
+    if(first) document.getElementById('stmNote').value=j.intro||'';
+    DATA.mailConnected=!!j.connected;
+    conn.innerHTML=j.connected?'':'<div class="stmwarn">Your mailbox isn\'t connected yet, so drafts can\'t be saved. <a href="connect_mail.php">Connect my mailbox</a> — one time only.</div>';
+    go.disabled=!j.connected; go.textContent='Save to my Drafts';
+  }catch(e){ prev.innerHTML='<div style="color:var(--red)">'+esc(String(e))+'</div>'; }
+}
+async function stmtDraft(){
+  const cid=document.getElementById('stmCid').value, c=cust(cid), go=document.getElementById('stmGo');
+  const to=document.getElementById('stmTo').value.trim(), note=document.getElementById('stmNote').value;
+  if(!to){ alert('Add the client\'s email address first.'); return; }
+  go.disabled=true; go.textContent='Saving…';
+  try{
+    const j=await stmtPost('stmtdraft',{cid,to,note});
+    if(j&&j.ok){
+      if(c){ c.stmtAt=j.at; if(!c.email){ c.email=to.split(/[,;\s]+/)[0]; persist(cid); } }
+      closeStmt(); renderList(); toast('Saved in your Drafts ('+j.from+') — open Zoho Mail to send');
+    } else { go.disabled=false; go.textContent='Save to my Drafts'; alert((j&&j.error)||'Could not save the draft.'); }
+  }catch(e){ go.disabled=false; go.textContent='Save to my Drafts'; alert('Error: '+e); }
+}
 function saveContact(){
   const cid=document.getElementById('ctcCid').value; const c=cust(cid); if(!c)return;
   c.contactName=document.getElementById('ctcName').value.trim();
@@ -790,6 +993,8 @@ function matchFilter(c){
   if(FILTER==='nophone')return !(c.phone);
   if(FILTER==='ready')return cOwnerReady(c);
   if(FILTER==='arranged')return cArranged(c);
+  if(FILTER==='fisc')return (c.invoices||[]).some(fisc);
+  if(FILTER==='nofisc')return (c.invoices||[]).some(iv=>!fisc(iv));
   if(FILTER==='callback')return callbackDue(c);
   return true;
 }
@@ -887,7 +1092,7 @@ function render(){
       </div>
     </div>
     <div id="gList"></div>
-    <div class="muted" style="font-size:11.5px;text-align:center;margin-top:14px">Updated ${DATA.asOf?new Date(DATA.asOf).toLocaleString('en-GB'):'now'} · your notes are private to this portal and don't change Zoho</div>`;
+    <div class="muted" style="font-size:11.5px;text-align:center;margin-top:14px">Updated ${DATA.asOf?new Date(DATA.asOf).toLocaleString('en-GB'):'now'} · ${DATA.etrAsOf?'ETR / fiscalised status as of '+new Date(DATA.etrAsOf).toLocaleString('en-GB'):'ETR status not received from the office yet'} · your notes are private to this portal and don't change Zoho</div>`;
   renderList();
 }
 function renderChips(){
@@ -898,6 +1103,8 @@ function renderChips(){
     {k:'callback',label:'📞 Call back today',cls:'red',n:cs.filter(callbackDue).length},
     {k:'ready',label:'✅ Ready to collect',cls:'green',n:cs.filter(cOwnerReady).length},
     {k:'arranged',label:'📦 Collection arranged',cls:'green',n:cs.filter(cArranged).length},
+    {k:'fisc',label:'Fiscalised (ETR)',cls:'green',n:cs.filter(c=>(c.invoices||[]).some(fisc)).length},
+    {k:'nofisc',label:'Not fiscalised',cls:'',n:cs.filter(c=>(c.invoices||[]).some(iv=>!fisc(iv))).length},
     {k:'urgent',label:'30+ days late',cls:'red',n:cs.filter(c=>(c.maxOverdue||0)>=30).length},
     {k:'todo',label:'To contact',cls:'',n:cs.filter(c=>!c.status).length},
     {k:'promised',label:'Promised',cls:'amber',n:cs.filter(c=>c.status==='Promised').length},
@@ -940,7 +1147,7 @@ function renderFocus(list){
   const tel=telNum(c.phone), wa=waNum(c.phone), amt=fmtMap(c.totalByCur);
   const callBtn=c.phone?`<a class="fbtn call" href="tel:${att(tel)}">📞 Call</a>`:`<button class="fbtn addc" onclick="openContact('${jsq(c.cid)}')">+ Add contact first</button>`;
   const waBtn=(c.phone&&wa)?`<a class="fbtn wa" href="${att(waLink(c,'reminder'))}" target="_blank" rel="noopener">WhatsApp</a>`:'';
-  const invlist=(c.invoices||[]).slice(0,4).map(iv=>`<div class="finv"><span class="num">${esc(iv.number)}</span><span class="fia about">${iv.about?esc(iv.about):''}</span><span class="amt mono">${esc(fmtC(iv.currency,iv.balance))}</span></div>`).join('');
+  const invlist=(c.invoices||[]).slice(0,4).map(iv=>`<div class="finv"><span class="num">${esc(iv.number)}</span><span class="fia about">${invTags(iv)} ${iv.about?esc(iv.about):''}</span><span class="amt mono">${esc(fmtC(iv.currency,iv.balance))}</span></div>`).join('');
   const more=(c.invoices||[]).length>4?`<div class="muted" style="font-size:11.5px;padding:4px 0">+${c.invoices.length-4} more invoice(s)</div>`:'';
   const prog=`<div class="fprog"><div class="fpbar"><span style="width:${Math.round(worked/total*100)}%"></span></div><div class="fplab">${worked} of ${total} worked</div></div>`;
   let actions;
@@ -959,7 +1166,8 @@ function renderFocus(list){
       <div class="frow3">
         <button class="fskip" onclick="focusSkip('${jsq(c.cid)}')">Skip →</button>
         <button class="fdetail" onclick="openContact('${jsq(c.cid)}')">Edit contact</button>
-      </div>`;
+        <button class="fdetail" onclick="openStmt('${jsq(c.cid)}')">✉ Email statement</button>
+      </div>${c.stmtAt?`<div class="stmd" style="margin-top:6px">Statement drafted ${esc(shortDate(c.stmtAt))}</div>`:''}`;
   }
   return `<div class="focuscard">
     ${prog}
@@ -1006,6 +1214,7 @@ function renderGroup(c){
         ${na?`<span class="na ${na.cls}">${esc(na.t)}</span>`:''}
         ${spill}${daysPill}
         ${nReady>0?`<span class="pill ready">● ${nReady} ready to collect</span>`:''}${nArr>0?`<span class="pill arr">📦 ${nArr} collection arranged</span>`:''}
+        <span class="itag ${c.fiscalCount>0?'etr':''}" title="Invoices with an ETR receipt on file">ETR ${c.fiscalCount||0}/${c.count}</span>${c.stmtAt?`<span class="stmd">✉ statement drafted ${esc(shortDate(c.stmtAt))}</span>`:''}
         <span class="gtot">${esc(fmtMap(c.totalByCur))}</span>
         <span class="gacts" onclick="event.stopPropagation()">${callbtns}</span>
       </div>
@@ -1016,7 +1225,7 @@ function renderGroup(c){
     <td data-l="What it's for" class="about">${iv.about?esc(iv.about):'<span class="muted">—</span>'}</td>
     <td data-l="Due" class="mono dd">${esc(iv.due||'—')}${iv.overdue>0?` <span class="od">${iv.overdue}d late</span>`:''}</td>
     <td data-l="Amount" class="r mono amt">${esc(fmtC(iv.currency,iv.balance))}</td>
-    <td data-l="Collection" class="r">${ownerReady(iv)?'<span class="rtag2" title="Cleared by the office — ready to collect">● ready</span> ':''}${iv.id?`<button class="rc ${arranged(iv)?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)" title="Mark when the customer confirms — the office will send someone to collect">${arranged(iv)?'✓ Collection arranged':'Arrange collection'}</button>`:''}</td>
+    <td data-l="Collection" class="r">${invTags(iv)}${iv.id?`<button class="rc ${arranged(iv)?'on':''}" onclick="confirmToggle('${jsq(iv.id)}','${jsq(iv.number)}','${jsq(c.customer)}',this)" title="Mark when the customer confirms — the office will send someone to collect">${arranged(iv)?'✓ Collection arranged':'Arrange collection'}</button>`:''}</td>
     <td data-l="Details" class="r">${iv.id?`<button class="ivv" onclick="openInv('${jsq(iv.id)}')">Details</button>`:''}</td>
   </tr>`).join(''):'';
   let panel='';
@@ -1031,6 +1240,7 @@ function renderGroup(c){
       <span class="msglbl">Send:</span>
       ${waBtn('reminder','Reminder')}${waBtn('followup','Follow-up')}${waBtn('collect','Confirm collection')}
       <button class="msgb copy" onclick="copyMsg('${jsq(cid)}','reminder')">Copy reminder</button>
+      <button class="msgb copy" onclick="openStmt('${jsq(cid)}')">✉ Email statement</button>
     </div>`;
     panel=`<tr class="gpanel"><td colspan="6">
       ${phone}
