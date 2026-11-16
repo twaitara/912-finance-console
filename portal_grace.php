@@ -64,7 +64,7 @@ if (!function_exists('gp_build')) {
     /* All unpaid invoices grouped by customer, with cached phone + overlaid notes. */
     function gp_build($force) {
         $dir = __DIR__ . '/data'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        $cache = $dir . '/grace_unpaid_v5.json';   // v5: all currencies (USD gated per-request by share)
+        $cache = $dir . '/grace_unpaid_v6.json';   // v6: every invoice carries 'bcy' (balance in KES at Zoho's rate)
         if (!$force && is_file($cache) && (time() - filemtime($cache) < 900)) { $j = json_decode(file_get_contents($cache), true); if (is_array($j)) { $j['cached'] = true; return $j; } }
         $cfg = zoho_config();
 
@@ -91,6 +91,7 @@ if (!function_exists('gp_build')) {
                     'date'     => substr((string)($inv['date'] ?? ''), 0, 10),
                     'due'      => substr((string)($inv['due_date'] ?? ''), 0, 10),
                     'balance'  => $bal,
+                    'bcy'      => $bal * (((float)($inv['exchange_rate'] ?? 0)) > 0 ? (float)$inv['exchange_rate'] : 1),   // KES value at the invoice's Zoho rate
                     'currency' => strtoupper((string)($inv['currency_code'] ?? ($cfg['currency'] ?? 'KES'))),
                 ];
             }
@@ -198,7 +199,14 @@ if (!function_exists('gp_build')) {
             foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[(string)$v] = true;
         } catch (\Throwable $e) { /* leave sets empty -> KES-only, no ready */ }
         /* sent-out ticks + per-invoice ETR (fiscalised) pushed from the office PC + statement-draft log */
-        $sent = []; $etr = []; $etrAt = ''; $stmt = [];
+        $sent = []; $etr = []; $etrAt = ''; $stmt = []; $hide = []; $hideOk = false;
+        try {
+            $pdo = db();
+            $pdo->exec("CREATE TABLE IF NOT EXISTS grace_hide (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            foreach ($pdo->query("SELECT invoice_id FROM grace_hide")->fetchAll(PDO::FETCH_COLUMN) as $v) $hide[(string)$v] = true;
+            $hideOk = true;
+        } catch (\Throwable $e) { /* handled below: fail closed */ }
+        if (!$hideOk) throw new Exception('Could not check which invoices are hidden — please try again.');
         try {
             $pdo = db();
             $pdo->exec("CREATE TABLE IF NOT EXISTS collect_sent (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -214,12 +222,22 @@ if (!function_exists('gp_build')) {
         /* Rebuild per-request so USD visibility (share) and ready flags are always current:
            KES invoices always shown; USD shown only when the invoice is shared to Grace. */
         $out = []; $gTotalByCur = []; $invCount = 0; $totalReady = 0; $amtByCur = [];
+        /* company-wide total in KES: EVERY unpaid invoice (USD converted at its Zoho rate, plus any
+           hidden ones) — Grace sees this one figure, but never the USD/hidden invoices themselves */
+        $grandKES = 0; $grandN = 0; $fxN = 0; $fxKES = 0;
+        foreach ($res['customers'] as $c0) { foreach ($c0['invoices'] as $iv0) {
+            $v = (float)($iv0['bcy'] ?? $iv0['balance'] ?? 0); $grandKES += $v; $grandN++;
+            if (strtoupper((string)($iv0['currency'] ?? 'KES')) !== 'KES') { $fxN++; $fxKES += $v; }
+        } }
+        $res['grandKES'] = round($grandKES, 2); $res['grandCount'] = $grandN; $res['fxCount'] = $fxN; $res['fxKES'] = round($fxKES, 2);
         foreach ($res['customers'] as $c) {
             $inv = []; $tbc = []; $sortTotal = 0; $maxOv = 0; $rc = 0; $rbc = []; $fc = 0; $sc = 0;
             foreach ($c['invoices'] as $iv) {
                 $cur = strtoupper((string)($iv['currency'] ?? 'KES'));
-                if ($cur !== 'KES' && !isset($share[(string)($iv['id'] ?? '')])) continue;   // USD hidden unless shared
+                if ($cur !== 'KES') continue;                               // only KES is ever shown to Grace
+                if (isset($hide[(string)($iv['id'] ?? '')])) continue;        // hidden by the owner
                 $bal = (float)($iv['balance'] ?? 0);
+                unset($iv['bcy']);
                 $iv['ready'] = isset($ready[(string)($iv['id'] ?? '')]);
                 $iv['confirmed'] = isset($confirm[(string)($iv['id'] ?? '')]);
                 $iv['sent'] = isset($sent[(string)($iv['id'] ?? '')]);
@@ -547,6 +565,9 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
   .pill.ready{background:#0F7A34;color:#fff}
   .pill.arr{background:var(--blue-bg);color:var(--mail);border:1px solid #BccCF0}
+  .hfig{display:flex;gap:28px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--hair)}
+  .hfig .hv{font-family:var(--mono);font-weight:600;font-size:18px;margin-top:3px}
+  .hfig .hn{font-size:11.5px;color:var(--mute);margin-top:2px}
   .itag{font-size:9.5px;font-weight:800;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;border:1px solid var(--line);color:#8a857c;background:#F5F3EF;margin-right:3px}
   .itag.etr{color:#0F7A34;background:var(--green-bg);border-color:#BFE0CB}
   .itag.snt{color:var(--mail);background:var(--blue-bg);border-color:#BccCF0}
@@ -1067,7 +1088,12 @@ function render(){
     <div class="hero">
       <div>
         <div class="hl">Total outstanding</div>
-        <div class="ht">${esc(fmtMap(DATA.totalByCur))}</div>
+        <div class="ht">${esc(fmtC('KES',DATA.grandKES!=null?DATA.grandKES:((DATA.totalByCur||{}).KES||0)))}</div>
+        ${DATA.fxCount>0?`<div class="hs">All unpaid invoices in KES — includes ${esc(fmtC('KES',DATA.fxKES))} from ${DATA.fxCount} USD invoice${DATA.fxCount===1?'':'s'} (converted) handled by the office</div>`:''}
+        ${(()=>{const rt=readyTotals();return `<div class="hfig">
+          <div><div class="hl">Your collection potential</div><div class="hv">${esc(fmtC('KES',(DATA.totalByCur||{}).KES||0))}</div><div class="hn">${DATA.invCount||0} KES invoice${(DATA.invCount||0)===1?'':'s'} on your list</div></div>
+          <div><div class="hl">Ready to collect now</div><div class="hv" style="color:#0F7A34">${esc(fmtC('KES',rt.by.KES||0))}</div><div class="hn">${rt.n} invoice${rt.n===1?'':'s'} cleared by the office</div></div>
+        </div>`;})()}
         <div class="hs">${toChase} customer${toChase===1?'':'s'} to chase · ${DATA.invCount||0} unpaid invoices</div>
       </div>
       <div class="hr">
