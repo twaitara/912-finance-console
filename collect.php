@@ -59,8 +59,18 @@ try {
     /* the owner has picked up the cheque/payment for this invoice — ticked in the local app, shown to Grace */
     $pdo->exec("CREATE TABLE IF NOT EXISTS collect_picked (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS grace_hide_client (customer_key VARCHAR(190) PRIMARY KEY, customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $in = json_decode(file_get_contents('php://input'), true) ?: [];
+        /* hide / show a WHOLE client on Grace's portal (covers every current and future invoice) */
+        if ((string)($in['kind'] ?? '') === 'hideclient') {
+            $nm = mb_substr(trim((string)($in['customer_name'] ?? '')), 0, 190);
+            if ($nm === '') { echo json_encode(['ok'=>false, 'error'=>'no customer_name']); exit; }
+            $key = mb_strtolower($nm);
+            if (!empty($in['ready'])) $pdo->prepare("INSERT INTO grace_hide_client (customer_key,customer_name) VALUES (?,?) ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name)")->execute([$key, $nm]);
+            else $pdo->prepare("DELETE FROM grace_hide_client WHERE customer_key=?")->execute([$key]);
+            echo json_encode(['ok'=>true, 'kind'=>'hideclient', 'customer_name'=>$nm, 'on'=>!empty($in['ready'])]); exit;
+        }
         $iid = trim((string)($in['invoice_id'] ?? ''));
         if ($iid === '') { echo json_encode(['ok'=>false, 'error'=>'no invoice_id']); exit; }
         $k = (string)($in['kind'] ?? 'ready');
@@ -103,9 +113,11 @@ try {
     foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[] = (string)$v;
     $sent = [];
     foreach ($pdo->query("SELECT invoice_id FROM collect_sent")->fetchAll(PDO::FETCH_COLUMN) as $v) $sent[] = (string)$v;
+    $hideClients = [];
+    foreach ($pdo->query("SELECT customer_name FROM grace_hide_client")->fetchAll(PDO::FETCH_COLUMN) as $v) $hideClients[] = (string)$v;
     $picked = [];
     foreach ($pdo->query("SELECT invoice_id FROM collect_picked")->fetchAll(PDO::FETCH_COLUMN) as $v) $picked[] = (string)$v;
     $hide = [];
     foreach ($pdo->query("SELECT invoice_id FROM grace_hide")->fetchAll(PDO::FETCH_COLUMN) as $v) $hide[] = (string)$v;
-    echo json_encode(['ok'=>true, 'ready'=>$ready, 'share'=>$share, 'confirm'=>$confirm, 'sent'=>$sent, 'hide'=>$hide, 'picked'=>$picked]);
+    echo json_encode(['ok'=>true, 'ready'=>$ready, 'share'=>$share, 'confirm'=>$confirm, 'sent'=>$sent, 'hide'=>$hide, 'picked'=>$picked, 'hide_clients'=>$hideClients]);
 } catch (\Throwable $e) { echo api_fail($e); }

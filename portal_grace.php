@@ -199,11 +199,13 @@ if (!function_exists('gp_build')) {
             foreach ($pdo->query("SELECT invoice_id FROM collect_confirm")->fetchAll(PDO::FETCH_COLUMN) as $v) $confirm[(string)$v] = true;
         } catch (\Throwable $e) { /* leave sets empty -> KES-only, no ready */ }
         /* sent-out ticks + per-invoice ETR (fiscalised) pushed from the office PC + statement-draft log */
-        $sent = []; $etr = []; $etrAt = ''; $stmt = []; $picked = []; $hide = []; $hideOk = false;
+        $sent = []; $etr = []; $etrAt = ''; $stmt = []; $picked = []; $hide = []; $hideClient = []; $hideOk = false;
         try {
             $pdo = db();
             $pdo->exec("CREATE TABLE IF NOT EXISTS grace_hide (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             foreach ($pdo->query("SELECT invoice_id FROM grace_hide")->fetchAll(PDO::FETCH_COLUMN) as $v) $hide[(string)$v] = true;
+            $pdo->exec("CREATE TABLE IF NOT EXISTS grace_hide_client (customer_key VARCHAR(190) PRIMARY KEY, customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            foreach ($pdo->query("SELECT customer_key FROM grace_hide_client")->fetchAll(PDO::FETCH_COLUMN) as $v) $hideClient[(string)$v] = true;
             $hideOk = true;
         } catch (\Throwable $e) { /* handled below: fail closed */ }
         if (!$hideOk) throw new Exception('Could not check which invoices are hidden — please try again.');
@@ -233,6 +235,7 @@ if (!function_exists('gp_build')) {
         } }
         $res['grandKES'] = round($grandKES, 2); $res['grandCount'] = $grandN; $res['fxCount'] = $fxN; $res['fxKES'] = round($fxKES, 2);
         foreach ($res['customers'] as $c) {
+            if (isset($hideClient[mb_strtolower(trim((string)($c['customer'] ?? '')))])) continue;   // whole client hidden by the owner
             $inv = []; $tbc = []; $sortTotal = 0; $maxOv = 0; $rc = 0; $rbc = []; $fc = 0; $sc = 0;
             foreach ($c['invoices'] as $iv) {
                 $cur = strtoupper((string)($iv['currency'] ?? 'KES'));
