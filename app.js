@@ -4934,8 +4934,7 @@ function mqListHtml(){
         ${canProject?`<button class="btn qb" style="background:#7A5AF8;box-shadow:none" ${tip('Start the job: capture actual costs against this quote before billing')} onclick="mqToProject(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'📋 Convert to project'}</button>`:''}
         ${canCost?`<button class="btn qb" style="background:var(--good);box-shadow:none" ${tip('Enter or edit the actual costs that went into this job, broken down per line')} onclick="jcOpen(${q.id},'capture')">${isInvoiced?'💰 Capture costs':'💰 Costs'}</button>`:''}
         ${canBill?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? Review costs vs profit, create the invoice, and post the expenses to Zoho')} onclick="jcOpen(${q.id},'bill')" ${busy?'disabled':''}>${busy?'Working…':'🧾 Bill client'}</button>`:''}
-        ${canGenJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? This creates the invoice in Zoho and opens the printable job card to download')} onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Generate Job Card'}</button>`
-          : ((canJob && !isInvoiced)?`<button class="btn sec qb" style="opacity:.75" ${tip(pushed?'This quote is not approved yet — a job card is only possible once it is approved':'Push this quote to Zoho and get it approved first')} onclick="mqJobCardTry(${q.id})" ${busy?'disabled':''}>${busy?'Checking…':'🧾 Generate Job Card'}</button>`:'')}
+        ${canGenJob?`<button class="btn qb" style="background:var(--blue);box-shadow:none" ${tip('Job done? This creates the invoice in Zoho and opens the printable job card to download')} onclick="mqJobCard(${q.id})" ${busy?'disabled':''}>${busy?'Working…':'🧾 Generate Job Card'}</button>`:''}
         ${(canJob && isInvoiced)?`<button class="btn sec qb" ${tip('Open the printable job card (reprints are stamped COPY)')} onclick="openJobCard(${q.id})">⤓ Job card</button>`:''}
         ${(ME.admin && (isProject||isInvoiced))?`<button class="btn sec qb" ${tip('Bill of Quantities — materials required (labour excluded), branded PDF')} onclick="openBoq(${q.id})">⤓ BOQ</button>`:''}
         ${(isInvoiced && !ME.admin)?`<span class="pill" style="background:#EEF2FE;color:var(--blue);align-self:center;padding:5px 10px" ${tip('This quote has been invoiced')}>🧾 Invoiced · ${qesc(q.zoho_invoice_number||'')}</span>`:''}
@@ -5189,6 +5188,21 @@ function mqJobCardTry(id){
     alert('This quote is not approved yet.\n\nA job card can only be generated once the office approves the quote. As soon as it is approved, tap this button again.');
   }).catch(()=>{ MQ.busyId=0; render(); alert('Could not check the quote status. Check your internet and try again.'); });
 }
+/* While My Quotes is open and something is awaiting approval, re-read the quotes every minute
+   (and Zoho every 3rd minute) so Generate Job Card appears by itself soon after the office approves. */
+let _mqPollN=0;
+setInterval(()=>{
+  if(typeof TAB==='undefined'||TAB!=='myquotes'||document.hidden||!MQ.loaded||MQ.loading||MQ.busyId) return;
+  const waiting=(MQ.quotes||[]).some(q=>q.zoho_estimate_id&&!q.zoho_invoice_number&&['draft','pending_approval'].includes(q.status));
+  if(!waiting) return;
+  if((++_mqPollN)%3===0){ mqSync(true); return; }
+  fetch('api/quotes.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list'})})
+  .then(r=>r.json()).then(j=>{ if(!j||!j.ok||TAB!=='myquotes'||MQ.busyId) return;
+    const by={}; (j.quotes||[]).forEach(q=>by[q.id]=q); let changed=false;
+    (MQ.quotes||[]).forEach(q=>{ const n=by[q.id]; if(n&&(n.status!==q.status||(n.zoho_invoice_number||'')!==(q.zoho_invoice_number||''))){ q.status=n.status; q.zoho_invoice_number=n.zoho_invoice_number; changed=true; } });
+    if(changed){ mqNormalize(MQ.quotes); render(); }
+  }).catch(()=>{});
+}, 60000);
 function mqJobCard(id){
   if(!confirm('Have you completed this job?\n\nGenerating the Job Card will mark the job done and create the INVOICE in Zoho. This cannot be undone.')) return;
   if(!confirm('Please confirm once more: is the job fully complete and ready to invoice the customer?')) return;
