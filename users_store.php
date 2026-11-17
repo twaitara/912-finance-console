@@ -15,6 +15,7 @@ function users_table(PDO $pdo) {
     try { $pdo->exec("ALTER TABLE app_users ADD COLUMN email VARCHAR(190) DEFAULT '' AFTER pass_hash"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE app_users ADD COLUMN disabled TINYINT NOT NULL DEFAULT 0 AFTER is_admin"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE app_users ADD COLUMN pin_hash VARCHAR(255) DEFAULT '' AFTER pass_hash"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE app_users ADD COLUMN phone VARCHAR(32) DEFAULT '' AFTER email"); } catch (Exception $e) {}
 }
 
 /* find a user by username or email (no password check) — used by the PIN login flow. */

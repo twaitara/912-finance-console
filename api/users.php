@@ -17,7 +17,7 @@ $action = $_GET['action'] ?? 'list';
 $pdo = db();
 
 function users_payload(PDO $pdo) {
-    $rows = $pdo->query("SELECT id,username,email,tabs,is_admin,disabled FROM app_users ORDER BY is_admin DESC, username ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $rows = $pdo->query("SELECT id,username,email,phone,tabs,is_admin,disabled FROM app_users ORDER BY is_admin DESC, username ASC")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as &$r) { $r['id'] = (int)$r['id']; $r['is_admin'] = (int)$r['is_admin']; $r['disabled'] = (int)($r['disabled'] ?? 0); }
     return ['ok'=>true, 'users'=>$rows];
 }
@@ -105,6 +105,9 @@ try {
         $tabs = users_clean_tabs($in['tabs'] ?? '');
         if (array_key_exists('email', $in)) {
             $pdo->prepare("UPDATE app_users SET email=? WHERE id=?")->execute([substr(trim((string)$in['email']),0,190), $id]);
+        }
+        if (array_key_exists('phone', $in)) {
+            $pdo->prepare("UPDATE app_users SET phone=? WHERE id=?")->execute([substr(preg_replace('/[^0-9+ ]/', '', (string)$in['phone']),0,32), $id]);
         }
         if (array_key_exists('is_admin', $in)) {
             $isAdmin = !empty($in['is_admin']) ? 1 : 0;
