@@ -1541,7 +1541,7 @@ function renderGroup(c){
 }
 /* ================= ZOHO SYSTEM tab ================= */
 let MODE='coll';
-const Z={sub:'invoices', invoices:{q:'',status:'',page:1,items:null,more:false,err:''}, quotes:{q:'',status:'',page:1,items:null,more:false,err:''},
+const Z={sub:'invoices', invoices:{q:'',status:'unpaid',page:1,items:null,more:false,err:''}, quotes:{q:'',status:'',page:1,items:null,more:false,err:''},
   st:{cust:null, results:[], mode:'unpaid', from:'', to:'', note:'', prev:null, busy:false, err:''}};
 function setMain(m){ MODE=m; try{ localStorage.setItem('grace_main',m); }catch(e){}
   document.getElementById('app').style.display=(m==='coll')?'':'none';
