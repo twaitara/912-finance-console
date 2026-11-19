@@ -502,6 +502,226 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
         exit;
     }
 
+    /* ================= ZOHO SYSTEM tab: real Zoho invoices, quotes and customer statements =================
+       Same visibility rules as the collections list: KES only, and never a client or invoice the owner
+       has hidden from Grace. Everything is read-only except "Save statement to my Drafts". */
+    if (!function_exists('gz_hidden')) {
+        function gz_hidden() {
+            $pdo = db();   // fail closed: if this throws, the caller returns an error, never unfiltered data
+            $pdo->exec("CREATE TABLE IF NOT EXISTS grace_hide (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $pdo->exec("CREATE TABLE IF NOT EXISTS grace_hide_client (customer_key VARCHAR(190) PRIMARY KEY, customer_name VARCHAR(190) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $inv = []; $cli = [];
+            foreach ($pdo->query("SELECT invoice_id FROM grace_hide")->fetchAll(PDO::FETCH_COLUMN) as $v) $inv[(string)$v] = true;
+            foreach ($pdo->query("SELECT customer_key FROM grace_hide_client")->fetchAll(PDO::FETCH_COLUMN) as $v) $cli[(string)$v] = true;
+            return [$inv, $cli];
+        }
+        function gz_client_hidden($name, $cli) { return isset($cli[mb_strtolower(trim((string)$name))]); }
+        function gz_allowed($cur, $customer, $id, $hideInv, $hideCli) {
+            if (strtoupper((string)($cur ?: 'KES')) !== 'KES') return false;
+            if (gz_client_hidden($customer, $hideCli)) return false;
+            if ($id !== '' && isset($hideInv[(string)$id])) return false;
+            return true;
+        }
+        function gz_detail($kind, $id) {
+            $path = ($kind === 'quote' ? 'estimates/' : 'invoices/') . rawurlencode($id);
+            [$d, $c] = zoho_api('GET', $path);
+            $doc = $d[$kind === 'quote' ? 'estimate' : 'invoice'] ?? null;
+            if ($c >= 400 || !$doc) return null;
+            $items = [];
+            foreach (($doc['line_items'] ?? []) as $li) {
+                $items[] = ['name'=>(string)($li['name'] ?? ''), 'desc'=>(string)($li['description'] ?? ''), 'qty'=>(float)($li['quantity'] ?? 0),
+                    'rate'=>(float)($li['rate'] ?? 0), 'amt'=>(float)($li['item_total'] ?? 0), 'tax'=>(string)($li['tax_name'] ?? ''), 'taxpc'=>(float)($li['tax_percentage'] ?? 0)];
+            }
+            $taxes = [];
+            foreach (($doc['taxes'] ?? []) as $tx) $taxes[] = ['name'=>(string)($tx['tax_name'] ?? ''), 'amount'=>(float)($tx['tax_amount'] ?? 0)];
+            return [
+                'kind'=>$kind, 'id'=>(string)$id, 'customer_id'=>(string)($doc['customer_id'] ?? ''),
+                'number'=>(string)($doc[$kind === 'quote' ? 'estimate_number' : 'invoice_number'] ?? ''),
+                'customer'=>(string)($doc['customer_name'] ?? ''), 'date'=>substr((string)($doc['date'] ?? ''), 0, 10),
+                'due'=>substr((string)($doc[$kind === 'quote' ? 'expiry_date' : 'due_date'] ?? ''), 0, 10),
+                'status'=>(string)($doc['status'] ?? ''), 'currency'=>strtoupper((string)($doc['currency_code'] ?? 'KES')),
+                'reference'=>(string)($doc['reference_number'] ?? ''), 'subject'=>(string)($doc['subject'] ?? ''),
+                'sub_total'=>(float)($doc['sub_total'] ?? 0), 'tax_total'=>(float)($doc['tax_total'] ?? 0),
+                'discount'=>(float)($doc['discount_total'] ?? ($doc['discount'] ?? 0)), 'shipping'=>(float)($doc['shipping_charge'] ?? 0),
+                'adjustment'=>(float)($doc['adjustment'] ?? 0), 'inclusive'=>!empty($doc['is_inclusive_tax']), 'taxes'=>$taxes,
+                'total'=>(float)($doc['total'] ?? 0), 'balance'=>($kind === 'quote' ? null : (float)($doc['balance'] ?? 0)),
+                'notes'=>(string)($doc['notes'] ?? ''), 'items'=>$items,
+            ];
+        }
+        /* All invoices for one customer in a date range (or every unpaid one), KES only, hidden removed. */
+        function gz_statement_data($cid, $from, $to, $mode, $hideInv, $hideCli) {
+            [$cd, $cc] = zoho_api('GET', 'contacts/' . rawurlencode($cid));
+            $ct = $cd['contact'] ?? null;
+            if ($cc >= 400 || !$ct) throw new Exception('Customer not found in Zoho.');
+            $name = (string)($ct['contact_name'] ?? '');
+            if (gz_client_hidden($name, $hideCli)) throw new Exception('This customer is not available.');
+            $rows = []; $page = 1;
+            do {
+                $q = ['customer_id'=>$cid, 'per_page'=>200, 'page'=>$page, 'sort_column'=>'date', 'sort_order'=>'A'];
+                if ($mode === 'unpaid') $q['filter_by'] = 'Status.Unpaid';
+                else { if ($from !== '') $q['date_start'] = $from; if ($to !== '') $q['date_end'] = $to; }
+                [$d, $c] = zoho_api('GET', 'invoices', null, $q);
+                if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error (invoices)');
+                foreach (($d['invoices'] ?? []) as $iv) {
+                    if (in_array((string)($iv['status'] ?? ''), ['void', 'draft'], true)) continue;
+                    if (!gz_allowed($iv['currency_code'] ?? 'KES', $name, (string)($iv['invoice_id'] ?? ''), $hideInv, $hideCli)) continue;
+                    $rows[] = ['id'=>(string)$iv['invoice_id'], 'number'=>(string)($iv['invoice_number'] ?? ''), 'date'=>substr((string)($iv['date'] ?? ''), 0, 10),
+                        'due'=>substr((string)($iv['due_date'] ?? ''), 0, 10), 'status'=>(string)($iv['status'] ?? ''),
+                        'total'=>(float)($iv['total'] ?? 0), 'balance'=>(float)($iv['balance'] ?? 0)];
+                }
+                $more = !empty($d['page_context']['has_more_page']); $page++;
+            } while ($more && $page <= 10);
+            $email = trim((string)($ct['email'] ?? ''));
+            foreach (($ct['contact_persons'] ?? []) as $p) { if (!empty($p['is_primary_contact']) && !empty($p['email'])) { $email = (string)$p['email']; break; } }
+            return ['cid'=>(string)$cid, 'customer'=>$name, 'email'=>$email, 'rows'=>$rows];
+        }
+        function gz_statement_html($st, $from, $to, $mode, $note) {
+            $cfg = require __DIR__ . '/config.php';
+            $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+            $f = fn($n) => number_format((float)$n, 2);
+            $today = date('Y-m-d'); $tT = 0; $tP = 0; $tB = 0; $tO = 0; $body = ''; $i = 0;
+            $td = 'padding:8px 10px;border-bottom:1px solid #ECEFF3;'; $th = 'padding:9px 10px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;';
+            foreach ($st['rows'] as $r) {
+                $paid = max(0, $r['total'] - $r['balance']); $late = ($r['balance'] > 0 && $r['due'] !== '' && $r['due'] < $today);
+                $tT += $r['total']; $tP += $paid; $tB += $r['balance']; if ($late) $tO += $r['balance'];
+                $body .= '<tr style="background:' . ($i++ % 2 ? '#FAFBFD' : '#FFFFFF') . '"><td style="' . $td . '">' . $e($r['number']) . '</td><td style="' . $td . 'color:#475569">' . $e($r['date']) . '</td>'
+                    . '<td style="' . $td . 'color:' . ($late ? '#D64933' : '#475569') . '">' . $e($r['due']) . '</td><td style="' . $td . 'text-align:right">' . $f($r['total']) . '</td>'
+                    . '<td style="' . $td . 'text-align:right;color:#16A34A">' . $f($paid) . '</td><td style="' . $td . 'text-align:right;font-weight:600">' . $f($r['balance']) . '</td></tr>';
+            }
+            if ($body === '') $body = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#94A3B8">No invoices in this period.</td></tr>';
+            $period = $mode === 'unpaid' ? ('All unpaid invoices as at ' . date('j F Y')) : ('Invoices dated ' . ($from !== '' ? date('j M Y', strtotime($from)) : 'the start') . ' to ' . ($to !== '' ? date('j M Y', strtotime($to)) : date('j M Y')));
+            $intro = trim((string)$note) !== '' ? (string)$note : "Dear Sir/Madam,\n\nPlease find below your statement of account. Kindly review it and arrange settlement of the outstanding balance.\n\nThank you.";
+            $footer = (string)($cfg['statement_footer'] ?? '');
+            if ($footer === '') $footer = "Prepared and reconciled by the Waitara Holdings Group of Companies Console — Nine One Two Holdings' intelligent finance engine, delivering precise, automated account statements in real time.";
+            return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13.5px;color:#15202B;max-width:720px">'
+                . '<div style="background:#15202B;border-radius:10px 10px 0 0;padding:18px 22px;color:#fff"><table width="100%" style="border-collapse:collapse"><tr>'
+                . '<td style="vertical-align:middle"><span style="display:inline-block;background:#F56F00;color:#fff;font-weight:700;font-size:15px;padding:7px 10px;border-radius:8px">912</span></td>'
+                . '<td style="vertical-align:middle;text-align:right"><div style="font-size:16px;font-weight:700;letter-spacing:.5px">STATEMENT OF ACCOUNT</div><div style="font-size:12px;color:#AEB9C7">' . $e($st['customer']) . '</div><div style="font-size:11px;color:#AEB9C7;margin-top:2px">' . $e($period) . '</div></td></tr></table></div>'
+                . '<div style="border:1px solid #E6EAF0;border-top:0;border-radius:0 0 10px 10px;padding:20px 22px">'
+                . '<p style="margin:0 0 16px;line-height:1.55">' . nl2br($e($intro)) . '</p>'
+                . '<table style="border-collapse:collapse;width:100%;font-size:12.5px;border:1px solid #E6EAF0"><thead><tr style="background:#F56F00;color:#fff">'
+                . '<th style="' . $th . 'text-align:left">Invoice</th><th style="' . $th . 'text-align:left">Date</th><th style="' . $th . 'text-align:left">Due</th><th style="' . $th . 'text-align:right">Amount</th><th style="' . $th . 'text-align:right">Paid</th><th style="' . $th . 'text-align:right">Balance</th></tr></thead>'
+                . '<tbody>' . $body . '</tbody><tfoot>'
+                . '<tr style="background:#F5F3EF;font-weight:700"><td colspan="3" style="padding:9px 10px;text-align:right">Totals (KES)</td><td style="padding:9px 10px;text-align:right">' . $f($tT) . '</td><td style="padding:9px 10px;text-align:right;color:#16A34A">' . $f($tP) . '</td><td style="padding:9px 10px;text-align:right">' . $f($tB) . '</td></tr>'
+                . ($tO > 0 ? '<tr style="background:#FDF1EE"><td colspan="5" style="padding:9px 10px;text-align:right;color:#D64933;font-weight:600">Of which overdue</td><td style="padding:9px 10px;text-align:right;color:#D64933;font-weight:700">KES ' . $f($tO) . '</td></tr>' : '')
+                . '<tr style="background:#15202B;color:#fff"><td colspan="5" style="padding:11px 10px;text-align:right;font-weight:700">TOTAL OUTSTANDING</td><td style="padding:11px 10px;text-align:right;font-weight:700;color:#F8B26A;white-space:nowrap">KES ' . $f($tB) . '</td></tr></tfoot></table>'
+                . '<p style="margin:14px 0 0;color:#64748B;font-size:12px">For any queries on this statement, please reply to this email.</p>'
+                . '<p style="margin:12px 0 0;padding-top:10px;border-top:1px solid #EEF1F5;color:#AEB9C7;font-size:10px;font-style:italic">' . $e($footer) . '</p></div></div>';
+        }
+    }
+
+    if (isset($_GET['zlist']) || isset($_GET['zdoc']) || isset($_GET['zcust']) || isset($_GET['zstmt'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$gAuthed) { http_response_code(403); echo json_encode(['ok'=>false, 'error'=>'Not signed in.']); exit; }
+        try {
+            [$hideInv, $hideCli] = gz_hidden();
+
+            if (isset($_GET['zlist'])) {                          // list invoices or quotes
+                $kind = $_GET['zlist'] === 'quotes' ? 'quote' : 'invoice';
+                $page = max(1, min(200, (int)($_GET['page'] ?? 1)));
+                $q = ['per_page'=>50, 'page'=>$page, 'sort_column'=>'date', 'sort_order'=>'D'];
+                $s = trim((string)($_GET['q'] ?? '')); if ($s !== '') $q['search_text'] = mb_substr($s, 0, 100);
+                $cid = preg_replace('/[^0-9]/', '', (string)($_GET['cid'] ?? '')); if ($cid !== '') $q['customer_id'] = $cid;
+                $stf = (string)($_GET['status'] ?? '');
+                $inv = ['unpaid'=>'Status.Unpaid', 'overdue'=>'Status.OverDue', 'paid'=>'Status.Paid', 'partially_paid'=>'Status.PartiallyPaid', 'sent'=>'Status.Sent'];
+                $quo = ['draft'=>'Status.Draft', 'sent'=>'Status.Sent', 'approved'=>'Status.Approved', 'accepted'=>'Status.Accepted', 'invoiced'=>'Status.Invoiced', 'declined'=>'Status.Declined', 'expired'=>'Status.Expired'];
+                $map = $kind === 'quote' ? $quo : $inv;
+                if (isset($map[$stf])) $q['filter_by'] = $map[$stf];
+                [$d, $c] = zoho_api('GET', $kind === 'quote' ? 'estimates' : 'invoices', null, $q);
+                if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error');
+                $out = [];
+                foreach (($d[$kind === 'quote' ? 'estimates' : 'invoices'] ?? []) as $r) {
+                    $id = (string)($r[$kind === 'quote' ? 'estimate_id' : 'invoice_id'] ?? '');
+                    if (!gz_allowed($r['currency_code'] ?? 'KES', $r['customer_name'] ?? '', $kind === 'quote' ? '' : $id, $hideInv, $hideCli)) continue;
+                    $out[] = ['id'=>$id, 'number'=>(string)($r[$kind === 'quote' ? 'estimate_number' : 'invoice_number'] ?? ''),
+                        'customer'=>(string)($r['customer_name'] ?? ''), 'cid'=>(string)($r['customer_id'] ?? ''),
+                        'date'=>substr((string)($r['date'] ?? ''), 0, 10), 'due'=>substr((string)($r[$kind === 'quote' ? 'expiry_date' : 'due_date'] ?? ''), 0, 10),
+                        'status'=>(string)($r['status'] ?? ''), 'total'=>(float)($r['total'] ?? 0), 'balance'=>$kind === 'quote' ? null : (float)($r['balance'] ?? 0),
+                        'reference'=>(string)($r['reference_number'] ?? '')];
+                }
+                echo json_encode(['ok'=>true, 'kind'=>$kind, 'page'=>$page, 'more'=>!empty($d['page_context']['has_more_page']), 'items'=>$out]); exit;
+            }
+
+            if (isset($_GET['zdoc'])) {                           // one invoice or quote
+                $kind = $_GET['zdoc'] === 'quote' ? 'quote' : 'invoice';
+                $id = preg_replace('/[^0-9]/', '', (string)($_GET['id'] ?? ''));
+                $doc = $id !== '' ? gz_detail($kind, $id) : null;
+                if (!$doc || !gz_allowed($doc['currency'], $doc['customer'], $kind === 'quote' ? '' : $id, $hideInv, $hideCli)) { echo json_encode(['ok'=>false, 'error'=>'This document is not available.']); exit; }
+                echo json_encode(['ok'=>true, 'doc'=>$doc]); exit;
+            }
+
+            if (isset($_GET['zcust'])) {                          // customer search for statements
+                $q = ['contact_type'=>'customer', 'per_page'=>25, 'sort_column'=>'contact_name'];
+                $s = trim((string)$_GET['zcust']); if ($s !== '') $q['search_text'] = mb_substr($s, 0, 100);
+                [$d, $c] = zoho_api('GET', 'contacts', null, $q);
+                if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error');
+                $out = [];
+                foreach (($d['contacts'] ?? []) as $r) {
+                    if (gz_client_hidden($r['contact_name'] ?? '', $hideCli)) continue;
+                    if (strtoupper((string)($r['currency_code'] ?? 'KES')) !== 'KES') continue;
+                    $out[] = ['cid'=>(string)$r['contact_id'], 'name'=>(string)($r['contact_name'] ?? ''), 'outstanding'=>(float)($r['outstanding_receivable_amount'] ?? 0)];
+                }
+                echo json_encode(['ok'=>true, 'customers'=>$out]); exit;
+            }
+
+            if (isset($_GET['zstmt'])) {                          // statement preview / save as draft
+                $in = ($_SERVER['REQUEST_METHOD'] === 'POST') ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_GET;
+                $cid  = preg_replace('/[^0-9]/', '', (string)($in['cid'] ?? ''));
+                $mode = ($in['mode'] ?? '') === 'period' ? 'period' : 'unpaid';
+                $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : '';
+                $to   = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : '';
+                $note = mb_substr((string)($in['note'] ?? ''), 0, 2000);
+                if ($cid === '') { echo json_encode(['ok'=>false, 'error'=>'Pick a customer first.']); exit; }
+                $st = gz_statement_data($cid, $from, $to, $mode, $hideInv, $hideCli);
+                $html = gz_statement_html($st, $from, $to, $mode, $note);
+                $bal = array_sum(array_column($st['rows'], 'balance'));
+                if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($in['draft'])) {
+                    require_once __DIR__ . '/mail.php';
+                    echo json_encode(['ok'=>true, 'customer'=>$st['customer'], 'email'=>$st['email'], 'count'=>count($st['rows']), 'balance'=>$bal, 'html'=>$html, 'connected'=>mail_is_connected('grace')]); exit;
+                }
+                require_once __DIR__ . '/mail.php';
+                if (!mail_is_connected('grace')) { echo json_encode(['ok'=>false, 'error'=>'Connect your mailbox first.']); exit; }
+                $list = array_values(array_filter(array_map('trim', preg_split('/[,;\s]+/', (string)($in['to_email'] ?? '')))));
+                if (!$list) { echo json_encode(['ok'=>false, 'error'=>'Add the customer email address first.']); exit; }
+                foreach ($list as $addr) if (!filter_var($addr, FILTER_VALIDATE_EMAIL)) { echo json_encode(['ok'=>false, 'error'=>'"' . $addr . '" is not a valid email address.']); exit; }
+                $cfg = require __DIR__ . '/config.php';
+                $acct = mail_primary_account('grace');
+                [$md, $mc] = mail_api('POST', '/api/accounts/' . rawurlencode($acct['accountId']) . '/messages', [
+                    'mode'=>'draft', 'fromAddress'=>$acct['from'], 'toAddress'=>implode(',', $list),
+                    'subject'=>((string)($cfg['statement_subject'] ?? 'Statement of account')) . ' — ' . $st['customer'], 'content'=>$html, 'mailFormat'=>'html'], 'grace');
+                if ($mc >= 400) { echo json_encode(['ok'=>false, 'error'=>'Zoho Mail did not save the draft (' . $mc . ').']); exit; }
+                $pdo = db(); gp_stmt_table($pdo);
+                $pdo->prepare("INSERT INTO grace_statements (customer_id,customer_name,to_email,total,created_by) VALUES (?,?,?,?,?)")
+                    ->execute([$cid, mb_substr($st['customer'], 0, 190), mb_substr(implode(',', $list), 0, 190), round($bal, 2), mb_substr((string)($_SESSION['grace_user'] ?? ''), 0, 80)]);
+                echo json_encode(['ok'=>true, 'from'=>$acct['from'], 'to'=>implode(', ', $list)]); exit;
+            }
+        } catch (\Throwable $e) { echo api_fail($e); }
+        exit;
+    }
+
+    if (isset($_GET['zpdf'])) {                                   // the real Zoho PDF of an invoice or quote
+        if (!$gAuthed) { http_response_code(403); echo 'Not signed in.'; exit; }
+        try {
+            [$hideInv, $hideCli] = gz_hidden();
+            $kind = $_GET['zpdf'] === 'quote' ? 'quote' : 'invoice';
+            $id = preg_replace('/[^0-9]/', '', (string)($_GET['id'] ?? ''));
+            $doc = $id !== '' ? gz_detail($kind, $id) : null;
+            if (!$doc || !gz_allowed($doc['currency'], $doc['customer'], $kind === 'quote' ? '' : $id, $hideInv, $hideCli)) { http_response_code(404); echo 'This document is not available.'; exit; }
+            $c = zoho_config();
+            $url = $c['api_domain'] . '/books/v3/' . ($kind === 'quote' ? 'estimates/' : 'invoices/') . $id . '?' . http_build_query(['organization_id'=>$c['organization_id'], 'accept'=>'pdf']);
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>45, CURLOPT_HTTPHEADER=>['Authorization: Zoho-oauthtoken ' . zoho_access_token(), 'Accept: application/pdf']]);
+            $pdf = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+            if ($code >= 400 || !is_string($pdf) || strncmp($pdf, '%PDF', 4) !== 0) { http_response_code(502); echo 'Zoho did not return the PDF. Please try again.'; exit; }
+            $fn = preg_replace('/[^A-Za-z0-9._-]/', '_', $doc['number'] ?: $kind) . '.pdf';
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: inline; filename="' . $fn . '"');
+            header('Cache-Control: private, no-store');
+            echo $pdf;
+        } catch (\Throwable $e) { http_response_code(500); echo 'Could not load the PDF.'; }
+        exit;
+    }
+
     $gEsc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
     ?>
 <!doctype html><html><head><meta charset="utf-8">
@@ -543,7 +763,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .stat.alert .n{color:var(--red)}
   .stats{display:none}
   /* toolbar */
-  .tool{position:sticky;top:52px;z-index:20;background:var(--bg);padding:14px 0 10px;margin-top:4px;border-bottom:1px solid var(--line)}
+  .tool{position:sticky;top:93px;z-index:20;background:var(--bg);padding:14px 0 10px;margin-top:4px;border-bottom:1px solid var(--line)}
   .srch{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:3px;font-family:inherit;font-size:14px;background:var(--card)}
   .srch:focus{outline:none;border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
   .chips{display:flex;gap:6px;margin-top:9px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -574,6 +794,30 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .hfig{display:flex;gap:28px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--hair)}
   .hfig .hv{font-family:var(--mono);font-weight:600;font-size:18px;margin-top:3px}
   .hfig .hn{font-size:11.5px;color:var(--mute);margin-top:2px}
+  .mtabs{display:flex;gap:0;background:#24221E;padding:0 clamp(14px,3.2vw,52px);position:sticky;top:52px;z-index:45}
+  .mtab{background:transparent;border:0;border-bottom:3px solid transparent;color:#B9B3A9;padding:11px 18px;font-family:inherit;font-size:12.5px;font-weight:700;letter-spacing:.6px;cursor:pointer;text-transform:uppercase}
+  .mtab.on{color:#fff;border-bottom-color:var(--brand)} .mtab:hover{color:#fff}
+  .zhead{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-top:3px solid var(--brand);padding:14px 18px;margin-bottom:12px}
+  .zhead .seg2{margin-left:auto}
+  .zh1{font-family:var(--mono);font-weight:600;font-size:22px;margin-top:4px}
+  .zhead .hl,.zchosen .hl{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--mute)}
+  .ztool{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .zsel{padding:10px 12px;border:1px solid var(--line);border-radius:3px;font-family:inherit;font-size:13.5px;background:var(--card)}
+  .ztbl .zrow{cursor:pointer} .ztbl .zrow:hover td{background:var(--soft)}
+  .ztbl .num{font-family:var(--mono);font-weight:600} .ztbl .zcust{font-weight:600;text-transform:uppercase;font-size:12.5px} .ztbl .dd{color:var(--mute);white-space:nowrap}
+  .zpager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px}
+  .zpager .gbtn:disabled{opacity:.45;cursor:default}
+  .zcard{background:var(--card);border:1px solid var(--line);padding:16px 18px}
+  .zcres{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:320px;overflow:auto}
+  .zcopt{display:flex;justify-content:space-between;gap:10px;text-align:left;border:1px solid var(--line);background:var(--soft);padding:10px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:13px;text-transform:uppercase}
+  .zcopt:hover{border-color:var(--brand)}
+  .zchosen{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--hair)}
+  .zstopts{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:13.5px}
+  .zradio{display:flex;gap:6px;align-items:center;cursor:pointer}
+  .zdates input{padding:7px 9px;border:1px solid var(--line);border-radius:3px;font-family:inherit;background:var(--soft)}
+  .zprevbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;background:var(--card);border:1px solid var(--line)}
+  .zmail{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  @media(max-width:640px){ .ztbl thead{display:none} .ztbl,.ztbl tbody{display:block} .ztbl tr.zrow{display:grid;grid-template-columns:1fr auto;gap:3px 10px;padding:10px 14px;border-bottom:1px solid var(--hair)} .ztbl tr.zrow td{border:0;padding:0} .zhead .seg2{margin-left:0} }
   .itag{font-size:9.5px;font-weight:800;border-radius:3px;padding:1px 5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;border:1px solid var(--line);color:#8a857c;background:#F5F3EF;margin-right:3px}
   .itag.etr{color:#0F7A34;background:var(--green-bg);border-color:#BFE0CB}
   .itag.pkd{color:#fff;background:#0F7A34;border-color:#0F7A34}
@@ -774,9 +1018,12 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   <div class="b">912</div>
   <div><h1>Collections</h1><div class="sub">WAITARA HOLDINGS GROUP</div></div>
   <?php if ($gAuthed): ?>
-  <div class="sp"><button class="tbtn" onclick="load(true)">Refresh</button><a class="tbtn" href="index.php?portal=grace&logout=1">Sign out</a></div>
+  <div class="sp"><button class="tbtn" onclick="topRefresh()">Refresh</button><a class="tbtn" href="index.php?portal=grace&logout=1">Sign out</a></div>
   <?php endif; ?>
 </div>
+<?php if ($gAuthed): ?>
+<div class="mtabs"><button class="mtab on" data-m="coll" onclick="setMain('coll')">Collections</button><button class="mtab" data-m="zoho" onclick="setMain('zoho')">ZOHO SYSTEM</button></div>
+<?php endif; ?>
 <?php if (!$gAuthed): ?>
 <div class="login">
   <div class="lcard">
@@ -812,6 +1059,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
 </div>
 <?php else: ?>
 <div class="wrap" id="app"><div class="empty">Loading today's unpaid invoices…</div></div>
+<div class="wrap" id="zapp" style="display:none"></div>
 <div class="pgfoot"><div class="cn">Waitara Holdings Group of Companies · Collections</div><div class="sc2">CONFIDENTIAL</div></div>
 <div id="invModal" class="modal" onclick="if(event.target===this)closeInv()">
   <div class="mcard">
@@ -1287,7 +1535,125 @@ function renderGroup(c){
   }
   return head+rows+panel;
 }
+/* ================= ZOHO SYSTEM tab ================= */
+let MODE='coll';
+const Z={sub:'invoices', invoices:{q:'',status:'',page:1,items:null,more:false,err:''}, quotes:{q:'',status:'',page:1,items:null,more:false,err:''},
+  st:{cust:null, results:[], mode:'unpaid', from:'', to:'', note:'', prev:null, busy:false, err:''}};
+function setMain(m){ MODE=m; try{ localStorage.setItem('grace_main',m); }catch(e){}
+  document.getElementById('app').style.display=(m==='coll')?'':'none';
+  document.getElementById('zapp').style.display=(m==='zoho')?'':'none';
+  document.querySelectorAll('.mtab').forEach(b=>b.classList.toggle('on', b.dataset.m===m));
+  if(m==='zoho'){ zRender(); const t=Z[Z.sub]; if(Z.sub!=='statements' && !t.items) zLoad(); } }
+function topRefresh(){ if(MODE==='zoho'){ if(Z.sub!=='statements'){ Z[Z.sub].items=null; zLoad(); } else zRender(); } else load(true); }
+function zSub(s){ Z.sub=s; zRender(); if(s!=='statements' && !Z[s].items) zLoad(); }
+const ZSTAT={paid:'green',accepted:'green',approved:'green',invoiced:'green',overdue:'red',declined:'red',expired:'red',partially_paid:'amber',unpaid:'amber',sent:'',draft:'',viewed:''};
+function zPill(s){ s=String(s||''); return `<span class="pill ${ZSTAT[s]||''}" style="text-transform:capitalize">${esc(s.replace(/_/g,' ')||'—')}</span>`; }
+async function zLoad(){
+  const k=Z.sub, t=Z[k]; t.err=''; bar(true);
+  try{ const qs='&zlist='+(k==='quotes'?'quotes':'invoices')+'&page='+t.page+'&q='+encodeURIComponent(t.q)+'&status='+encodeURIComponent(t.status);
+    const j=await fetch('index.php?portal=grace'+qs,{credentials:'same-origin'}).then(r=>r.json());
+    if(j&&j.ok){ t.items=j.items; t.more=j.more; } else { t.items=[]; t.err=(j&&j.error)||'Could not load from Zoho.'; } }
+  catch(e){ t.items=[]; t.err=String(e); }
+  bar(false); if(Z.sub===k) zRender();
+}
+let _zqT=null;
+function zSearch(v){ const t=Z[Z.sub]; t.q=v; t.page=1; clearTimeout(_zqT); _zqT=setTimeout(()=>{ t.items=null; zRender(); zLoad(); },450); }
+function zStatus(v){ const t=Z[Z.sub]; t.status=v; t.page=1; t.items=null; zRender(); zLoad(); }
+function zPage(d){ const t=Z[Z.sub]; t.page=Math.max(1,t.page+d); t.items=null; zRender(); zLoad(); window.scrollTo(0,0); }
+function zPdf(kind,id){ window.open('index.php?portal=grace&zpdf='+kind+'&id='+encodeURIComponent(id),'_blank'); }
+async function zView(kind,id){
+  const m=document.getElementById('invModal'),b=document.getElementById('invBody'),t=document.getElementById('invTitle');
+  m.classList.add('open'); t.textContent=kind==='quote'?'Quote':'Invoice'; b.innerHTML='<div class="muted" style="padding:8px">Loading from Zoho…</div>';
+  try{ const j=await fetch('index.php?portal=grace&zdoc='+kind+'&id='+encodeURIComponent(id),{credentials:'same-origin'}).then(r=>r.json());
+    if(!j||!j.ok){ b.innerHTML='<div style="padding:8px;color:var(--red)">'+esc((j&&j.error)||'Could not load.')+'</div>'; return; }
+    const d=j.doc; t.textContent=d.number||t.textContent;
+    let h=invDetailHTML(d);
+    if(kind==='quote') h=h.replace('Invoice total','Quote total').replace('Due: ','Valid until: ');
+    b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">${zPill(d.status)}${d.reference?`<span class="muted" style="font-size:12px">Ref: ${esc(d.reference)}</span>`:''}${d.subject?`<span class="muted" style="font-size:12px">${esc(d.subject)}</span>`:''}<button class="gbtn" style="margin-left:auto" onclick="zPdf('${kind}','${jsq(d.id)}')">⤓ Open PDF</button></div>`+h;
+  }catch(e){ b.innerHTML='<div style="padding:8px;color:var(--red)">Error: '+esc(String(e))+'</div>'; }
+}
+function zListHTML(k){
+  const t=Z[k], isQ=(k==='quotes');
+  const opts=isQ?[['','All quotes'],['draft','Draft'],['sent','Sent'],['approved','Approved'],['accepted','Accepted'],['invoiced','Invoiced'],['declined','Declined'],['expired','Expired']]
+               :[['','All invoices'],['unpaid','Unpaid'],['overdue','Overdue'],['partially_paid','Partially paid'],['paid','Paid']];
+  const tools=`<div class="ztool"><input class="srch" style="flex:1;min-width:200px" type="text" placeholder="Search ${isQ?'quote':'invoice'} number or customer…" value="${att(t.q)}" oninput="zSearch(this.value)">
+    <select class="zsel" onchange="zStatus(this.value)">${opts.map(o=>`<option value="${o[0]}"${t.status===o[0]?' selected':''}>${o[1]}</option>`).join('')}</select></div>`;
+  if(t.items===null) return tools+'<div class="empty">Loading from Zoho…</div>';
+  if(t.err) return tools+`<div class="empty" style="color:var(--red)">${esc(t.err)}</div>`;
+  if(!t.items.length) return tools+`<div class="empty">No ${isQ?'quotes':'invoices'} found${t.q?' for “'+esc(t.q)+'”':''}.</div>`;
+  const rows=t.items.map(r=>`<tr class="zrow" onclick="zView('${isQ?'quote':'invoice'}','${jsq(r.id)}')">
+      <td data-l="${isQ?'Quote':'Invoice'}"><span class="num">${esc(r.number)}</span></td>
+      <td data-l="Customer" class="zcust">${esc(r.customer)}</td>
+      <td data-l="Date" class="mono dd">${esc(r.date||'—')}</td>
+      <td data-l="${isQ?'Valid until':'Due'}" class="mono dd">${esc(r.due||'—')}</td>
+      <td data-l="Status">${zPill(r.status)}</td>
+      <td data-l="Total" class="r mono">${esc(fmtC('KES',r.total))}</td>
+      ${isQ?'':`<td data-l="Balance" class="r mono" style="font-weight:600;${r.balance>0?'color:var(--red)':''}">${esc(fmtC('KES',r.balance))}</td>`}
+      <td class="r" onclick="event.stopPropagation()"><button class="ivv" onclick="zView('${isQ?'quote':'invoice'}','${jsq(r.id)}')">View</button> <button class="ivv" onclick="zPdf('${isQ?'quote':'invoice'}','${jsq(r.id)}')">PDF</button></td></tr>`).join('');
+  return tools+`<table class="gtbl ztbl"><thead><tr><th>${isQ?'Quote':'Invoice'}</th><th>Customer</th><th>Date</th><th>${isQ?'Valid until':'Due'}</th><th>Status</th><th class="r">Total</th>${isQ?'':'<th class="r">Balance</th>'}<th></th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="zpager"><button class="gbtn" ${t.page<=1?'disabled':''} onclick="zPage(-1)">← Previous</button><span class="muted">Page ${t.page}</span><button class="gbtn" ${t.more?'':'disabled'} onclick="zPage(1)">Next →</button></div>`;
+}
+/* ---- customer statements ---- */
+let _zcT=null;
+function zCustSearch(v){ clearTimeout(_zcT); _zcT=setTimeout(async()=>{ const box=document.getElementById('zcres'); if(!box) return;
+  if(v.trim().length<2){ box.innerHTML=''; return; } box.innerHTML='<div class="muted" style="padding:8px">Searching…</div>';
+  try{ const j=await fetch('index.php?portal=grace&zcust='+encodeURIComponent(v.trim()),{credentials:'same-origin'}).then(r=>r.json());
+    Z.st.results=(j&&j.ok)?j.customers:[];
+    box.innerHTML=Z.st.results.length?Z.st.results.map((c,i)=>`<button class="zcopt" onclick="zPickCust(${i})"><b>${esc(c.name)}</b><span class="muted mono">${c.outstanding>0?esc(fmtC('KES',c.outstanding))+' owed':'nothing owed'}</span></button>`).join(''):'<div class="muted" style="padding:8px">No matching customer.</div>';
+  }catch(e){ box.innerHTML='<div style="padding:8px;color:var(--red)">'+esc(String(e))+'</div>'; } },350); }
+function zPickCust(i){ Z.st.cust=Z.st.results[i]; Z.st.prev=null; zRender(); }
+function zStField(k,v){ Z.st[k]=v; if(k==='mode') zRender(); }
+function zStBody(extra){ return Object.assign({cid:Z.st.cust&&Z.st.cust.cid, mode:Z.st.mode, from:Z.st.from, to:Z.st.to, note:Z.st.note}, extra||{}); }
+async function zStGenerate(){
+  if(!Z.st.cust){ alert('Pick a customer first.'); return; }
+  Z.st.busy=true; Z.st.err=''; zRender();
+  try{ const j=await fetch('index.php?portal=grace&zstmt=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(zStBody())}).then(r=>r.json());
+    if(j&&j.ok){ Z.st.prev=j; Z.st.toEmail=Z.st.toEmail||j.email||''; } else Z.st.err=(j&&j.error)||'Could not build the statement.'; }
+  catch(e){ Z.st.err=String(e); }
+  Z.st.busy=false; zRender();
+}
+function zStPrint(){ if(!Z.st.prev) return; const w=window.open('','_blank'); if(!w){ alert('Allow pop-ups for this site to print.'); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Statement — '+esc(Z.st.prev.customer)+'</title><style>body{margin:24px;background:#fff}@media print{body{margin:0}}</style></head><body>'+Z.st.prev.html+'<scr'+'ipt>setTimeout(function(){window.print()},300)</scr'+'ipt></body></html>'); w.document.close(); }
+async function zStDraft(btn){
+  const to=(document.getElementById('zstTo')||{}).value||''; Z.st.toEmail=to;
+  if(!to.trim()){ alert('Add the customer email address first.'); return; }
+  btn.disabled=true; btn.textContent='Saving…';
+  try{ const j=await fetch('index.php?portal=grace&zstmt=1',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(zStBody({draft:true,to_email:to}))}).then(r=>r.json());
+    if(j&&j.ok){ toast('Saved in your Drafts ('+j.from+') — open Zoho Mail to send'); }
+    else alert((j&&j.error)||'Could not save the draft.'); }
+  catch(e){ alert('Error: '+e); }
+  btn.disabled=false; btn.textContent='Save to my Drafts';
+}
+function zStmtHTML(){
+  const s=Z.st;
+  const pick=s.cust?`<div class="zchosen"><div><div class="hl">Customer</div><b style="font-size:15px;text-transform:uppercase">${esc(s.cust.name)}</b> <span class="muted mono" style="margin-left:6px">${s.cust.outstanding>0?esc(fmtC('KES',s.cust.outstanding))+' owed':''}</span></div><button class="gbtn" onclick="Z.st.cust=null;Z.st.prev=null;zRender()">Change</button></div>`
+    :`<label class="ctclbl">Customer</label><input class="ctcin" type="text" placeholder="Type at least 2 letters of the customer name…" oninput="zCustSearch(this.value)" autofocus><div id="zcres" class="zcres"></div>`;
+  const opts=s.cust?`<div class="zstopts">
+      <label class="zradio"><input type="radio" name="zm" ${s.mode==='unpaid'?'checked':''} onchange="zStField('mode','unpaid')"> All unpaid invoices</label>
+      <label class="zradio"><input type="radio" name="zm" ${s.mode==='period'?'checked':''} onchange="zStField('mode','period')"> Invoices in a period</label>
+      ${s.mode==='period'?`<span class="zdates">From <input type="date" value="${att(s.from)}" onchange="zStField('from',this.value)"> to <input type="date" value="${att(s.to)}" onchange="zStField('to',this.value)"></span>`:''}
+    </div>
+    <label class="ctclbl">Message at the top <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+    <textarea class="nt" style="min-height:70px" oninput="Z.st.note=this.value" placeholder="Leave empty for the standard wording">${esc(s.note)}</textarea>
+    <button class="go" style="margin-top:12px;max-width:260px" ${s.busy?'disabled':''} onclick="zStGenerate()">${s.busy?'Building…':'Generate statement'}</button>
+    ${s.err?`<div style="color:var(--red);margin-top:10px">${esc(s.err)}</div>`:''}`:'';
+  const prev=s.prev?`<div class="zprevbar"><b>${s.prev.count} invoice${s.prev.count===1?'':'s'}</b> · balance <b class="mono">${esc(fmtC('KES',s.prev.balance))}</b>
+      <button class="gbtn" style="margin-left:auto" onclick="zStPrint()">🖨 Print / Save PDF</button></div>
+    <div class="zmail">${s.prev.connected?`<input class="ctcin" id="zstTo" type="text" placeholder="customer@company.co.ke" value="${att(s.toEmail||'')}" style="flex:1;min-width:220px"><button class="go" style="margin:0;width:auto;padding:0 18px" onclick="zStDraft(this)">Save to my Drafts</button>`
+      :`<div class="stmwarn" style="margin:0;flex:1">To email this statement, <a href="connect_mail.php">connect your mailbox</a> once. You can still print it now.</div>`}</div>
+    <div class="stmprev" style="max-height:none">${s.prev.html}</div>`:'';
+  return `<div class="zcard">${pick}${opts}</div>${prev}`;
+}
+function zRender(){
+  const z=document.getElementById('zapp'); if(!z) return;
+  const subs=[['invoices','Invoices'],['quotes','Quotes'],['statements','Customer statements']];
+  z.innerHTML=`<div class="zhead"><div><div class="hl">Zoho Books — live</div><div class="zh1">ZOHO SYSTEM</div></div>
+      <div class="seg2">${subs.map(s=>`<button class="${Z.sub===s[0]?'on':''}" onclick="zSub('${s[0]}')">${s[1]}</button>`).join('')}</div></div>
+    ${Z.sub==='statements'?zStmtHTML():zListHTML(Z.sub)}
+    <div class="muted" style="font-size:11.5px;text-align:center;margin-top:14px">Read live from Zoho Books · KES only · nothing here changes Zoho</div>`;
+}
 load(false);
+try{ if(localStorage.getItem('grace_main')==='zoho') setMain('zoho'); }catch(e){}
 </script>
 <?php endif; ?>
 </body></html>
