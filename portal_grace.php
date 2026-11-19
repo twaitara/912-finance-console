@@ -652,7 +652,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
 
             if (isset($_GET['zcust'])) {                          // customer search for statements
                 $q = ['contact_type'=>'customer', 'per_page'=>25, 'sort_column'=>'contact_name'];
-                $s = trim((string)$_GET['zcust']); if ($s !== '') $q['search_text'] = mb_substr($s, 0, 100);
+                $s = trim((string)$_GET['zcust']); if ($s !== '') $q['contact_name_contains'] = mb_substr($s, 0, 100);   // Zoho ignores search_text on contacts
                 [$d, $c] = zoho_api('GET', 'contacts', null, $q);
                 if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error');
                 $out = [];
