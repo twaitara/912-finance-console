@@ -627,23 +627,41 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
                 $quo = ['draft'=>'Status.Draft', 'sent'=>'Status.Sent', 'approved'=>'Status.Approved', 'accepted'=>'Status.Accepted', 'invoiced'=>'Status.Invoiced', 'declined'=>'Status.Declined', 'expired'=>'Status.Expired'];
                 $map = $kind === 'quote' ? $quo : $inv;
                 if (isset($map[$stf])) $q['filter_by'] = $map[$stf];
-                [$d, $c] = zoho_api('GET', $kind === 'quote' ? 'estimates' : 'invoices', null, $q);
-                if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error');
-                $out = []; $etr = [];
+                $etrF = $kind === 'invoice' ? (string)($_GET['etr'] ?? '') : '';
+                if ($etrF !== 'yes' && $etrF !== 'no') $etrF = '';
+                $etr = [];
                 if ($kind === 'invoice') {   // fiscalised = ETR scan found by the office PC (pushed every 5 min)
                     try { $pe = db(); $pe->exec("CREATE TABLE IF NOT EXISTS invoice_etr (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
                         foreach ($pe->query("SELECT invoice_id FROM invoice_etr")->fetchAll(PDO::FETCH_COLUMN) as $v) $etr[(string)$v] = true; } catch (\Throwable $e) {}
                 }
-                foreach (($d[$kind === 'quote' ? 'estimates' : 'invoices'] ?? []) as $r) {
+                $shape = function ($r) use ($kind, $etr) {
                     $id = (string)($r[$kind === 'quote' ? 'estimate_id' : 'invoice_id'] ?? '');
-                    if (!gz_allowed($r['currency_code'] ?? 'KES', $r['customer_name'] ?? '', $kind === 'quote' ? '' : $id, $hideInv, $hideCli)) continue;
-                    $out[] = ['id'=>$id, 'number'=>(string)($r[$kind === 'quote' ? 'estimate_number' : 'invoice_number'] ?? ''),
+                    return ['id'=>$id, 'number'=>(string)($r[$kind === 'quote' ? 'estimate_number' : 'invoice_number'] ?? ''),
                         'customer'=>(string)($r['customer_name'] ?? ''), 'cid'=>(string)($r['customer_id'] ?? ''),
                         'date'=>substr((string)($r['date'] ?? ''), 0, 10), 'due'=>substr((string)($r[$kind === 'quote' ? 'expiry_date' : 'due_date'] ?? ''), 0, 10),
                         'status'=>(string)($r['status'] ?? ''), 'total'=>(float)($r['total'] ?? 0), 'balance'=>$kind === 'quote' ? null : (float)($r['balance'] ?? 0),
-                        'reference'=>(string)($r['reference_number'] ?? ''), 'fiscalised'=>isset($etr[$id])];
+                        'reference'=>(string)($r['reference_number'] ?? ''), 'fiscalised'=>isset($etr[$id]), 'cur'=>(string)($r['currency_code'] ?? 'KES')];
+                };
+                $keep = function ($x) use ($kind, $hideInv, $hideCli) { return gz_allowed($x['cur'], $x['customer'], $kind === 'quote' ? '' : $x['id'], $hideInv, $hideCli); };
+                if ($etrF === '') {                       // normal: one Zoho page per portal page
+                    [$d, $c] = zoho_api('GET', $kind === 'quote' ? 'estimates' : 'invoices', null, $q);
+                    if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error');
+                    $out = array_values(array_filter(array_map($shape, $d[$kind === 'quote' ? 'estimates' : 'invoices'] ?? []), $keep));
+                    $more = !empty($d['page_context']['has_more_page']);
+                } else {                                  // ETR filter: fetch the whole (filtered) set, then page it here
+                    $all = []; $zp = 1;
+                    do {
+                        $q['per_page'] = 200; $q['page'] = $zp;
+                        [$d, $c] = zoho_api('GET', 'invoices', null, $q);
+                        if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error');
+                        foreach (($d['invoices'] ?? []) as $r) { $x = $shape($r); if ($keep($x) && ($x['fiscalised'] === ($etrF === 'yes'))) $all[] = $x; }
+                        $zmore = !empty($d['page_context']['has_more_page']); $zp++;
+                    } while ($zmore && $zp <= 10);
+                    $out = array_slice($all, ($page - 1) * 50, 50);
+                    $more = count($all) > $page * 50;
                 }
-                echo json_encode(['ok'=>true, 'kind'=>$kind, 'page'=>$page, 'more'=>!empty($d['page_context']['has_more_page']), 'items'=>$out]); exit;
+                foreach ($out as &$o) unset($o['cur']); unset($o);
+                echo json_encode(['ok'=>true, 'kind'=>$kind, 'page'=>$page, 'more'=>$more, 'items'=>$out]); exit;
             }
 
             if (isset($_GET['zdoc'])) {                           // one invoice or quote
@@ -806,6 +824,9 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
   .zh1{font-family:var(--mono);font-weight:600;font-size:22px;margin-top:4px}
   .zhead .hl,.zchosen .hl{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--mute)}
   .ztool{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .zfwrap{position:relative} .zfres{position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--card);border:1px solid var(--line);padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+  .zfchip{display:inline-flex;align-items:center;gap:8px;background:#FBEFE6;border:1px solid var(--brand);color:var(--ink);font-weight:700;font-size:12.5px;text-transform:uppercase;padding:0 6px 0 12px;border-radius:3px}
+  .zfchip button{border:0;background:transparent;cursor:pointer;font-size:14px;color:var(--brand);padding:6px}
   .zsel{padding:10px 12px;border:1px solid var(--line);border-radius:3px;font-family:inherit;font-size:13.5px;background:var(--card)}
   .ztbl .zrow{cursor:pointer} .ztbl .zrow:hover td{background:var(--soft)}
   .ztbl .num{font-family:var(--mono);font-weight:600} .ztbl .zcust{font-weight:600;text-transform:uppercase;font-size:12.5px} .ztbl .dd{color:var(--mute);white-space:nowrap}
@@ -1541,7 +1562,7 @@ function renderGroup(c){
 }
 /* ================= ZOHO SYSTEM tab ================= */
 let MODE='coll';
-const Z={sub:'invoices', invoices:{q:'',status:'unpaid',page:1,items:null,more:false,err:''}, quotes:{q:'',status:'',page:1,items:null,more:false,err:''},
+const Z={sub:'invoices', invoices:{q:'',status:'unpaid',etr:'',cid:'',cname:'',page:1,items:null,more:false,err:''}, quotes:{q:'',status:'',etr:'',cid:'',cname:'',page:1,items:null,more:false,err:''},
   st:{cust:null, results:[], mode:'unpaid', from:'', to:'', note:'', prev:null, busy:false, err:''}};
 function setMain(m){ MODE=m; try{ localStorage.setItem('grace_main',m); }catch(e){}
   document.getElementById('app').style.display=(m==='coll')?'':'none';
@@ -1554,7 +1575,7 @@ const ZSTAT={paid:'green',accepted:'green',approved:'green',invoiced:'green',ove
 function zPill(s){ s=String(s||''); return `<span class="pill ${ZSTAT[s]||''}" style="text-transform:capitalize">${esc(s.replace(/_/g,' ')||'—')}</span>`; }
 async function zLoad(){
   const k=Z.sub, t=Z[k]; t.err=''; bar(true);
-  try{ const qs='&zlist='+(k==='quotes'?'quotes':'invoices')+'&page='+t.page+'&q='+encodeURIComponent(t.q)+'&status='+encodeURIComponent(t.status);
+  try{ const qs='&zlist='+(k==='quotes'?'quotes':'invoices')+'&page='+t.page+'&q='+encodeURIComponent(t.q)+'&status='+encodeURIComponent(t.status)+'&etr='+encodeURIComponent(t.etr)+'&cid='+encodeURIComponent(t.cid);
     const j=await fetch('index.php?portal=grace'+qs,{credentials:'same-origin'}).then(r=>r.json());
     if(j&&j.ok){ t.items=j.items; t.more=j.more; } else { t.items=[]; t.err=(j&&j.error)||'Could not load from Zoho.'; } }
   catch(e){ t.items=[]; t.err=String(e); }
@@ -1562,6 +1583,21 @@ async function zLoad(){
 }
 let _zqT=null;
 function zSearch(v){ const t=Z[Z.sub]; t.q=v; t.page=1; clearTimeout(_zqT); _zqT=setTimeout(()=>{ t.items=null; zRender(); zLoad(); },450); }
+function zEtr(v){ const t=Z[Z.sub]; t.etr=v; t.page=1; t.items=null; zRender(); zLoad(); }
+let _zfT=null;
+function zCustFilter(v){ clearTimeout(_zfT); _zfT=setTimeout(async()=>{ const box=document.getElementById('zfres'); if(!box) return;
+  if(v.trim().length<2){ box.innerHTML=''; box.style.display='none'; return; }
+  try{ const j=await fetch('index.php?portal=grace&zcust='+encodeURIComponent(v.trim()),{credentials:'same-origin'}).then(r=>r.json());
+    Z.fres=(j&&j.ok)?j.customers:[]; box.style.display='';
+    box.innerHTML=Z.fres.length?Z.fres.map((c,i)=>`<button class="zcopt" onclick="zCustSet(${i})"><b>${esc(c.name)}</b></button>`).join(''):'<div class="muted" style="padding:8px">No matching customer.</div>';
+  }catch(e){} },300); }
+function zCustSet(i){ const t=Z[Z.sub], c=i<0?null:(Z.fres||[])[i]; t.cid=c?c.cid:''; t.cname=c?c.name:''; t.page=1; t.items=null; zRender(); zLoad(); }
+function zFilterExtras(t,isQ){
+  const etr=isQ?'':`<select class="zsel" onchange="zEtr(this.value)"><option value=""${t.etr===''?' selected':''}>ETR: all</option><option value="yes"${t.etr==='yes'?' selected':''}>ETR on file</option><option value="no"${t.etr==='no'?' selected':''}>No ETR</option></select>`;
+  const cust=t.cid?`<span class="zfchip">${esc(t.cname)} <button onclick="zCustSet(-1)" title="Show all customers">✕</button></span>`
+    :`<span class="zfwrap"><input class="srch" style="width:230px" type="text" placeholder="Filter by customer…" oninput="zCustFilter(this.value)"><span id="zfres" class="zcres zfres" style="display:none"></span></span>`;
+  return cust+etr;
+}
 function zStatus(v){ const t=Z[Z.sub]; t.status=v; t.page=1; t.items=null; zRender(); zLoad(); }
 function zPage(d){ const t=Z[Z.sub]; t.page=Math.max(1,t.page+d); t.items=null; zRender(); zLoad(); window.scrollTo(0,0); }
 function zPdf(kind,id){ window.open('index.php?portal=grace&zpdf='+kind+'&id='+encodeURIComponent(id),'_blank'); }
@@ -1581,7 +1617,8 @@ function zListHTML(k){
   const opts=isQ?[['','All quotes'],['draft','Draft'],['sent','Sent'],['approved','Approved'],['accepted','Accepted'],['invoiced','Invoiced'],['declined','Declined'],['expired','Expired']]
                :[['','All invoices'],['unpaid','Unpaid'],['overdue','Overdue'],['partially_paid','Partially paid'],['paid','Paid']];
   const tools=`<div class="ztool"><input class="srch" style="flex:1;min-width:200px" type="text" placeholder="Search ${isQ?'quote':'invoice'} number or customer…" value="${att(t.q)}" oninput="zSearch(this.value)">
-    <select class="zsel" onchange="zStatus(this.value)">${opts.map(o=>`<option value="${o[0]}"${t.status===o[0]?' selected':''}>${o[1]}</option>`).join('')}</select></div>`;
+    <select class="zsel" onchange="zStatus(this.value)">${opts.map(o=>`<option value="${o[0]}"${t.status===o[0]?' selected':''}>${o[1]}</option>`).join('')}</select>
+    ${zFilterExtras(t,isQ)}</div>`;
   if(t.items===null) return tools+'<div class="empty">Loading from Zoho…</div>';
   if(t.err) return tools+`<div class="empty" style="color:var(--red)">${esc(t.err)}</div>`;
   if(!t.items.length) return tools+`<div class="empty">No ${isQ?'quotes':'invoices'} found${t.q?' for “'+esc(t.q)+'”':''}.</div>`;
