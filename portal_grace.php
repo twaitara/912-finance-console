@@ -629,7 +629,11 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
                 if (isset($map[$stf])) $q['filter_by'] = $map[$stf];
                 [$d, $c] = zoho_api('GET', $kind === 'quote' ? 'estimates' : 'invoices', null, $q);
                 if ($c >= 400) throw new Exception($d['message'] ?? 'Zoho error');
-                $out = [];
+                $out = []; $etr = [];
+                if ($kind === 'invoice') {   // fiscalised = ETR scan found by the office PC (pushed every 5 min)
+                    try { $pe = db(); $pe->exec("CREATE TABLE IF NOT EXISTS invoice_etr (invoice_id VARCHAR(64) PRIMARY KEY, invoice_number VARCHAR(64) DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+                        foreach ($pe->query("SELECT invoice_id FROM invoice_etr")->fetchAll(PDO::FETCH_COLUMN) as $v) $etr[(string)$v] = true; } catch (\Throwable $e) {}
+                }
                 foreach (($d[$kind === 'quote' ? 'estimates' : 'invoices'] ?? []) as $r) {
                     $id = (string)($r[$kind === 'quote' ? 'estimate_id' : 'invoice_id'] ?? '');
                     if (!gz_allowed($r['currency_code'] ?? 'KES', $r['customer_name'] ?? '', $kind === 'quote' ? '' : $id, $hideInv, $hideCli)) continue;
@@ -637,7 +641,7 @@ if (isset($_GET['portal']) && $_GET['portal'] === 'grace') {
                         'customer'=>(string)($r['customer_name'] ?? ''), 'cid'=>(string)($r['customer_id'] ?? ''),
                         'date'=>substr((string)($r['date'] ?? ''), 0, 10), 'due'=>substr((string)($r[$kind === 'quote' ? 'expiry_date' : 'due_date'] ?? ''), 0, 10),
                         'status'=>(string)($r['status'] ?? ''), 'total'=>(float)($r['total'] ?? 0), 'balance'=>$kind === 'quote' ? null : (float)($r['balance'] ?? 0),
-                        'reference'=>(string)($r['reference_number'] ?? '')];
+                        'reference'=>(string)($r['reference_number'] ?? ''), 'fiscalised'=>isset($etr[$id])];
                 }
                 echo json_encode(['ok'=>true, 'kind'=>$kind, 'page'=>$page, 'more'=>!empty($d['page_context']['has_more_page']), 'items'=>$out]); exit;
             }
@@ -1586,7 +1590,7 @@ function zListHTML(k){
       <td data-l="Customer" class="zcust">${esc(r.customer)}</td>
       <td data-l="Date" class="mono dd">${esc(r.date||'—')}</td>
       <td data-l="${isQ?'Valid until':'Due'}" class="mono dd">${esc(r.due||'—')}</td>
-      <td data-l="Status">${zPill(r.status)}</td>
+      <td data-l="Status">${zPill(r.status)}${(!isQ && r.balance>0)?(r.fiscalised?' <span class="itag etr" title="Fiscalised — ETR receipt is on file">ETR</span>':' <span class="itag" title="Not fiscalised yet">no ETR</span>'):''}</td>
       <td data-l="Total" class="r mono">${esc(fmtC('KES',r.total))}</td>
       ${isQ?'':`<td data-l="Balance" class="r mono" style="font-weight:600;${r.balance>0?'color:var(--red)':''}">${esc(fmtC('KES',r.balance))}</td>`}
       <td class="r" onclick="event.stopPropagation()"><button class="ivv" onclick="zView('${isQ?'quote':'invoice'}','${jsq(r.id)}')">View</button> <button class="ivv" onclick="zPdf('${isQ?'quote':'invoice'}','${jsq(r.id)}')">PDF</button> ${r.cid?`<button class="ivv" style="color:var(--brand)" title="Statement PDF for ${att(r.customer)}" onclick="zStmtFor('${jsq(r.cid)}','${jsq(r.customer)}')">Statement</button>`:''}</td></tr>`).join('');
