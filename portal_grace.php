@@ -1589,7 +1589,7 @@ function zListHTML(k){
       <td data-l="Status">${zPill(r.status)}</td>
       <td data-l="Total" class="r mono">${esc(fmtC('KES',r.total))}</td>
       ${isQ?'':`<td data-l="Balance" class="r mono" style="font-weight:600;${r.balance>0?'color:var(--red)':''}">${esc(fmtC('KES',r.balance))}</td>`}
-      <td class="r" onclick="event.stopPropagation()"><button class="ivv" onclick="zView('${isQ?'quote':'invoice'}','${jsq(r.id)}')">View</button> <button class="ivv" onclick="zPdf('${isQ?'quote':'invoice'}','${jsq(r.id)}')">PDF</button></td></tr>`).join('');
+      <td class="r" onclick="event.stopPropagation()"><button class="ivv" onclick="zView('${isQ?'quote':'invoice'}','${jsq(r.id)}')">View</button> <button class="ivv" onclick="zPdf('${isQ?'quote':'invoice'}','${jsq(r.id)}')">PDF</button> ${r.cid?`<button class="ivv" style="color:var(--brand)" title="Statement PDF for ${att(r.customer)}" onclick="zStmtFor('${jsq(r.cid)}','${jsq(r.customer)}')">Statement</button>`:''}</td></tr>`).join('');
   return tools+`<table class="gtbl ztbl"><thead><tr><th>${isQ?'Quote':'Invoice'}</th><th>Customer</th><th>Date</th><th>${isQ?'Valid until':'Due'}</th><th>Status</th><th class="r">Total</th>${isQ?'':'<th class="r">Balance</th>'}<th></th></tr></thead><tbody>${rows}</tbody></table>
     <div class="zpager"><button class="gbtn" ${t.page<=1?'disabled':''} onclick="zPage(-1)">← Previous</button><span class="muted">Page ${t.page}</span><button class="gbtn" ${t.more?'':'disabled'} onclick="zPage(1)">Next →</button></div>`;
 }
@@ -1611,6 +1611,15 @@ async function zStGenerate(){
     if(j&&j.ok){ Z.st.prev=j; Z.st.toEmail=Z.st.toEmail||j.email||''; } else Z.st.err=(j&&j.error)||'Could not build the statement.'; }
   catch(e){ Z.st.err=String(e); }
   Z.st.busy=false; zRender();
+}
+async function zStmtFor(cid,name){
+  const w=window.open('','_blank');   // open now (inside the click) so pop-up blockers allow it
+  if(w){ w.document.write('<p style="font-family:Arial;padding:30px;color:#555">Building the statement for '+esc(name)+'…</p>'); }
+  Z.sub='statements'; Z.st.cust={cid:cid,name:name,outstanding:0}; Z.st.mode='unpaid'; Z.st.from=''; Z.st.to=''; Z.st.note=''; Z.st.prev=null; Z.st.toEmail='';
+  await zStGenerate(); window.scrollTo(0,0);
+  if(!w) return;
+  if(!Z.st.prev){ w.document.body.innerHTML='<p style="font-family:Arial;padding:30px;color:#B00">'+esc(Z.st.err||'Could not build the statement.')+'</p>'; return; }
+  w.document.open(); w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Statement — '+esc(Z.st.prev.customer)+'</title><style>body{margin:24px;background:#fff}.bar{font-family:Arial;margin:0 0 16px}.bar button{background:#D95E07;color:#fff;border:0;padding:9px 16px;border-radius:4px;font-weight:700;cursor:pointer}@media print{.bar{display:none}body{margin:0}}</style></head><body><div class="bar"><button onclick="window.print()">Save as PDF / Print</button></div>'+Z.st.prev.html+'<scr'+'ipt>setTimeout(function(){window.print()},400)</scr'+'ipt></body></html>'); w.document.close();
 }
 function zStPrint(){ if(!Z.st.prev) return; const w=window.open('','_blank'); if(!w){ alert('Allow pop-ups for this site to print.'); return; }
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Statement — '+esc(Z.st.prev.customer)+'</title><style>body{margin:24px;background:#fff}@media print{body{margin:0}}</style></head><body>'+Z.st.prev.html+'<scr'+'ipt>setTimeout(function(){window.print()},300)</scr'+'ipt></body></html>'); w.document.close(); }
