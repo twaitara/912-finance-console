@@ -272,11 +272,13 @@ function jcDownload(){
   var b=document.getElementById('dlBtn'), el=document.querySelector('.sheet');
   if(!window.html2pdf||!el){ window.print(); return; }
   var wasDark=document.documentElement.classList.contains('dark'); document.documentElement.classList.remove('dark');
+  var marks=[].slice.call(document.querySelectorAll('.copymark,.copytag')); marks.forEach(function(m){ m.style.display='none'; });   /* the downloaded PDF has no COPY stamp */
+  var done=function(){ b.disabled=false; b.innerHTML='&#10515; Download PDF'; marks.forEach(function(m){ m.style.display=''; }); if(wasDark) document.documentElement.classList.add('dark'); };
   b.disabled=true; b.textContent='Preparing PDF…';
-  var name=<?php echo json_encode(trim(preg_replace('/[^A-Za-z0-9 ._-]+/', ' ', $docLabel . ' ' . $docNo . ($copy ? ' COPY' : ''))) . '.pdf'); ?>;
+  var name=<?php echo json_encode(trim(preg_replace('/[^A-Za-z0-9 ._-]+/', ' ', $docLabel . ' ' . $docNo)) . '.pdf'); ?>;
   html2pdf().set({margin:[8,8,8,8], filename:name, image:{type:'jpeg',quality:0.95}, html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'}, jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}, pagebreak:{mode:['css','legacy']}})
-    .from(el).save().then(function(){ b.disabled=false; b.innerHTML='&#10515; Download PDF'; if(wasDark) document.documentElement.classList.add('dark'); })
-    .catch(function(){ b.disabled=false; b.innerHTML='&#10515; Download PDF'; if(wasDark) document.documentElement.classList.add('dark'); window.print(); });
+    .from(el).save().then(done)
+    .catch(function(){ done(); window.print(); });
 }
 </script>
 </body></html><?php
