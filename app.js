@@ -4440,7 +4440,14 @@ function vTodo(){
 /* ================= end To-Do ================= */
 
 function themeIsDark(){ return document.documentElement.classList.contains('dark'); }
-function openJobCard(id, original){ window.open('api/job_card.php?id='+id+(original?'':'&copy=1')+(themeIsDark()?'&theme=dark':''),'_blank'); }   /* reprints of an already-invoiced job are stamped COPY; original=true only at first generation */
+function jcUrl(id, original){ return 'api/job_card.php?id='+id+(original?'':'&copy=1')+(themeIsDark()?'&theme=dark':''); }
+/* Phones block a new tab that isn't opened directly by the tap. So the generate buttons open a tab at tap
+   time (jcPreopen) and point it at the card once the invoice exists. If the phone still blocks it, the card
+   opens in this same tab instead of silently doing nothing. */
+function jcPreopen(){ let w=null; try{ w=window.open('','_blank'); if(w) w.document.write('<p style="font-family:Arial;padding:30px;color:#555">Preparing the job card…</p>'); }catch(e){ w=null; } return w; }
+function openJobCard(id, original, w){ const u=jcUrl(id, original);
+  if(w && !w.closed){ try{ w.location.href=u; return; }catch(e){} }
+  const nw=window.open(u,'_blank'); if(!nw) window.location.href=u; }   /* reprints of an already-invoiced job are stamped COPY; original=true only at first generation */
 /* open a branded document (BOQ / profit report) in a popup with a print/save-PDF button */
 function docOpen(url,title){ document.getElementById('docModalTitle').textContent=title||'Document'; document.getElementById('docFrame').src=url; document.getElementById('docModal').classList.add('open'); document.body.style.overflow='hidden'; }
 function docClose(){ document.getElementById('docModal').classList.remove('open'); document.body.style.overflow=''; const f=document.getElementById('docFrame'); if(f) f.src='about:blank'; }
@@ -5178,6 +5185,7 @@ function mqPdf(id){ window.open('api/quote_pdf.php?id='+id,'_blank'); }
 function mqJobCardTry(id){
   const q=MQ.quotes.find(x=>x.id===id); if(!q) return;
   if(!q.zoho_estimate_id){ alert('This quote has not been sent to Zoho yet.\n\nPush it to Zoho and get it approved, then tap this button again.'); return; }
+  if(q.zoho_invoice_number){ openJobCard(id); return; }
   MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_sync.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
@@ -5206,14 +5214,15 @@ setInterval(()=>{
 function mqJobCard(id){
   if(!confirm('Have you completed this job?\n\nGenerating the Job Card will mark the job done and create the INVOICE in Zoho. This cannot be undone.')) return;
   if(!confirm('Please confirm once more: is the job fully complete and ready to invoice the customer?')) return;
+  const jw=jcPreopen();   /* open the tab now, while the tap still counts, so phones don't block it */
   MQ.busyId=id; MQ.msg=''; render();
   fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ MQ.busyId=0;
     if(j.ok){ const q=MQ.quotes.find(x=>x.id===id); if(q){ q.status='invoiced'; q.zoho_invoice_number=j.invoice_number; }
       MQ.msg='Job card ready — invoice '+(j.invoice_number||'')+(j.already?' (already invoiced — card marked COPY).':' created in Zoho.'); MQ.err=false;
-      openJobCard(id, !j.already); render(); }   /* original only when this call created the invoice; otherwise COPY */
-    else { MQ.msg=j.error||'Could not generate job card.'; MQ.err=true; render(); }
-  }).catch(e=>{ MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
+      render(); openJobCard(id, !j.already, jw); }   /* original only when this call created the invoice; otherwise COPY */
+    else { if(jw) jw.close(); MQ.msg=j.error||'Could not generate job card.'; MQ.err=true; render(); }
+  }).catch(e=>{ if(jw) jw.close(); MQ.busyId=0; MQ.msg='Error: '+e; MQ.err=true; render(); });
 }
 function mqSetStatus(id,status){
   // "Invoiced" must actually create the invoice in Zoho Books (not just relabel it here).
@@ -5686,12 +5695,13 @@ function projCardTeam(p){
 /* Technician on an assigned project: generate the job card (creates the Zoho invoice the first time). */
 function projGenJobCard(id){
   if(!confirm('Have you completed this job?\n\nGenerating the Job Card will create the INVOICE in Zoho. This cannot be undone.')) return;
+  const jw=jcPreopen();   /* open the tab now, while the tap still counts, so phones don't block it */
   PROJ.busyId=id; PROJ.msg=''; render();
   fetch('api/quote_invoice.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
   .then(r=>r.json()).then(j=>{ PROJ.busyId=0;
-    if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p){ p.status='invoiced'; p.zoho_invoice_number=j.invoice_number; } PROJ.msg='Invoice '+(j.invoice_number||'')+(j.already?' (already invoiced — card marked COPY).':' created in Zoho.'); PROJ.err=false; openJobCard(id, !j.already); }
-    else { PROJ.msg=j.error||'Could not generate job card.'; PROJ.err=true; } render();
-  }).catch(e=>{ PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
+    if(j.ok){ const p=PROJ.projects.find(x=>x.id===id); if(p){ p.status='invoiced'; p.zoho_invoice_number=j.invoice_number; } PROJ.msg='Invoice '+(j.invoice_number||'')+(j.already?' (already invoiced — card marked COPY).':' created in Zoho.'); PROJ.err=false; render(); openJobCard(id, !j.already, jw); return; }
+    else { if(jw) jw.close(); PROJ.msg=j.error||'Could not generate job card.'; PROJ.err=true; } render();
+  }).catch(e=>{ if(jw) jw.close(); PROJ.busyId=0; PROJ.msg='Error: '+e; PROJ.err=true; render(); });
 }
 
 function projClose(id){ if(!confirm('Close this project? Your team will no longer see it or add costs. You can reopen it anytime.'))return; PROJ.busyId=id; render();
