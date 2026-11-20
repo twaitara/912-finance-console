@@ -188,8 +188,10 @@ try {
   .body{min-height:430px;padding:0 0 0 0}
   .sign{display:flex;justify-content:flex-end;padding:60px 30px 30px;font-size:12.5px;color:#15202B}
   .sign span{border-top:1px solid #8a98a8;padding-top:6px;min-width:230px;text-align:center}
-  .bar{position:fixed;top:0;left:0;right:0;background:#15202B;color:#fff;padding:8px 14px;display:flex;gap:10px;justify-content:center;align-items:center;font-size:13px}
-  .bar button{background:#F56F00;color:#fff;border:none;padding:7px 16px;border-radius:7px;font-weight:600;cursor:pointer;font-family:inherit}
+  .bar{position:sticky;top:0;z-index:20;flex-wrap:wrap;background:#15202B;color:#fff;padding:8px 14px;display:flex;gap:10px;justify-content:center;align-items:center;font-size:13px}
+  .bar button{background:#F56F00;color:#fff;border:none;padding:10px 18px;border-radius:7px;font-weight:700;cursor:pointer;font-family:inherit;font-size:14px}
+  .bar button.sec{background:transparent;border:1px solid #3A4C64;color:#E7EDF5;font-weight:600}
+  .bar button:disabled{opacity:.6}
   .bar a{color:#9AA7B8;text-decoration:none;font-size:12px}
   /* Dark mode for on-screen viewing only — printing always uses the light "paper" styles above */
   @media screen{
@@ -205,7 +207,7 @@ try {
   @media print{.bar{display:none}body{background:#fff}.sheet{border:none;margin:0;max-width:none}}
 </style></head>
 <body>
-  <div class="bar"<?php echo !empty($_GET['embed']) ? ' style="display:none"' : ''; ?>><span><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?><?php echo $copy ? ' — COPY' : ''; ?></span><button onclick="window.print()">Print / Save PDF</button><a href="#" onclick="window.close();return false;">Close</a></div>
+  <div class="bar"<?php echo !empty($_GET['embed']) ? ' style="display:none"' : ''; ?>><span><?php echo jc_esc($docLabel); ?> <?php echo jc_esc($docNo); ?><?php echo $copy ? ' — COPY' : ''; ?></span><button id="dlBtn" onclick="jcDownload()">&#10515; Download PDF</button><button class="sec" onclick="window.print()">Print</button><a href="#" onclick="window.close();return false;">Close</a></div>
   <div class="sheet">
     <?php if ($copy) echo '<div class="copymark">COPY</div>'; ?>
     <div class="top">
@@ -263,6 +265,20 @@ try {
     <div style="font-size:11px;color:#64748B">This system is designed for <b>912 Holdings</b>, Zone Fibre Limited, Waitara Holdings Limited, Smart Zone Fibre Limited &amp; Global IT Limited</div>
     <div style="font-size:10.5px;color:#E07000;margin-top:4px">&#9888; If you are a staff member of any of the companies listed here and can see information of a company you are not associated with, report immediately to <b>Njuguna Waitara — +254 722 974 970</b> at a reward of <b>10,000 KES</b></div>
   </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script>
+/* Saves the card as a real PDF file (works on phones, unlike the print dialog). Always light/paper colours. */
+function jcDownload(){
+  var b=document.getElementById('dlBtn'), el=document.querySelector('.sheet');
+  if(!window.html2pdf||!el){ window.print(); return; }
+  var wasDark=document.documentElement.classList.contains('dark'); document.documentElement.classList.remove('dark');
+  b.disabled=true; b.textContent='Preparing PDF…';
+  var name=<?php echo json_encode(trim(preg_replace('/[^A-Za-z0-9 ._-]+/', ' ', $docLabel . ' ' . $docNo . ($copy ? ' COPY' : ''))) . '.pdf'); ?>;
+  html2pdf().set({margin:[8,8,8,8], filename:name, image:{type:'jpeg',quality:0.95}, html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'}, jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}, pagebreak:{mode:['css','legacy']}})
+    .from(el).save().then(function(){ b.disabled=false; b.innerHTML='&#10515; Download PDF'; if(wasDark) document.documentElement.classList.add('dark'); })
+    .catch(function(){ b.disabled=false; b.innerHTML='&#10515; Download PDF'; if(wasDark) document.documentElement.classList.add('dark'); window.print(); });
+}
+</script>
 </body></html><?php
 } catch (Exception $e) {
     http_response_code(500);
